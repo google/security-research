@@ -19,7 +19,7 @@ This is not an official Google product.
 
 The disclosure of vulnerabilities are all in the form of security
 advisories, which can be browsed in the [Security
-Advisories](https://github.com/google/security-research/security/advisories)
+Advisories](https://github.com/google/security-research/security/advisories?state=published)
 page.
 
 ## Proof of Concepts
