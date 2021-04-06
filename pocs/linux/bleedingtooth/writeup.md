@@ -1100,7 +1100,7 @@ This ROP chain should be placed at offset 0x40 within the fake `struct bpf_prog`
 
 ## Proof-Of-Concept
 
-The Proof-Of-Concept is available at [https://github.com/google/security-research/pocs/linux/bleedingtooth](https://github.com/google/security-research/pocs/linux/bleedingtooth).
+The Proof-Of-Concept is available at [https://github.com/google/security-research/tree/master/pocs/linux/bleedingtooth](https://github.com/google/security-research/tree/master/pocs/linux/bleedingtooth).
 
 Compile it using:
 
