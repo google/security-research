@@ -35,9 +35,9 @@ This blogpost describes the process of me diving into the code, uncovering high 
 
 ### Patching, Severity and Advisories
 
-Google reached out directly to [BlueZ](bluez.org) and the Linux Bluetooth Subsystem maintainers (Intel), rather than to the Linux Kernel Security team in order to coordinate the multi-party response for this series of vulnerabilities. Intel issued the security advisory [INTEL-SA-00435](https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00435.html) with the patches, but these weren't included in any released Kernel versions at the time of disclosure. The Linux Kernel Security team should have been notified in order to facilitate coordination, and any future vulnerabilities of this type will also be reported to them. A timeline of the communications is at the bottom of this post. The patches for the respective vulnerabilities are:
+Google reached out directly to [BlueZ](http://www.bluez.org/) and the Linux Bluetooth Subsystem maintainers (Intel), rather than to the Linux Kernel Security team in order to coordinate the multi-party response for this series of vulnerabilities. Intel issued the security advisory [INTEL-SA-00435](https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00435.html) with the patches, but these weren't included in any released Kernel versions at the time of disclosure. The Linux Kernel Security team should have been notified in order to facilitate coordination, and any future vulnerabilities of this type will also be reported to them. A timeline of the communications is at the bottom of this post. The patches for the respective vulnerabilities are:
 
-* [BadVibes](https://github.com/google/security-research/security/advisories/GHSA-ccx2-w2r4-x649) (CVE-2020-24490) was fixed on the mainline branch on 2020-Jul-30: [commit.](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=a2ec905d1e160a33b2e210e45ad30445ef26ce0e)
+* [BadVibes](https://github.com/google/security-research/security/advisories/GHSA-ccx2-w2r4-x649) (CVE-2020-24490) was fixed on the mainline branch on 2020-Jul-30: [commit](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=a2ec905d1e160a33b2e210e45ad30445ef26ce0e).
 * [BadChoice](https://github.com/google/security-research/security/advisories/GHSA-7mh3-gq28-gfrq) (CVE-2020-12352) and [BadKarma](https://github.com/google/security-research/security/advisories/GHSA-h637-c88j-47wq) (CVE-2020-12351) were fixed on bluetooth-next on 2020-Sep-25: commits [1](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=eddb7732119d53400f48a02536a84c509692faa8), [2](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=f19425641cb2572a33cb074d5e30283720bd4d22), [3](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=b176dd0ef6afcb3bca24f41d78b0d0b731ec2d08), [4](https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth-next.git/commit/?id=b560a208cda0297fef6ff85bbfd58a8f0a52a543)
 
 Alone, the severity of these vulnerabilities **vary from medium to high, but combined they represent a serious security risk.** This write-up goes over these risks.
@@ -323,7 +323,7 @@ I discovered the third vulnerability while attempting to trigger _BadChoice_ and
 [  445.440932]  ret_from_fork+0x35/0x40
 ```
 
-Taking a look at l2cap_data_rcv(), we can see that sk_filter() is invoked when ERTM (Enhanced Retransmission Mode) or streaming mode is used (similar to TCP):
+Taking a look at `l2cap_data_rcv()`, we can see that `sk_filter()` is invoked when ERTM (Enhanced Retransmission Mode) or streaming mode is used (similar to TCP):
 
 ```c
 // https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/net/bluetooth/l2cap_core.c
@@ -504,7 +504,7 @@ static int l2cap_parse_conf_rsp(struct l2cap_chan *chan, void *rsp, int len,
 }
 ```
 
-The natural question hereby is whether we first need to receive a configuration request from the victim before we can send back a configuration response? This seems to be a weakness of the protocol – the answer is no. Moreover, whatever the victim negotiates with us, we can send back a `L2CAP_CONF_UNACCEPT `response and the victim will happily accept our suggestion.
+The natural question hereby is whether we first need to receive a configuration request from the victim before we can send back a configuration response? This seems to be a weakness of the protocol – the answer is no. Moreover, whatever the victim negotiates with us, we can send back a `L2CAP_CONF_UNACCEPT` response and the victim will happily accept our suggestion.
 
 Using the configuration response bypass, we are now able to reach the A2MP commands and exploit _BadChoice_ to retrieve all the information we need (see later sections). Once we are ready to trigger the type confusion, we can simply recreate the A2MP channel by disconnecting and connecting the channel and as such, set the channel mode back to ERTM as required for _BadKarma_.
 
@@ -626,7 +626,7 @@ struct amp_mgr {
 
 As this is a pointer to a heap object which is aligned to the allocation size (minimum 32 bytes), it means that the lower bytes of this pointer cannot have the values 2 or 10 as required by `__cgroup_bpf_run_filter_skb()`. Having established that, we know that the subroutine always returns 0 no matter what values the other fields have. Similarly, the subroutine `security_sock_rcv_skb()` requires the same condition and returns 0 otherwise.
 
-This leaves us with `sk->sk_filter` as the only potential member to corrupt. We will later see how it may be useful to have control over `struct sk_filter`, but first, note that `sk_filter `is located at offset 0x110, whereas the size of `struct amp_mgr` is only 112=0x70 bytes wide. Is it not out of our control then? Yes and no – usually it is not in our control, however if we have a way to shape the heap, then it may be even easier to take full control over the pointer. To elaborate, the `struct amp_mgr` has a size of 112 bytes (between 65 and 128), thus it is allocated within the kmalloc-128 slab. Usually, memory blocks in the slab do not contain metadata such as chunk headers in front, as the goal is to minimize fragmentation. As such, memory blocks are consecutive and therefore, in order to control the pointer at offset 0x110, we must achieve a heap constellation where our desired pointer is located at offset 0x10 of the second block after `struct amp_mgr`.
+This leaves us with `sk->sk_filter` as the only potential member to corrupt. We will later see how it may be useful to have control over `struct sk_filter`, but first, note that `sk_filter` is located at offset 0x110, whereas the size of `struct amp_mgr` is only 112=0x70 bytes wide. Is it not out of our control then? Yes and no – usually it is not in our control, however if we have a way to shape the heap, then it may be even easier to take full control over the pointer. To elaborate, the `struct amp_mgr` has a size of 112 bytes (between 65 and 128), thus it is allocated within the kmalloc-128 slab. Usually, memory blocks in the slab do not contain metadata such as chunk headers in front, as the goal is to minimize fragmentation. As such, memory blocks are consecutive and therefore, in order to control the pointer at offset 0x110, we must achieve a heap constellation where our desired pointer is located at offset 0x10 of the second block after `struct amp_mgr`.
 
 ### Finding a Heap Primitive
 
