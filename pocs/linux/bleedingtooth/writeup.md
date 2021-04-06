@@ -323,7 +323,7 @@ I discovered the third vulnerability while attempting to trigger _BadChoice_ and
 [  445.440932]  ret_from_fork+0x35/0x40
 ```
 
-Taking a look at l2cap_data_rcv(), we can see that sk_filter() is invoked when ERTM (Enhanced Retransmission Mode) or streaming mode is used (similar to TCP):
+Taking a look at `l2cap_data_rcv()`, we can see that `sk_filter()` is invoked when ERTM (Enhanced Retransmission Mode) or streaming mode is used (similar to TCP):
 
 ```c
 // https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/net/bluetooth/l2cap_core.c
