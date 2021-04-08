@@ -1,5 +1,7 @@
 # BleedingTooth: Linux Bluetooth Zero-Click Remote Code Execution
 
+<p align='right'>Andy Nguyen (theflow@) - Information Security Engineer</p>
+
 _BleedingTooth_ is a set of zero-click vulnerabilities in the Linux Bluetooth subsystem that can allow an unauthenticated remote attacker in short distance to execute arbitrary code with kernel privileges on vulnerable devices.
 
 ## Table of Contents
@@ -1136,7 +1138,7 @@ Occasionally, the victim may print `Bluetooth: Trailing bytes: 6 in sframe` in d
 
 2020-07-06 – _BadVibes_ vulnerability discovered internally at Google  
 2020-07-20 – _BadKarma_ and _BadChoice_ vulnerabilities discovered internally at Google  
-2020-07-22 – Linux Torvalds reports independent discovery of the _BadVibes_ vulnerability to BlueZ with a 7 day disclosure timeline  
+2020-07-22 – Linus Torvalds reports independent discovery of the _BadVibes_ vulnerability to BlueZ with a 7 day disclosure timeline  
 2020-07-24 – Technical details on the three BleedingTooth vulnerabilities reported to [BlueZ main developers](http://www.bluez.org/development/credits/) (Intel)  
 2020-07-29 – Intel schedules a meeting for 2020-07-31 with Google  
 2020-07-30 – _BadVibes_ fix released  
