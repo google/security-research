@@ -1,6 +1,6 @@
-# CVE-2021-44229: TPM Carte Blanche
+# CVE-2021-42299: TPM Carte Blanche
 
-This Proof-Of-Concept demonstrates the exploitation of CVE-2021-44229.
+This Proof-Of-Concept demonstrates the exploitation of CVE-2021-42299.
 
 ## Technical details
 

@@ -1,4 +1,4 @@
-# CVE-2021-44229: TPM Carte Blanche
+# CVE-2021-42299: TPM Carte Blanche
 
 ## Summary
 On Surface Pro 3 with the SHA1 and SHA256 PCRs enabled on the TPM, BIOS version 3.11.2550 and earlier, only the SHA1 PCRs are extended by the firmware. This means that an adversary can boot into an unmeasured OS and extend the PCRs with false measurements to obtain false attestations.
