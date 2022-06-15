@@ -1,0 +1,5 @@
+To build repro.c just `clang repro.c -fsanitize=address -o repro -lresolv`.
+Ideally also build your own libresolv with ASAN too.
+
+For each test case, `./repro < bug_N/input`. Each should crash with an ASAN
+report, except for bug_4, which should infinite loop.
