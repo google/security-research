@@ -1,5 +1,6 @@
 ---
 title: 'Surface Pro 3: BIOS False Health Attestation (TPM Carte Blanche)'
+published: '2021-10-18T20:16:30Z'
 severity: High
 ghsa_id: GHSA-c4qg-jj77-rcc3
 cve_id: CVE-2021-42299

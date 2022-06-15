@@ -1,5 +1,6 @@
 ---
 title: 'Node: Node.js certificate verification bypass via string injection'
+published: '2022-01-29T17:27:53Z'
 severity: Moderate
 ghsa_id: GHSA-qj66-5v86-jmjc
 cve_id: CVE-2021-44533

@@ -1,5 +1,6 @@
 ---
 title: 'Linux: Heap-Based Type Confusion in L2CAP (BleedingTooth)'
+published: '2020-10-13T17:17:59Z'
 severity: High
 ghsa_id: GHSA-h637-c88j-47wq
 cve_id: CVE-2020-12351

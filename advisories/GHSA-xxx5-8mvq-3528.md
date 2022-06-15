@@ -1,5 +1,6 @@
 ---
 title: 'Linux: Heap Out-Of-Bounds Write in xt_compat_target_from_user'
+published: '2021-07-07T18:54:02Z'
 severity: High
 ghsa_id: GHSA-xxx5-8mvq-3528
 cve_id: CVE-2021-22555

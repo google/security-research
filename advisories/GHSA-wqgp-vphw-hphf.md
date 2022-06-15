@@ -1,6 +1,7 @@
 ---
 title: ' AWS: In-band protocol negotiation and robustness weaknesses in AWS KMS and
   Encryption SDKs'
+published: '2020-09-28T17:17:36Z'
 severity: Low
 ghsa_id: GHSA-wqgp-vphw-hphf
 cve_id: CVE-2020-8897

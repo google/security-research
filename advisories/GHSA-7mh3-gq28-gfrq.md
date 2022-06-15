@@ -1,5 +1,6 @@
 ---
 title: 'Linux: Stack-Based Information Leak in A2MP (BleedingTooth)'
+published: '2020-10-13T17:18:10Z'
 severity: Moderate
 ghsa_id: GHSA-7mh3-gq28-gfrq
 cve_id: CVE-2020-12352

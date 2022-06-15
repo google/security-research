@@ -1,5 +1,6 @@
 ---
 title: 'Apache: Code execution in log4j2'
+published: '2022-02-14T06:30:38Z'
 severity: High
 ghsa_id: GHSA-ggmf-hg75-88gg
 cve_id: CVE-2021-45046

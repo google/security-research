@@ -1,5 +1,6 @@
 ---
 title: ' Telestream: SQL injection in Sentry/Medius'
+published: '2020-09-16T18:12:57Z'
 severity: High
 ghsa_id: GHSA-g69r-8jwh-2462
 cve_id: CVE-2020-8887

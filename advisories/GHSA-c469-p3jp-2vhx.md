@@ -1,6 +1,7 @@
 ---
 title: 'Jupyter: RCE through XSS in Jupyter Lab and Jupyter Notebook (CVE-2021-32797,
   CVE-2021-32798)'
+published: '2021-10-20T16:18:20Z'
 severity: High
 ghsa_id: GHSA-c469-p3jp-2vhx
 cve_id: CVE-2021-32797

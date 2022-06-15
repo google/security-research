@@ -1,5 +1,6 @@
 ---
 title: '2ndQuadrant: pglogical pg_dump/pg_restore remote code execution'
+published: '2021-06-08T06:56:50Z'
 severity: Moderate
 ghsa_id: GHSA-wcv2-vxw9-23hx
 cve_id: CVE-2021-3515

@@ -1,5 +1,6 @@
 ---
 title: ' AWS: In-band key negotiation issue in the AWS S3 Crypto SDK for golang'
+published: '2020-08-10T20:22:32Z'
 severity: Low
 ghsa_id: GHSA-7f33-f4f5-xwgw
 cve_id: CVE-2020-8912

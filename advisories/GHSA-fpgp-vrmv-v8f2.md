@@ -1,5 +1,6 @@
 ---
 title: ' Zoom: XSS in Zoom.us Signup Flow'
+published: '2020-07-07T13:36:00Z'
 severity: High
 ghsa_id: GHSA-fpgp-vrmv-v8f2
 cve_id: ''

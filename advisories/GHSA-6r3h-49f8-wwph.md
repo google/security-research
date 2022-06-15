@@ -1,5 +1,6 @@
 ---
 title: ' Zoom: Multiple OAuth vulnerabilities'
+published: '2020-07-28T05:31:11Z'
 severity: High
 ghsa_id: GHSA-6r3h-49f8-wwph
 cve_id: ''

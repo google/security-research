@@ -1,5 +1,6 @@
 ---
 title: 'Apple: ImageIO renders uninitialized heap memory'
+published: '2022-04-25T17:44:58Z'
 severity: Moderate
 ghsa_id: GHSA-4gcf-xm6q-qph7
 cve_id: CVE-2022-22611

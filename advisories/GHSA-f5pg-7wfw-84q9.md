@@ -1,5 +1,6 @@
 ---
 title: ' AWS: CBC Padding oracle in the AWS S3 Crypto SDK for golang'
+published: '2020-08-10T20:22:37Z'
 severity: Moderate
 ghsa_id: GHSA-f5pg-7wfw-84q9
 cve_id: CVE-2020-8911

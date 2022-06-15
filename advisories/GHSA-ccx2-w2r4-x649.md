@@ -1,5 +1,6 @@
 ---
 title: 'Linux: Heap-Based Buffer Overflow in HCI event packet parser (BleedingTooth)'
+published: '2020-10-13T17:17:48Z'
 severity: Moderate
 ghsa_id: GHSA-ccx2-w2r4-x649
 cve_id: CVE-2020-24490

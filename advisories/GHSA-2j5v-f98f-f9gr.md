@@ -1,5 +1,6 @@
 ---
 title: ' BSD: Out-of-bounds kernel heap access in hib_get_item for FreeBSD and OpenBSD'
+published: '2020-09-01T19:01:42Z'
 severity: Moderate
 ghsa_id: GHSA-2j5v-f98f-f9gr
 cve_id: CVE-2020-7456

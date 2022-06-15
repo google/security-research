@@ -1,5 +1,6 @@
 ---
 title: 'XNU: Multiple IP6_EXTHDR_CHECK Use-After-Free/Double Free Vulnerabilities'
+published: '2020-07-27T07:17:53Z'
 severity: Moderate
 ghsa_id: GHSA-gxcr-cw4q-9q78
 cve_id: CVE-2020-9892

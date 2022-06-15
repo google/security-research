@@ -1,6 +1,7 @@
 ---
 title: ' AWS: Unencrypted md5 plaintext hash in metadata in the AWS S3 Crypto SDK
   for golang'
+published: '2020-08-10T20:22:25Z'
 severity: Moderate
 ghsa_id: GHSA-76wf-9vgp-pj7w
 cve_id: ''

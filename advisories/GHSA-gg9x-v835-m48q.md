@@ -1,5 +1,6 @@
 ---
 title: 'OpenBMC: remote code execution in netipmid'
+published: '2021-09-02T17:27:23Z'
 severity: Critical
 ghsa_id: GHSA-gg9x-v835-m48q
 cve_id: CVE-2021-39296

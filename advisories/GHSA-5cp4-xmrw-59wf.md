@@ -1,5 +1,6 @@
 ---
 title: ' AngularJS: XSS in JQLite DOM manipulation functions'
+published: '2020-08-03T13:30:22Z'
 severity: Moderate
 ghsa_id: GHSA-5cp4-xmrw-59wf
 cve_id: CVE-2020-7676

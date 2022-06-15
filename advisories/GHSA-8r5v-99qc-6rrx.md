@@ -1,5 +1,6 @@
 ---
 title: 'Dino: Path Traversal on attachments'
+published: '2021-10-01T14:22:18Z'
 severity: Moderate
 ghsa_id: GHSA-8r5v-99qc-6rrx
 cve_id: CVE-2021-33896
