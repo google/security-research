@@ -1,0 +1,40 @@
+diff --git a/http_util.go b/http_util.go
+index 926a3e0..0e34f14 100644
+--- a/http_util.go
++++ b/http_util.go
+@@ -78,6 +78,10 @@ func indexNameLookup(req *http.Request) string {
+ 	return muxVariableLookup(req, "indexName")
+ }
+ 
++func crapIndexNameLookup(req *http.Request) string {
++	return req.URL.Query()["indexName"][0]
++}
++
+ func showError(w http.ResponseWriter, r *http.Request,
+ 	msg string, code int) {
+ 	log.Printf("Reporting error %v/%v", code, msg)
+diff --git a/main.go b/main.go
+index 0a1148b..2cfed51 100644
+--- a/main.go
++++ b/main.go
+@@ -98,16 +98,16 @@ func main() {
+ 	bleveMappingUI.RegisterHandlers(router, "/api")
+ 
+ 	createIndexHandler := bleveHttp.NewCreateIndexHandler(*dataDir)
+-	createIndexHandler.IndexNameLookup = indexNameLookup
+-	router.Handle("/api/{indexName}", createIndexHandler).Methods("PUT")
++	createIndexHandler.IndexNameLookup = crapIndexNameLookup
++	router.Handle("/api/create", createIndexHandler).Methods("PUT")
+ 
+ 	getIndexHandler := bleveHttp.NewGetIndexHandler()
+ 	getIndexHandler.IndexNameLookup = indexNameLookup
+ 	router.Handle("/api/{indexName}", getIndexHandler).Methods("GET")
+ 
+ 	deleteIndexHandler := bleveHttp.NewDeleteIndexHandler(*dataDir)
+-	deleteIndexHandler.IndexNameLookup = indexNameLookup
+-	router.Handle("/api/{indexName}", deleteIndexHandler).Methods("DELETE")
++	deleteIndexHandler.IndexNameLookup = crapIndexNameLookup
++	router.Handle("/api/delete", deleteIndexHandler).Methods("DELETE")
+ 
+ 	listIndexesHandler := bleveHttp.NewListIndexesHandler()
+ 	router.Handle("/api", listIndexesHandler).Methods("GET")
