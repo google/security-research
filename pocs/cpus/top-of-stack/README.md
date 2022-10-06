@@ -39,7 +39,7 @@ What is worse is that in the user to kernel case, the RSB/RAS is thought to not 
 
 ### Architectural Top of the Stack
 
-The easiest way to see/test the behavior is to fill the RSB/RAS (in case the IBPB instruction does not clear the RAS, as is the case on some AMD microarchitectures) and perform an IBPB (to flush the BTB). If the top of the stack is accessed (for example, via a _‘push’_), a speculatively executed _‘ret’_ instruction will actually predict using the value from that location.  A _‘clflush’_ can be added for the negative testing (notice that we still see some hits in some of the microarchitectures, which might support the theory of the usage of store-buffers).  
+If the top of the stack is accessed (for example, via a _‘push’_), a speculatively executed _‘ret’_ instruction will actually predict using the value from that location.  A _‘clflush’_ can be added for the negative testing (notice that we still see some hits in some of the microarchitectures, which might support the theory of the usage of store-buffers).  
 
 Here is an example of a test (based on KTF [^5]):
 
