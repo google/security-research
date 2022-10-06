@@ -1,3 +1,23 @@
+/*
+
+INSTRUCTIONS: 
+# shows hits on Broadwell, Skylake Server, CascadeLake
+make clean; make rsp
+./rsp
+
+# complile with various definitions to observe the behaviour 
+# -DFAIL_MD_CLEAR should stop the attack on Intel - clears the internal buffers
+# using verw
+# -DFAIL_SECRET_VALUE stops the attack because it flushes and checks a different
+# probe element than the one accessed by the access_probe gadget
+# -DFAIL_SHADOW_BRANCH_MISP stops the attack because if doesn't flush the shadow
+# branch operands, thus the correct path will be taken.
+# -DFAIL_UNCACHED_RSP should stop the attack because rsp points to an uncached
+# value.
+make clean; CFLAGS="-DFAIL_MD_CLEAR" make rsp
+
+*/
+
 #include <err.h>
 #include <sched.h>
 #include <stdint.h>
