@@ -33,7 +33,7 @@ Returns (ret) are indirect branches that should be predicted from a data structu
 
 While not officially documented/discussed, the work in Spectre v1.1 [^2] indicates that speculative overwrites controlling some other data structure also affect the prediction. The example discussed talks about a speculative overwrite over the return address and how a speculative return uses that value. Our tests indicate that such overwrites are using the store buffer (see Subsection: Speculative top of the stack for more details). But still, an open question remains:  **What other prediction order/conditions exists?**  This matters because mitigations such as retpoline [^3] clearly depend on it to be properly understood (and effective).  Nonetheless, retpoline documentation only discusses RSB/RAS and BTB.
 
-What we also have found is that, at least in the aforementioned studied microarchitectures, _‘rets’_ also seem to predict from the top of the stack if the contents of it are recently accessed even when *NOT* speculatively overwritten (so a subtle, but potentially relevant difference from Spectre v1.1). Given that to prevent an attacker from controlling the destination of a _‘ret’_ (Spectre v2) the recommendation is to perform an IBPB (which flushes the BTB and the RSB), we have common scenarios in which the first _‘ret’_ upon a context switch (between untrusted and trusted entities, such as user to kernel or guest to hypervisor) will actually predict from the recently accessed top of the stack.  
+Our experiments confirm the findings of Mambreti et. al [^8], that ‘rets’ also predict from the top of the stack if the contents of it are recently accessed even when *NOT* speculatively overwritten. Given that to prevent an attacker from controlling the destination of a _‘ret’_ (Spectre v2) the recommendation is to perform an IBPB (which flushes the BTB and the RSB), we have common scenarios in which the first _‘ret’_ upon a context switch (between untrusted and trusted entities, such as user to kernel or guest to hypervisor) will actually predict from the recently accessed top of the stack.
 
 What is worse is that in the user to kernel case, the RSB/RAS is thought to not be possible to point to a kernel address (since their entries are only created by _‘calls’_).  With that, SMEP is the mechanism that prevents bad speculation from happening on the user->kernel attack case (via RSB/RAS control)  because only user-space addresses can be trained/injected there.  But in the case of the top of the stack, an entry can be created with a simple _‘push’_ instruction (in fact, many instructions such as _pop_, _sub_, _add_, _leave_, _xchg_), potentially making SMEP ineffective for the observed scenario.  It is also worth noting that deeper (in the control flow) _‘ret’s_ might still have attacker controlled values in the top of the stack (that are recently accessed) due to parameter passing, stack adjustments (such as _subs_ to allocate stack space) and many other software-controlled reasons.
 
@@ -117,7 +117,7 @@ Here are some examples of code constructs that may be vulnerable due to the beha
 
 ## Acknowledgements
 
-We would like to thank Pawel Wieczorkiewicz from Open Source Security Inc. for his collaboration in this work.  We would like to thank Intel and AMD for the timely response to our inquiry about the findings documented here. 
+We would like to thank Pawel Wieczorkiewicz from Open Source Security Inc. for his collaboration in this work.  We would like to thank Intel and AMD for the timely response to our inquiry about the findings documented here. We thank the IBM Research System Security group [^7] for their timely feedback.
 
 ## References
 
@@ -127,3 +127,5 @@ We would like to thank Pawel Wieczorkiewicz from Open Source Security Inc. for h
 [^4]: Skylake Server Microarchitecture (Wikichip).  Link:  [https://en.wikichip.org/wiki/intel/microarchitectures/skylake_%28server%29](https://en.wikichip.org/wiki/intel/microarchitectures/skylake_%28server%29)
 [^5]: KTF (Kernel Test Framework).  Link:  [https://github.com/KernelTestFramework/ktf](https://github.com/KernelTestFramework/ktf) 
 [^6]: “Post-barrier RSB Prediction”.  Link:  [https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00706.html](https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00706.html) 
+[^7]: IBM System Security. Link: https://researcher.watson.ibm.com/researcher/view_group.php?id=8257
+[^8]: Bypassing memory safety mechanisms through speculative control flow hijacks. Link: https://arxiv.org/pdf/2003.05503.pdf
