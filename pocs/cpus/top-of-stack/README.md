@@ -39,7 +39,7 @@ What is worse is that in the user to kernel case, the RSB/RAS is thought to not 
 
 ### Architectural Top of the Stack
 
-If the top of the stack is accessed (for example, via a _‘push’_), a speculatively executed _‘ret’_ instruction will actually predict using the value from that location.  A _‘clflush’_ can be added for the negative testing (notice that we still see some hits in some of the microarchitectures, which might support the theory of the usage of store-buffers).  
+The easiest way to see/test the behavior is to fill the RSB/RAS (in case the IBPB instruction does not clear the RAS, as is the case on some AMD microarchitectures) and perform an IBPB (to flush the BTB). If the top of the stack is accessed (for example, via a _‘push’_), a speculatively executed _‘ret’_ instruction will actually predict using the value from that location.  A _‘clflush’_ can be added for the negative testing (notice that we still see some hits in some of the microarchitectures, which might support the theory of the usage of store-buffers).  
 
 Here is an example of a test (based on KTF [^5]):
 
@@ -118,6 +118,20 @@ Here are some examples of code constructs that may be vulnerable due to the beha
 ## Acknowledgements
 
 We would like to thank Pawel Wieczorkiewicz from Open Source Security Inc. for his collaboration in this work.  We would like to thank Intel and AMD for the timely response to our inquiry about the findings documented here. We thank the IBM Research System Security group [^7] for their timely feedback.
+
+## Timeline
+
+* July 7 2022 - Initial draft of the advisory sent to Intel and AMD
+* July 8 2022 - Initial ack from AMD on the issue
+* July 14 2022 - Answer from AMD referencing Spectre v1.1 https://people.csail.mit.edu/vlk/spectre11.pdf
+* July 16 2022 - Request from AMD to keep issue secret for 90 days
+* July 28 2022 - Answer from Intel referencing Intel whitepaper https://www.intel.com/content/dam/develop/public/us/en/documents/336983-intel-analysis-of-speculative-execution-side-channels-white-paper.pdf
+* August 8 2022 - Request from Intel to keep issue secret for "a couple days" to avoid confusion with CVE-2022-28693, and to incorporate Intel's whitepaper on the public advisory
+* October 5 2022 - Final draft of the advisory incorporating references provided by Intel and AMD send to Intel and AMD
+* October 6 2022 - Public disclosure of advisory
+* October 6 2022 - Request from AMD to delete a sentence from advisory `(in case the IBPB instruction does not clear the RAS, as is the case on some AMD microarchitectures)` (which was done while we investigated the reason)
+* November 8 2022 - AMD discloses https://www.amd.com/en/corporate/product-security/bulletin/amd-sb-1040 which is a bug collission of the IBPB/RSB bug
+* November 21 2022 - Deleted sentence is added back
 
 ## References
 
