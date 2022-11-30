@@ -37,17 +37,17 @@ void main(){
 ```
 If the program counter is at f2 the RSB looks like this, with all slots filled in the RSB:
 
-![](https://i.imgur.com/vrCg1gF.png)
+![](1-rsb.png)
 
 
 When entering f3, the f2+off is pushed into RSB:
 
-![](https://i.imgur.com/RiVuUZt.png)
+![](2-rsb.png)
 
 
 Each consecutive return then removes one element from RSB (the entry may get removed from the RSB, or a pointer may be updated instead, or any other potential implementation would be microarchitecture dependent and not relevant for this discussion, as different implementations exist [^22]): 
-![](https://i.imgur.com/wVetkBQ.png)
-![](https://i.imgur.com/Ae6ieSf.png)
+![](3-rsb.png)
+![](4-rsb.png)
 
 However since the RSB size in this example is only 3, when returning from main, the RSB underflows and the Branch Predictor Unit (BPU) cannot accurately predict the destination using only the RSB.
 
@@ -65,7 +65,7 @@ If the attacker can discover the address of the misprediction then they can brea
 
 Since we have learned from RETBLEED that, for every return instruction, the destination of it has to, somehow be loaded in the BTB the same way as for an indirect branch, it's possible to adapt the attack to the following layout:
 
-![](https://i.imgur.com/vpIiXuE.png)
+![](5-rsb.png)
 
 - The victim executes a ret, that writes its randomized return pointer (0x55aabbeef456) into BTB
 - The attacker places an indirect branch in a 12 LSB aligned address with a context that also matches the Branch History Buffer (BHB) value of the victim. Since the 12LSBs are not randomized and the BHB only uses 20 LSBs this part is trivial
