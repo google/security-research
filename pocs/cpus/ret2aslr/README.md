@@ -1,5 +1,5 @@
 # RET2ASLR - Leaking ASLR from return instructions
-### Version 1.0
+### Version 1.0.1
 
     Latest version of this paper/code available at
     https://github.com/google/security-research/blob/master/pocs/cpus/ret2aslr/README.md
@@ -316,7 +316,8 @@ We would like to thank Alexandra Sandulescu and Eduardo Vela for the excellent f
 * November 16 2022 - Ekoparty writeup published [^3]
 * November 18 2022 - Variant of "Reverse Branch Target Buffer Poisoning" implemented using return instructions, better understanding of the implications of the attack
 * November 20 2022 - OS mitigations checked, other attack targets tested
-* November 30 2022 - First public version of this write-up is made available
+* November 30 2022 - First public version of this write-up is made available (v1.0)
+* November 30 2022 - Small wording changes on mitigation section to clarify intent (v1.0.1).
 
 
 ### References:
