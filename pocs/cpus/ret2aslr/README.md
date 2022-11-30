@@ -226,7 +226,7 @@ SMM code could choose to issue an IBPB of their own if needed, but from what we 
 
 All hypervisors that mitigate guest to guest BTI do so without the possibility of allow-listing potentially “trusted” virtual machines. This means they flush both directions and are not affected by RET2ASLR.  Hypervisors that do not issue flushes (and that do not use STIBP when sharing threads of the same core between VMs) could be vulnerable.
 
-Please note that these issues have not been confirmed via experiments, so we strongly encourage the rest of the community to further our understanding in this area further, or to point us to existing research that already explored this area.
+Please note that these issues have not been confirmed via experiments, so we strongly encourage the rest of the community to further our understanding in this area, or to point us to existing research that already explored this topic.
 
 #### A note on testing BTB flushes in Hardware/Microcode
 Some flows implicitly perform a BTB flush (not requiring the use of instructions to do so).  As discussed in this write-up, examples of such flows are in the handling of an SMI# (SMM entry), in an SGX enclave entry (and the privileged code that implements it, named XuCode) and in the privilege change for Trust Zone.  There are a few possible ways to test if the flush happens, and in the case it does, in which direction (or if in both directions).  The list is not exhaustive but we share a few possibilities:
