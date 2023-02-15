@@ -27,7 +27,7 @@ page.
 Accompanying proof-of-concept code will be used to demonstrate the
 security vulnerabilities.
 
-# Licence & Patents
+# License & Patents
 
 The advisories and patches posted here are free and open source.
 
