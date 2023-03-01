@@ -24,7 +24,7 @@ project have also noticed this behaviour. [^1]
 ## Reproducing
 
 We have found a reliable way to reproduce this issue. If you use an AVX instruction
-like `VSQRTSS` followed by `VZEROALL` to reset the INUSE flag in a loop, we can
+like `VSQRTSS` followed by `VZEROALL` to set and unset the INUSE flag, we can
 observe fluctuations in the flags for no apparent reason.
 
 To reproduce this, compile the testcase with `-mavx`
@@ -72,8 +72,9 @@ first execution, our flags: 0000000000
 After 473381 tests, our XINUSE was 0000000002 vs 0000000000
 ```
 
-However, if you this other process does not use AVX, then the average number of
-tests required does not reduce.
+However, if the other process does not use AVX, then the average number of
+tests required does not reduce. This implies there may be some way of
+determining what other processes scheduled on the same core are doing.
 
 ```
 $ cc hammer.c -o hammer-noavx
@@ -83,18 +84,18 @@ first execution, our flags: 0000000000
 After 9348279 tests, our XINUSE was 0000000002 vs 0000000000
 ```
 
-Note that the number of tests is an order of magnitude difference, while there
-are fluctuations this appears to be reliable.
+Note that the number of tests is an order of magnitude difference, this appears
+to be reliable.
 
-It seems that you can determine whether another process on the same core is
-using AVX instructions.
-
-It's not clear what the implications are of this, or if it's possible to
-influence this, or determine what the other process is doing.
+It's not clear what the implications of this are. It may be possible to
+influence other processes, or determine what other processes are doing.
 
 ## Relevant Architectures
 
-We have reproduced this on the following CPUs.
+We have only observed this on Intel CPUs, no AMD processors appear to exhibit
+this behaviour.
+
+We have confirmed this on the following CPUs:
 
 ### Skylake
 ```
