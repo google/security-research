@@ -6,31 +6,28 @@
 
 > This document is a work in progress, documenting a behaviour under investigation.
 
-The XGETBV instruction reads the contents of an internal control register, it
+The `XGETBV` instruction reads the contents of an internal control register. It
 is not a privileged instruction and is usually available to userspace. The
-conntents is also exposed via the header in the XSAVE structure.
+contents is also exposed via the `xstate_bv` header in the `XSAVE` structure.
 
-The primary use of XGETBV is determining the "XINUSE" state, which allows
-kernels and userspace threads to determine what CPU state needs to be swapped
-out or restored on context switch. However, it is been observed that this state
-appears to be non-deterministic on various Intel CPU families.
+The primary use of `XGETBV` is determining the `XINUSE` flags, which allows
+kernels and userthread implementations to determine what CPU state needs to be
+saved or restored on context switch. However, it has been observed that these
+flags appear to be non-deterministic on various Intel CPUs.
 
 It is not clear what the consequences of this is are, or if this is security
 relevant.
 
-We are not the first team to observe this non-determinism, the RR project have
-also noticed this behaviour. [^1]
+We are not the first researchers to observe this non-determinism, the RR
+project have also noticed this behaviour. [^1]
 
 ## Reproducing
 
-We have found a good way to reproduce this issue is with `VSQRTSS` followed by
-`VZEROALL`, by running this in a loop we can see the value of the XINUSE flags
-fluctuate for no apparent reason.
+We have found a reliable way to reproduce this issue. If you use an AVX instruction
+like `VSQRTSS` followed by `VZEROALL` to reset the INUSE flag in a loop, we can
+observe fluctuations in the flags for no apparent reason.
 
-If we artificially increase context switching, we see the value fluctuating
-rapidly.
-
-First, compile the testcase with `-mavx`
+To reproduce this, compile the testcase with `-mavx`
 
 ```
 $ cc -mavx xgetbv.c -o xgetbv
@@ -75,7 +72,7 @@ first execution, our flags: 0000000000
 After 473381 tests, our XINUSE was 0000000002 vs 0000000000
 ```
 
-However, if you make this other process not use avx, then the average number of
+However, if you this other process does not use AVX, then the average number of
 tests required does not reduce.
 
 ```
@@ -90,9 +87,10 @@ Note that the number of tests is an order of magnitude difference, while there
 are fluctuations this appears to be reliable.
 
 It seems that you can determine whether another process on the same core is
-using AVX instructions. It's not clear what the implications are of this, or if
-it's possible to influence this, or determine what the other process is doing.
+using AVX instructions.
 
+It's not clear what the implications are of this, or if it's possible to
+influence this, or determine what the other process is doing.
 
 ## Relevant Architectures
 
