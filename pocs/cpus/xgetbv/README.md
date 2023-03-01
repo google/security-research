@@ -1,4 +1,4 @@
-# XGETBV is non-deterministic.
+# XGETBV is non-deterministic on Intel CPUs
 
 <p align="right">Tavis Ormandy (taviso)</p>
 
@@ -72,7 +72,7 @@ first execution, our flags: 0000000000
 After 473381 tests, our XINUSE was 0000000002 vs 0000000000
 ```
 
-However, if the other process does not use AVX, then the average number of
+If the other process does not use AVX, then the average number of
 tests required does not reduce. This implies there may be some way of
 determining what other processes scheduled on the same core are doing.
 
