@@ -193,3 +193,11 @@ In conclusion, we discovered two confirmed half Spectre-v1 gadgets and quite a f
 ## Acknowledgements
 We would like to thank Adam Krasuski and Rodrigo Branco (BSDaemon) for their contribution to our research. Their help and support was invaluable, and we could not have completed this project without them. We would also like to thank the Linux kernel security team for their quick and good collaboration. They were always responsive and helpful, and we are grateful for their assistance.
 
+## References
+
+[^1]: “KASPER: Scanning for Generalized Transient Execution Gadgets in the Linux Kernel”, Link: https://download.vusec.net/papers/kasper_ndss22.pdf
+[^2]: CodeQL, Link: https://codeql.github.com/
+[^3]: MDS command line configuration, Link: https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/mds.html#mitigation-control-on-the-kernel-command-line
+[^4]: RIDL: Rogue In-Flight Data Load, Link: https://mdsattacks.com/files/ridl.pdf
+[^5]: Assessing the Security of Hardware-Assisted Isolation Techniques, Link: https://d-nb.info/120658873X/34
+[^6]: https://docs.kernel.org/admin-guide/hw-vuln/spectre.html#id1
