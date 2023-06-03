@@ -1,8 +1,8 @@
 # Finding Gadgets for CPU Side-Channels with Static Analysis Tools
-<div style="align:right">
+<p align="right">
 Jordy Zomer<br/>
 Alexandra Sandulescu
-</div>
+</p>
 
 ## About
 We have recently begun research on using static analysis tools to find Spectre-v1 gadgets. During this research, we discovered two gadgets, one in `do_prlimit` (CVE-2023-0458) and one in `copy_from_user` (CVE-2023-0459). In this research document, we will explain these issues and how we found them.
