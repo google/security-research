@@ -62,7 +62,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
   * Currently, there are two instances available, with kernel versions 5.10 and 5.15 respectively. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
-  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via #kernelctf-announcements).
+  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e)).
 
   * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
 
@@ -355,7 +355,7 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our #kernelctf-announcements Discord channel.
+We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e) Discord channel.
 
 ## Non-kernel vulnerabilities
 
