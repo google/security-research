@@ -107,7 +107,7 @@ If the same vulnerability is fixed in multiple patch commits (e.g. in commit A i
 
 The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
 
-If you are unsure about eligibility, contact us on the #kernelctf Discord channel before making the submission.
+If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/A3qZcyaZ69) before making the submission.
 
 # Submission process
 
@@ -131,23 +131,23 @@ The purpose of this additional stage is to make sure the vulnerability details a
 
 In this stage:
 
-  1. Exploit the bug and capture the flag from the target environment (the flag is a proof of successful exploitation).
+  0. Exploit the bug and capture the flag from the target environment (the flag is a proof of successful exploitation).
 
      * The latest LTS and mitigation environments are not shared, you don't have to worry about others stealing your 0-day. Do not exploit the (shared) COS instances in this stage.
 
-  2. Compress the exploit and its source code as a .tar.gz file and calculate its SHA256 checksum.
+  1. Compress the exploit and its source code as a .tar.gz file and calculate its SHA256 checksum.
 
      * Save this exact file, you will need to send us this later.
 
-  3. Submit the flag and the hash via this form with the additional details requested. (TODO: link form)
+  2. Submit the flag and the hash via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
 
-  4. Report the vulnerability to security@kernel.org within 7 days of the first form submission.
+  3. Report the vulnerability to security@kernel.org within 7 days of the first form submission.
 
      * Note: A submission will be considered ineligible if it turns out that this requirement was not respected.
 
-  5. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+  4. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
 
      * Use the same email address in the `Reported-By` tag as you use for the form submission
 
@@ -155,9 +155,9 @@ In this stage:
 
      * If it is unclear who reported the bug, then the 0-day bonus can be split (multiple reporters), reduced, invalidated or the 0-day submission protection can be lost at our discretion.
 
-  6. Wait for the patch to land in a release candidate on the mainline tree (and tagged in Git), or committed on a stable tree.
+  5. Wait for the patch to land in a release candidate on the mainline tree (and tagged in Git), or committed on a stable tree.
 
-  7. Modify the form within 7 days by following the previously saved link and fill out the extra details as described below in the 1-day section.
+  6. Modify the form within 7 days by following the previously saved link and fill out the extra details as described below in the 1-day section.
 
      * If the 7-day deadline is missed, then the first stage 0-day protection expires and other 1-day submissions can take priority over this submission (which makes this submission a duplicate and thus ineligible for reward).
 
@@ -165,9 +165,11 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
 ## 1-day submissions
 
-  1. Submit all requested vulnerability details (without exploitation details) via this form.
+  0. Exploit the bug and capture the flag from the target environment (the flag is a proof of successful exploitation).
 
-  2. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/).
+  1. Submit the requested vulnerability details via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) (without including additional details on the exploitation technique for now).
+
+  2. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/) (see tips below).
 
   3. Wait for us to publish the CVE or publish the vulnerability details yourself on [oss-sec](https://seclists.org/oss-sec/).
 
@@ -215,21 +217,21 @@ We only process submissions after the exploit is public (and we can only issue r
 
 If you publish sooner than 30 days, you won't get the reward faster. If you want to delay the publication (disclose later than 30 days), you could do that, but you would get the money later (we want to encourage you to publish the exploit details sooner than later).
 
-The above is about the exploit itself, not the vulnerability. We automatically share some limited vulnerability details of the submissions on our [public submission spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml), as a CVE, and as soon as you submit the vulnerability details via the form.
+The above is about the exploit itself, not the vulnerability. We automatically share some limited vulnerability details of the submissions on our [public submission spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml?gid=2095368189), as a CVE, and as soon as you submit the vulnerability details via the form.
 
 ## Exploit PR file structure
 
-The submission should be put into the `pocs/linux/kernelctf/submissions/&lt;cve>_&lt;targets>/` folder within the <code>[security-research repo](https://github.com/google/security-research/)</code>, where:
+The submission should be put into the `pocs/linux/kernelctf/<cve>_<targets>/` folder within the <code>[security-research repo](https://github.com/google/security-research/)</code>, where:
 
   * `cve` is the CVE number of the vulnerability in the format `CVE-yyyy-NNNNN`
 
   * `<targets>` is the list of targets separated by underscore (`_`)
 
-    * Valid target names: `lts-6.1`, `mitigation-6.1`, `cos-5.15`, `cos-5.10`
+    * Valid target names: `lts`, `mitigation`, `cos`
 
   * If there is a conflicting submission (e.g. you are only submitting a novel technique), then append `_2` (or `_3`, etc.) after the directory name.
 
-For example: `pocs/linux/kernelctf/submissions/CVE-2023-1872_lts-6.1_cos-5.15/`.
+For example: `pocs/linux/kernelctf/CVE-2023-1872_lts_cos/`.
 
 The structure of this submission folder should be:
 
@@ -247,25 +249,24 @@ The structure of this submission folder should be:
 
   * `docs/exploit.md`
 
-    * Required, description of how the exploits work. If exploits are too different, then it can also be put next to exploits. Can include novelty claims.
+    * Required, description of how the exploits work. If exploits are too different, then it can also be put next to exploits.
 
   * `docs/novel-techniques.md`
 
-    * Optional, description of novel technique (can also be included in exploit.md).
+    * Only required if submission contains novel technique(s). Contains the description of the techniques.
 
   * `exploit/mitigation-6.1/`<br>
-    `exploit/lts-6.1/`<br>
-    `exploit/cos-5.10/`<br>
-    `exploit/cos-5.15/`<br>
+    `exploit/lts-6.1.x/`<br>
+    `exploit/cos-(93|97|101|105|...)-xxxxx.yyy.zz/`
 
     * `exploit.c`
        * Required, source code of the exploit.
 
     * `exploit`
        * Required, compiled exploit which stole the flag.
-       
+
     * `Makefile`
-       * Required, includes target (`all`) to compile `exploit.c` into `exploit` and target (`run`) to run the exploit on the live instance (which steals the flag).
+       * Required, includes target (`exploit`) to compile `exploit.c` into `exploit` and target (`run`) to run the exploit on the live instance (which steals the flag).
 
 You can add additional files (e.g. images for writeup or supporting libraries for the exploit). The exploit can be split into multiple files, although we prefer if it is kept as a single `.c` file.
 
