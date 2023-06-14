@@ -1,6 +1,4 @@
-# kernelCTF rules (draft)
-
-**Note: these rules will only be in effect when the official announcement is made on the [Google Security Blog](https://security.googleblog.com/) and the (draft) tag is removed from the title.**
+# kernelCTF rules
 
 kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rules/6625378258649088/google-and-alphabet-vulnerability-reward-program-vrp-rules) and is focused on making exploiting Linux kernel vulnerabilities harder by inviting security researchers to demonstrate their exploitation techniques on 0-day and 1-day vulnerabilities in various kernel versions. This includes the kernel version with our experimental mitigations; we'd like to see if and how researchers can bypass these mitigations.
 
