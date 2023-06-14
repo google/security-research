@@ -70,7 +70,7 @@
             "required": true,
             "items": {
                 "type": "object",
-                "required": ["environment"],
+                "required": ["environment", "stability_notes"],
                 "properties": {
                     "environment": {
                         "type": "string",
@@ -81,6 +81,14 @@
                         "type": "array",
                         "uniqueItems": true,
                         "items": { "enum": ["userns", "io_uring"] }
+                    },
+                    "requires_separate_kaslr_leak": {
+                        "type": "boolean",
+                        "description": "Whether the exploit requires a separate KASLR leak or KASLR bruteforce."
+                    },
+                    "stability_notes": {
+                        "type": "string",
+                        "description": "Notes on the stability of the exploit. How percentage the exploit can get the flag or how many times needs to be run on average to get the flag (e.g. 90%, 50%, or needs to be run 10 times to get the flag once)."
                     }
                 }
             }
