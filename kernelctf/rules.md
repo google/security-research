@@ -181,7 +181,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
 ### Tips on using the Google Bughunter's website
 
-  1. Go to https://bughunters.google.com/report/vrp
+  1. Go to [https://bughunters.google.com/report/vrp](https://bughunters.google.com/report/vrp)
 
   2. Sign in (this helps us identify you and send you a reward)
 
@@ -221,7 +221,7 @@ The above is about the exploit itself, not the vulnerability. We automatically s
 
 ## Exploit PR file structure
 
-The submission should be put into the `pocs/linux/kernelctf/<cve>_<targets>/` folder within the <code>[security-research repo](https://github.com/google/security-research/)</code>, where:
+The submission should be put into the `pocs/linux/kernelctf/<cve>_<targets>/` folder within the [security-research repo](https://github.com/google/security-research/), where:
 
   * `cve` is the CVE number of the vulnerability in the format `CVE-yyyy-NNNNN`
 
@@ -357,6 +357,8 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 ## Program change notifications and communication
 
 We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e) Discord channel.
+
+If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/A3qZcyaZ69) Discord channel.
 
 ## Non-kernel vulnerabilities
 
