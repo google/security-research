@@ -42,7 +42,7 @@ Only exploits which clearly bypass [our mitigations](https://github.com/thejh/li
 
 #### Reward
 
-  * $20.000
+  * $21.000
 
 ### 3. Exploits for COS instances
 
