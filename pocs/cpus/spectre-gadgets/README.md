@@ -7,7 +7,7 @@ Alexandra Sandulescu
 ## About
 We have recently begun research on using static analysis tools to find Spectre-v1 gadgets. During this research, we discovered two gadgets, one in `do_prlimit` (CVE-2023-0458) and one in `copy_from_user` (CVE-2023-0459). In this writeup, we explain these issues and how we found them.
 ## Details
-Finding useful gadgets is one of the challenges[^1] in (CPU) side-channel exploitation. We started looking at Spectre-v1 gadgets because there is no comprehensive mitigation for such gadgets, and the current solution is to manually remove them from the kernel code[^6].
+Finding useful gadgets is one of the challenges[^1] in (CPU) side-channel exploitation. We started looking at Spectre-v1 gadgets because there is no comprehensive mitigation for such gadgets, and the current solution is to manually remove them from the kernel code[^5].
 
 There are a variety of ways to find these issues, but we wanted to explore CodeQL. CodeQL[^2] is a query language developed by GitHub to query a semantic analysis engine for static code analysis. In CodeQL, code and relationships between its elements are represented in a database. Security vulnerabilities, bugs, and other issues are represented as the results of queries that may be executed on code-retrieved databases. Queries that discover potential vulnerabilities display the outcome in the source file. As a result, it is a tremendously strong tool for purposes such as variant analysis and the like. This paper assumes some familiarity with CodeQL. See https://codeql.github.com/docs/writing-codeql-queries/ql-tutorials/ for an introduction.
 
@@ -188,7 +188,7 @@ The problem was solved by adding a call to barrier_nospec after the access_ok ch
 ### Verification
 We verified that both gadgets can be triggered speculatively by sending a cache signal to the userspace process (adversary). We simplified the tests through a patch that adds one more parameter representing the “probe-variable” which is a userspace pointer. We flush the probe prior to calling the function containing the gadget and subsequently speculatively access the probe as part of the gadget execution. We repeatedly call the respective syscall from userspace with a valid branch operand that exercises the code path containing the controlled dereference with a valid pointer. When an uncached invalid branch operand is passed, the CPU speculates the same code path which eventually accesses the probe variable after the arbitrary pointer dereference. We consider the gadget to be exploitable if the probe access-time falls below a given threshold, indicating that the speculation window is large enough (this could vary on different systems) to fit the arbitrary dereference.
 
-For simplifying the verification, we disabled SMAP. Furthermore we explored the exploitability of the gadgets with  SMAP enabled [^7] but we concluded that `stac` prevents the speculative memory dereference on the mispredicted path.
+For simplifying the verification, we disabled SMAP. Furthermore we explored the exploitability of the gadgets with  SMAP enabled [^6] but we concluded that `stac` prevents the speculative memory dereference on the mispredicted path.
 
 ## Conclusion
 In conclusion, we discovered two confirmed half Spectre-v1 gadgets and quite a few yet unverified results (that will be addressed in a future report) in the Linux kernel. As shown in previous research on this topic, the gadgets can lead to cross privilege arbitrary memory read. As a result of our report, the Linux security team mitigated the two gadgets in the most recent Linux kernel version. Although we believe there is still much work to be done, we are excited to continue our research on using static analysis techniques to identify (half) Spectre-v1 gadgets since we believe this is a promising approach for discovering and fixing these problems. Furthermore, we are welcoming feedback and are eager to discuss and compare different approaches for discovering gadgets.
@@ -201,6 +201,5 @@ We would like to thank Adam Krasuski and Rodrigo Branco (BSDaemon) for their con
 [^2]: CodeQL, Link: https://codeql.github.com/
 [^3]: MDS command line configuration, Link: https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/mds.html#mitigation-control-on-the-kernel-command-line
 [^4]: RIDL: Rogue In-Flight Data Load, Link: https://mdsattacks.com/files/ridl.pdf
-[^5]: Assessing the Security of Hardware-Assisted Isolation Techniques, Link: https://d-nb.info/120658873X/34
-[^6]: https://docs.kernel.org/admin-guide/hw-vuln/spectre.html#id1
-[^7]: https://github.com/google/security-research/security/advisories/GHSA-m7j5-797w-vmrh
+[^5]: https://docs.kernel.org/admin-guide/hw-vuln/spectre.html#id1
+[^6]: https://github.com/google/security-research/security/advisories/GHSA-m7j5-797w-vmrh
