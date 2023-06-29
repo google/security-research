@@ -105,6 +105,20 @@ If the same vulnerability is fixed in multiple patch commits (e.g. in commit A i
 
 The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
 
+### Vulnerabilities used in kCTF VRP
+
+1. If a vulnerability was exploited against any target in kCTF VRP then it's not eligible against kernelCTF's LTS target.
+
+   * Check on the "kCTF VRP" tab of the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) that none of the "Link to the patch" fields point to the vulnerability.
+
+2. If a vulnerability was exploited against any GKE target in kCTF VRP then it's not eligible against kernelCTF's COS targets.
+
+   * If a vulnerability was exploited against a GKE target then the "kCTF VRP" tab of the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) contains a flag with the `kctf-` or `full-chain-` prefix.
+
+3. If a vulnerability was exploited against kCTF VRP's mitigation target then it's not eligible against kernelCTF's mitigation target.
+
+   * If a vulnerability was exploited against a mitigation target then the "kCTF VRP" tab of the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) contains a flag which contains the `mitigation` substring.
+
 If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/A3qZcyaZ69) before making the submission.
 
 # Submission process
