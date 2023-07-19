@@ -41,6 +41,7 @@ security vulnerabilities.
 | 2021 | CVE-2021-22555: Turning \x00\x00 into 10000$ | [CVE-2021-22555](https://github.com/google/security-research/security/advisories/GHSA-xxx5-8mvq-3528) | [Write-up](https://google.github.io/security-research/pocs/linux/cve-2021-22555/writeup.html), [PoC](pocs/linux/cve-2021-22555)
 | 2021 | Linux: KVM VM_IO\|VM_PFNMAP vma mishandling | [CVE-2021-22543](https://github.com/google/security-research/security/advisories/GHSA-7wq5-phmq-m584) | [PoC](pocs/linux/kvm_vma)
 | 2021 | BleedingTooth: Linux Bluetooth Zero-Click Remote Code Execution | [CVE-2020-24490](https://github.com/google/security-research/security/advisories/GHSA-ccx2-w2r4-x649), [CVE-2020-12351](https://github.com/google/security-research/security/advisories/GHSA-h637-c88j-47wq), [CVE-2020-12352](https://github.com/google/security-research/security/advisories/GHSA-7mh3-gq28-gfrq) | [Write-up](https://google.github.io/security-research/pocs/linux/bleedingtooth/writeup.html), [PoC](pocs/linux/bleedingtooth)
+| 2023 | Linux: eBPF Path Pruning gone wrong | [CVE-2023-2163](https://github.com/google/security-research/security/advisories/GHSA-j87x-j6mh-mv8v) | [PoC](pocs/linux/cve-2023-2163)
 
 # Licence & Patents
 
