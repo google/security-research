@@ -181,7 +181,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   1. Submit the requested vulnerability details via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) (without including additional details on the exploitation technique for now).
 
-  2. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/) (see tips below).
+  2. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/) (please follow the process described below).
 
   3. Wait for us to publish the CVE or publish the vulnerability details yourself on [oss-sec](https://seclists.org/oss-sec/).
 
@@ -191,13 +191,13 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   5. Make sure that the PR is merged (this is a requirement to get a reward).
 
-### Tips on using the Google Bughunter's website
+### Google Bughunter's website submission process
 
   1. Go to [https://bughunters.google.com/report/vrp](https://bughunters.google.com/report/vrp)
 
   2. Sign in (this helps us identify you and send you a reward)
 
-  3. Put a summary of the vulnerability in the report description field – you can mention the affected targets, the affected subsystem, the cause and type of vulnerability (e.g. `Refcount issue leading to UAF in io_uring affecting COS 5.15 and Linux 6.1`)
+  3. Put a summary of the vulnerability in the report description field – please mention "kernelCTF", the submission ID ("expNN") listed on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml), the affected targets, the affected subsystem, the cause and type of vulnerability (e.g. `kernelCTF exp45: Refcount issue leading to UAF in io_uring affecting COS 5.15 and Linux 6.1`)
 
   4. Enter `Linux Kernel` into the affected product / website field, select the `My product is not listed in the product list` checkbox.
 
@@ -207,7 +207,9 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * Do not include the exploitation details here.
 
-     * You can reuse the contents of your `vulnerability.md` if it already exists   (see the "Exploit PR file structure" section).
+     * Put "kernelCTF" and the submission ID here again (e.g. "kernelCTF exp45")
+
+     * You can reuse the contents of your `vulnerability.md` if it already exists (see the "Exploit PR file structure" section).
 
      * You can just enter "`unprivileged user can get root`" into the attack scenario (bottom) field.
 
