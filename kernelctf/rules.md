@@ -207,9 +207,9 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * Do not include the exploitation details here.
 
-     * Put "kernelCTF" and the submission ID here again (e.g. "kernelCTF exp45")
+     * Put "kernelCTF" and the submission ID here again (e.g. "kernelCTF exp45").
 
-     * Make sure that the patch commit, CVE (optionally if known 1-day) and the exact target (e.g. `cos-93-16623.402.40`) are included
+     * Make sure that the patch commit, CVE (optionally, if it is already known) and the exact target(s) (e.g. `cos-93-16623.402.40`) are included.
 
      * You can reuse the contents of your `vulnerability.md` if it already exists (see the "Exploit PR file structure" section).
 
