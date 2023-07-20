@@ -209,19 +209,21 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * Put "kernelCTF" and the submission ID here again (e.g. "kernelCTF exp45")
 
+     * Make sure that the patch commit, CVE (optionally if known 1-day) and the exact target (e.g. `cos-93-16623.402.40`) are included
+
      * You can reuse the contents of your `vulnerability.md` if it already exists (see the "Exploit PR file structure" section).
 
      * You can just enter "`unprivileged user can get root`" into the attack scenario (bottom) field.
 
      * If you'd like to attach images or a PoC (triggering the vulnerability without actually exploiting it), you can attach them as a tar.gz file here.
 
-  7. Select `Privilege Escalation` as the Vulnerability Type
+  8. Select `Privilege Escalation` as the Vulnerability Type
 
-  8. Select `Yes, this vulnerability is public or known to third parties` (as the patch is already out).
+  9. Select `Yes, this vulnerability is public or known to third parties` (as the patch is already out).
 
-  9. You can optionally donate twice the reward to charity if you select "Donate to charity and double my reward."
+  10. You can optionally donate twice the reward to charity if you select "Donate to charity and double my reward."
 
-  10. Submit your report.
+  11. Submit your report.
 
 ## Note about making the exploit public
 
