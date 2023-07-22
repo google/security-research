@@ -13,8 +13,6 @@ after 90 days, or sooner if the vendor releases a fix.
 You can read up on our full policy at:
 https://www.google.com/about/appsecurity/.
 
-This is not an official Google product.
-
 ## Advisories
 
 The disclosure of vulnerabilities are all in the form of security
