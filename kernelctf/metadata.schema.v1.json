@@ -1,0 +1,97 @@
+{
+    "$id": "https://google.github.io/security-research/kernelctf/metadata.schema.v1.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "kernelCTF submission metadata",
+    "type": "object",
+    "required": ["$schema", "submission_id", "vulnerability", "exploits"],
+    "properties": {
+        "$schema": {
+            "const": "https://google.github.io/security-research/kernelctf/metadata.schema.v1.json"
+        },
+        "submission_id": {
+            "pattern": "^exp[0-9]+$",
+            "description": "Identifier of the submission. Can be found on the public kernelCTF spreadsheet (https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml?gid=2095368189) after a valid flag was submitted via the submission form."
+        },
+        "vulnerability": {
+            "required": ["patch_commit", "cve", "affected_versions", "requirements"],
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Short, one line summary of the vulnerability"
+                },
+                "patch_commit": {
+                    "pattern": "^https://git.kernel.org/pub/scm/linux/kernel/git/(torvalds|stable)/linux.git/commit/"
+                },
+                "cve": {
+                    "pattern": "^CVE-[0-9]{4}-[0-9]{4,5}$"
+                },
+                "affected_versions": {
+                    "description": "Linux kernel versions affected by the vulnerability, inclusive range.",
+                    "oneOf": [
+                        {
+                            "pattern": "^[0-9]+(\\.[0-9]+)+(-rc[0-9]+)? - [0-9]+(\\.[0-9]+)+(-rc[0-9]+)?$"
+                        },
+                        {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": {
+                                "pattern": "^[0-9]+(\\.[0-9]+)+(-rc[0-9]+)? - [0-9]+(\\.[0-9]+)+(-rc[0-9]+)?$"
+                            }
+                        }
+                    ]
+                },
+                "requirements": {
+                    "required": ["attack_surface", "capabilities", "kernel_config"],
+                    "properties": {
+                        "attack_surface": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": { "enum": ["userns", "io_uring"] }
+                        },
+                        "capabilities": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": { "pattern": "^CAP_" }
+                        },
+                        "kernel_config": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": { "pattern": "^CONFIG_" }
+                        }
+                    }
+                },
+                "syzkaller_reference": {
+                    "pattern": "^https://syzkaller.appspot.com/"
+                }
+            }
+        },
+        "exploits": {
+            "type": "array",
+            "required": true,
+            "items": {
+                "type": "object",
+                "required": ["environment", "stability_notes"],
+                "properties": {
+                    "environment": {
+                        "type": "string",
+                        "required": true,
+                        "pattern": "^((lts-[0-9]+.[0-9]+(\\.[0-9]+)?)|(mitigation-[0-9]+\\.[0-9]+(\\.[0-9]+)?)|(cos-[0-9]{2,}-[0-9]+\\.[0-9]+\\.[0-9]+))$"
+                    },
+                    "uses": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": { "enum": ["userns", "io_uring"] }
+                    },
+                    "requires_separate_kaslr_leak": {
+                        "type": "boolean",
+                        "description": "Whether the exploit requires a separate KASLR leak or KASLR bruteforce."
+                    },
+                    "stability_notes": {
+                        "type": "string",
+                        "description": "Notes on the stability of the exploit. How percentage the exploit can get the flag or how many times needs to be run on average to get the flag (e.g. 90%, 50%, or needs to be run 10 times to get the flag once)."
+                    }
+                }
+            }
+        }
+    }
+}
