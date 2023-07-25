@@ -36,7 +36,7 @@ static uint64_t maxleak;
 
 static bool asciionly = true;
 static bool secretonly = false;
-static bool blind = false;
+static bool redact = false;
 
 // Minor variations in alignment seem to make the exploit work better on
 // different SKUs. These are some variants to try and see what works best.
@@ -102,10 +102,10 @@ static void * thread_leak_consumer(void *param)
 
             // Escape any confusing characters
             if (*s == '"' || *s == '\\')
-               if (!blind) fputc('\\', stdout);
+               if (!redact) fputc('\\', stdout);
             // Print normal ascii.
             if (isalnum(*s) || ispunct(*s)) {
-                if (!blind) fputc(*s, stdout); else fputc('X',stdout);
+                if (!redact) fputc(*s, stdout); else fputc('X',stdout);
             } else if (isspace(*s)) {
                 fputc(' ', stdout);
             } else {
@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
     pattern   = 0;        // String to search for.
     cores     = 0;        // Which cpus to run on.
 
-    while ((opt = getopt(argc, argv, "r:qbp:sat:n:hH:c:v:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "r:qRp:sat:n:hH:c:v:m:")) != -1) {
         switch (opt) {
             case 'v': variant = atoi(optarg);
                       break;
@@ -282,7 +282,7 @@ int main(int argc, char **argv) {
                       break;
             case 'q': quiet = true;
                       break;
-            case 'b': blind = true;
+            case 'R': redact = true;
                       break;
             case 'r': cores = optarg;
                       break;
