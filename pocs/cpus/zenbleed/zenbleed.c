@@ -105,7 +105,8 @@ static void * thread_leak_consumer(void *param)
                if (!redact) fputc('\\', stdout);
             // Print normal ascii.
             if (isalnum(*s) || ispunct(*s)) {
-                if (!redact) fputc(*s, stdout); else fputc('X',stdout);
+                if (!redact) fputc(*s, stdout); 
+                  else fputc('X',stdout);
             } else if (isspace(*s)) {
                 fputc(' ', stdout);
             } else {
