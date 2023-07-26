@@ -82,7 +82,7 @@ void * pattern_leak_consumer(void *param)
             }
         }
 
-        fprintf(stdout, "%ld %s", matchlen, matchptr);
+        fprintf(stdout, "%.*s", matchlen, matchptr);
 
         // If the match is bigger than our pattern size, we skip to the end of it.
         if (matchlen > patlen) {
