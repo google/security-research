@@ -29,6 +29,7 @@ We have confirmed this bug is reproducible on at least the following SKUs:
 - `AMD Ryzen Threadripper PRO 3945WX 12-Cores`
 - `AMD Ryzen 7 PRO 4750GE with Radeon Graphics`
 - `AMD Ryzen 7 5700U`
+- `AMD Ryzen 7 4800h`
 - `AMD EPYC 7B12`
 
 In general, we believe all Zen 2 processors are affected, including "Rome"
