@@ -233,7 +233,7 @@ static void print_help()
     logmsg("   -t N    Give up after this many seconds.");
     logmsg("   -n N    Set nice level, can improve results on some systems.");
     logmsg("   -a      Print all data, not just ASCII strings.");
-    logmsg("   -b      Redact output data with X's.");
+    logmsg("   -R      Redact output data with X's.");
     logmsg("   -s      Only print the magic hammer value (used for benchmarking).");
     logmsg("   -p STR  Pattern mode, try to continue string STR based on sampling leaked values.");
     logmsg("   -q      Quiet, reduce verbosity.");
@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
     pattern   = 0;        // String to search for.
     cores     = 0;        // Which cpus to run on.
 
-    while ((opt = getopt(argc, argv, "r:qbp:sat:n:hH:c:v:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "r:qRp:sat:n:hH:c:v:m:")) != -1) {
         switch (opt) {
             case 'v': variant = atoi(optarg);
                       break;
