@@ -209,7 +209,7 @@ static pthread_t spawn_thread_core(void *(*start_routine)(void *), void *restric
     if (pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &set) != 0)
         err(EXIT_FAILURE, "failed to lock thread to specified core %d", cpu);
     if (pthread_create(&tid, &attr, start_routine, arg) != 0)
-        err(EXIT_FAILURE, "failed to start thread on specifed code %d", cpu);
+        err(EXIT_FAILURE, "failed to start thread on specified code %d", cpu);
     pthread_attr_destroy(&attr);
     return tid;
 }
