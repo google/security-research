@@ -1,12 +1,12 @@
 {
-    "$id": "https://google.github.io/security-research/kernelctf/metadata.schema.v1.json",
+    "$id": "https://google.github.io/security-research/kernelctf/metadata.schema.v2.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "kernelCTF submission metadata",
     "type": "object",
     "required": ["$schema", "submission_id", "vulnerability", "exploits"],
     "properties": {
         "$schema": {
-            "const": "https://google.github.io/security-research/kernelctf/metadata.schema.v1.json"
+            "const": "https://google.github.io/security-research/kernelctf/metadata.schema.v2.json"
         },
         "submission_ids": {
             "description": "Identifier(s) of the submission(s). Can be found on the public kernelCTF spreadsheet (https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml?gid=2095368189) after a valid flag was submitted via the submission form.",
