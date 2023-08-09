@@ -55,7 +55,7 @@ Only the first submission is eligible per COS version unless it is part of a val
   * $21.000 if the exploit does not use user namespaces and io\_uring
 
   * $10.500 if the exploit uses user namespaces or io\_uring
-    
+
     * This reward is based on whether the exploit works on GKE AutoPilot or not. AutoPilot currently does not enable unprivileged user namespaces and they are also considering disabling io\_uring.
 
   * Currently, there are two instances available, with kernel versions 5.10 and 5.15 respectively. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
@@ -145,7 +145,7 @@ In this stage:
 
   0. Exploit the bug and capture the flag from the target environment (the flag is a proof of successful exploitation).
 
-     * The latest LTS and mitigation environments are not shared, you don't have to worry about others stealing your 0-day. Do not exploit the (shared) COS instances in this stage.
+     * The environments are not shared but running in separate VMs, so you don't have to worry about others stealing your 0-day.
 
   1. Compress the exploit and its source code as a .tar.gz file and calculate its SHA256 checksum.
 
