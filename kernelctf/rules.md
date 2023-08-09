@@ -253,7 +253,7 @@ The structure of this submission folder should be:
 
   * `original.tar.gz`
 
-    * Only required for 0-day submissions, contains the original exploit which was hashed at the initial stage submission.
+    * Required, contains the original exploit. Its hash must match the one submitted initially via the form (this hash cannot be modified later).
 
   * `metadata.json`
 
