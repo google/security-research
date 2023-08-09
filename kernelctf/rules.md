@@ -32,7 +32,7 @@ This instance uses the latest LTS (currently 6.1) with [COS kernel config](https
 
   * 0-day bonus (+$20.000)
 
-    * Criteria: you are exploiting a non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below)
+    * Criteria: you are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below)
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
@@ -125,9 +125,9 @@ If you are unsure about eligibility, contact us on the [#kernelctf Discord chann
 
 _Note: Minor details of the submission process may change from time to time, please make sure you check this page again for updates when you make a new submission._
 
-Submissions can target 0-day bugs and 1-day bugs.
+Submissions can target 0-day and 1-day bugs.
 
-## 0-day submissions
+## Non-patched and 0-day submissions
 
 We consider a bug 0-day if at the time of the submission:
 
@@ -137,7 +137,7 @@ We consider a bug 0-day if at the time of the submission:
 
     * Note: We may still consider a bug 0-day at our discretion (e.g. although the bug was disclosed by Syzkaller more than 30 days ago, there is no fix and you convince the maintainers to fix the bug)
 
-If the submission targets a 0-day bug, then the submission process has one additional initial stage in comparison with 1-day submissions.
+If the submission targets a bug which is not patched yet (0-day or 1-day without a patch), then the submission process has one additional initial stage.
 
 The purpose of this additional stage is to make sure the vulnerability details are not shared with us before the patch is released but to still provide a 7-days long "protection window" for 0-day vulnerability founders in case some else makes a 1-day submission for the same vulnerability before the 0-day founder.
 
@@ -175,7 +175,7 @@ In this stage:
 
 A submission will not be eligible as a 0-day submission if the vulnerability details were reported somewhere (e.g. Pwn2Own) other than [security@kernel.org](mailto:security@kernel.org).
 
-## 1-day submissions
+## Already patched, 1-day submissions
 
   0. Exploit the bug and capture the flag from the target environment (the flag is a proof of successful exploitation).
 
