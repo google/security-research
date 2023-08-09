@@ -161,7 +161,7 @@ In this stage:
 
   4. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
 
-     * Use the same email address in the `Reported-By` tag as you use for the form submission
+     * Use the same email address in the `Reported-By` tag as you use for the form submission or in the "Email address used in Reported-By tag" field of the form.
 
      * If there is no `Reported-By` tag on a patch commit, then a 0-day submission is eligible only if this is the first 0-day submission for that patch commit (based on the first stage submission date).
 
