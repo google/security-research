@@ -1,0 +1,205 @@
+name: kernelCTF PR check
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+    paths: [pocs/linux/kernelctf/**]
+  workflow_dispatch:
+    inputs:
+      prNumber:
+        description: 'PR number'
+        type: number
+        required: true
+permissions: {}
+env:
+  PR_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', github.event.inputs.prNumber) || github.event.pull_request.head.sha }}
+jobs:
+  structure_check:
+    # if labeling triggered the job then only run in case of the "recheck" label
+    if: github.event.action != 'labeled' || github.event.label.name == 'recheck'
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.check_submission.outputs.targets }}
+      submission_dir: ${{ steps.check_submission.outputs.submission_dir }}
+    steps:
+      - run: pip install -U jsonschema
+
+      - name: Checkout repo content
+        uses: actions/checkout@v3
+
+      - name: Checkout PR content
+        uses: actions/checkout@v3
+        with:
+          path: pr
+          ref: ${{ env.PR_REF }}
+          fetch-depth: 0
+
+      - id: check_submission
+        name: Check submission
+        working-directory: pr
+        run: |
+          echo "::stop-commands::$(uuidgen)"
+          ../kernelctf/check-submission.py ${{ github.event.pull_request.base.sha }}
+
+  exploit_build:
+    runs-on: ubuntu-latest
+    needs: structure_check
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
+      fail-fast: false # do not cancel other targets
+    env:
+      RELEASE_ID: ${{ matrix.target }}
+      EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
+    steps:
+      - name: Checkout PR content
+        uses: actions/checkout@v3
+        with:
+          path: pr
+          ref: ${{ env.PR_REF }}
+          fetch-depth: 0
+
+      - name: List files
+        run: find .
+
+      - name: Backup original exploit
+        run: mv $EXPLOIT_DIR/exploit ./
+
+      - name: Build exploit
+        id: build_exploit
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+          if make -n prerequisites; then
+            make prerequisites
+          fi
+          make exploit
+
+      - name: Upload exploit (newly compiled)
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: exploit_${{ env.RELEASE_ID }}
+          path: ${{ env.EXPLOIT_DIR }}/exploit
+          if-no-files-found: error
+
+      - name: Upload exploit (original, build failed)
+        if: failure() && steps.build_exploit.outcome == 'failure'
+        uses: actions/upload-artifact@v3
+        with:
+          name: exploit_${{ env.RELEASE_ID }}
+          path: ./exploit
+          if-no-files-found: error
+
+      - name: Summarize result (success)
+        if: success()
+        run: printf '✅ Exploit was built successfully.\n\nIt can be found under the artifacts (`exploit_${{ env.RELEASE_ID }}`).\n' >> $GITHUB_STEP_SUMMARY
+
+      - name: Summarize result (failure)
+        if: failure() && steps.build_exploit.outcome == 'failure'
+        run: printf '❌ The exploit compilation failed.\n\nPlease fix it.\n\nYou can see the build logs by clicking on `...` here and then on "View job logs". Or by selecting `exploit_build (${{ env.RELEASE_ID }})` under Jobs in the left menubar.\n' >> $GITHUB_STEP_SUMMARY
+
+  exploit_repro:
+    runs-on: ubuntu-latest-m
+    timeout-minutes: 30
+    needs: [structure_check, exploit_build]
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
+      fail-fast: false
+    if: always() && needs.structure_check.result == 'success'
+    env:
+      RELEASE_ID: ${{ matrix.target }}
+      SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
+    steps:
+      - name: Checkout repo content
+        uses: actions/checkout@v3
+
+      - name: Install tools (QEMU, inotify, expect)
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 inotify-tools expect
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download exploit
+        uses: actions/download-artifact@v3
+        with:
+          name: exploit_${{ env.RELEASE_ID }}
+          path: exp/
+
+      - name: Fetch rootfs
+        run: |
+          wget https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v1.img.gz
+          mv rootfs_repro_v1.img.gz rootfs.img.gz
+          gzip -d rootfs.img.gz
+
+      - name: Download bzImage
+        run: |
+          if [ "$RELEASE_ID" == "mitigation-6.1" ]; then RELEASE_ID="mitigation-6.1-v2"; fi
+          wget https://storage.googleapis.com/kernelctf-build/releases/$RELEASE_ID/bzImage
+
+      # ugly hack to make Github Actions UI to show repro logs separately in somewhat readable fashion
+      - id: repro1
+        name: Reproduction (1 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 1
+
+      - id: repro2
+        name: Reproduction (2 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 2
+
+      - id: repro3
+        name: Reproduction (3 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 3
+
+      - id: repro4
+        name: Reproduction (4 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 4
+
+      - id: repro5
+        name: Reproduction (5 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 5
+
+      - id: repro6
+        name: Reproduction (6 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 6
+
+      - id: repro7
+        name: Reproduction (7 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 7
+
+      - id: repro8
+        name: Reproduction (8 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 8
+
+      - id: repro9
+        name: Reproduction (9 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 9
+
+      - id: repro10
+        name: Reproduction (10 / 10)
+        continue-on-error: true
+        run: ./kernelctf/repro.sh 10
+
+      - name: Upload repro QEMU logs as an artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: repro_logs_${{ env.RELEASE_ID }}
+          path: repro_log_*.txt
+
+      - name: Reproduction // Summary
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: |
+          env
+          echo $STEPS >> steps.json
+          ./kernelctf/repro_summary.py ${{ github.run_id }}
