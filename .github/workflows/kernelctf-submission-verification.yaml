@@ -1,6 +1,6 @@
 name: kernelCTF PR check
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
   workflow_dispatch:
@@ -17,6 +17,7 @@ jobs:
     # if labeling triggered the job then only run in case of the "recheck" label
     if: github.event.action != 'labeled' || github.event.label.name == 'recheck'
     runs-on: ubuntu-latest
+    permissions: {}
     outputs:
       targets: ${{ steps.check_submission.outputs.targets }}
       submission_dir: ${{ steps.check_submission.outputs.submission_dir }}
@@ -25,6 +26,8 @@ jobs:
 
       - name: Checkout repo content
         uses: actions/checkout@v3
+        with:
+          ref: master
 
       - name: Checkout PR content
         uses: actions/checkout@v3
@@ -43,6 +46,7 @@ jobs:
   exploit_build:
     runs-on: ubuntu-latest
     needs: structure_check
+    permissions: {}
     strategy:
       matrix:
         target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
@@ -100,6 +104,7 @@ jobs:
   exploit_repro:
     runs-on: ubuntu-22.04-4core
     timeout-minutes: 30
+    permissions: {}
     needs: [structure_check, exploit_build]
     strategy:
       matrix:
@@ -112,6 +117,8 @@ jobs:
     steps:
       - name: Checkout repo content
         uses: actions/checkout@v3
+        with:
+          ref: master
 
       - name: Install tools (QEMU, inotify, expect)
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 inotify-tools expect
