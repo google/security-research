@@ -13,6 +13,7 @@ import hashlib
 PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
 POC_FOLDER = "pocs/linux/kernelctf/"
 EXPLOIT_DIR = "exploit/"
+MIN_SCHEMA_VERSION = 2
 DEBUG = "--debug" in sys.argv
 
 errors = []
@@ -20,13 +21,15 @@ warnings = []
 
 def error(msg):
     global errors
+    msg = msg.replace('\n', '\n    ')
     errors.append(msg)
-    print("\n[!] [ERROR] " + msg.replace('\n', '\n    '))
+    print(f"\n[!] [ERROR] {msg}")
 
 def warning(msg):
     global warnings
+    msg = msg.replace('\n', '\n    ')
     warnings.append(msg)
-    print("\n[!] [WARN] " + msg.replace('\n', '\n    '))
+    print(f"\n[!] [WARN] {msg}")
 
 def fail(msg):
     print("\n[!] [FAIL] " + msg.replace('\n', '\n    '))
@@ -42,8 +45,8 @@ def run(cmd):
 def subdirEntries(files, subdir):
     return list(set([f[len(subdir):].split('/')[0] for f in files if f.startswith(subdir)]))
 
-def formatList(items):
-    return ''.join([f"\n - {item}" for item in items])
+def formatList(items, nl=False):
+    return ('\n' if nl else '').join([f"\n - {item}" for item in items])
 
 def printList(title, items):
     print(f"\n{title}:" + formatList(items))
@@ -116,7 +119,7 @@ printList("Exploit folders", exploitFolders)
 validExploitFolderPrefixes = [f"{t}-" for t in targets] + ["extra-"]
 checkList(exploitFolders, lambda f: any(f.startswith(p) for p in validExploitFolderPrefixes),
     f"The submission folder name (`{subDirName}`) is not consistent with the exploits in the `{EXPLOIT_DIR}` folder. " +
-    f"I expected the subfolders to be prefixed with one of these: [{', '.join(f'`{x}`' for x in validExploitFolderPrefixes)}], " +
+    f"Based on the folder name (`{subDirName}`), the subfolders are expected to be prefixed with one of these: {', '.join(f'`{t}-`' for t in targets)}, " +
     "but this is not true for the following entries: <LIST>. You can put the extra files into a folder prefixed with `extra-`, " + 
     "but try to make it clear what's the difference between this exploit and the others.")
 
@@ -134,18 +137,23 @@ for exploitFolder in exploitFolders:
 with open(f"{submissionFolder}metadata.json", "rt") as f: metadata = json.load(f)
 print("\nMetadata:\n" + json.dumps(metadata, indent=4) + "\n")
 
-schemaUrl = checkRegex(metadata["$schema"], r"^https://google.github.io/security-research/kernelctf/metadata.schema.v\d+.json$",
-                       "The `$schema` field of the `metadata.yaml` file is invalid").group(0)
-if schemaUrl:
-    if DEBUG:
-        with open("metadata.schema.v1.json", "rt") as f: schema = json.load(f)
-    else:
-        schema = json.loads(fetch(schemaUrl))
+schemaVersionM = checkRegex(metadata["$schema"], r"^https://google.github.io/security-research/kernelctf/metadata.schema.v(\d+).json$",
+    "The `$schema` field of the `metadata.json` file is invalid")
+
+if schemaVersionM:
+    schemaVersion = int(schemaVersionM.group(1))
+    if schemaVersion < MIN_SCHEMA_VERSION:
+        error(f"The `metadata.json` schema version (v{schemaVersion}) is not supported anymore, " + "
+            f"please use `metadata.schema.v{MIN_SCHEMA_VERSION}.json`. Verifying file against v{MIN_SCHEMA_VERSION}.")
+        schemaVersion = MIN_SCHEMA_VERSION
+
+    schemaUrl = f"https://google.github.io/security-research/kernelctf/metadata.schema.v{schemaVersion}.json"
+    schema = json.loads(fetch(schemaUrl))
 
     metadataErrors = list(jsonschema.Draft202012Validator(schema).iter_errors(metadata))
     if len(metadataErrors) > 0:
         for err in metadataErrors:
-            error(f"Schema validation of `metadata.json` failed with the following errors: {err}")
+            error(f"Schema validation of `metadata.json` failed with the following error:\n```\n{err}\n```")
 
 submissionIds = metadata.get("submission_ids", None) or metadata["submission_id"]
 if isinstance(submissionIds, str):
@@ -205,13 +213,13 @@ def ghSet(varName, content):
 
 def summary(success, text):
     if warnings:
-        text += "\n\n**Warnings:**\n" + '\n'.join(f" - ⚠️ {x}" for x in warnings)
+        text += "\n\n**Warnings:**\n\n" + '\n\n'.join(f" - ⚠️ {x}" for x in warnings)
 
     ghSet("STEP_SUMMARY", text)
     print(f"\n[+] {text}") if success else fail(text)
 
 if len(errors) > 0:
-    summary(False, f"The file structure verification of the PR failed with the following errors:{formatList(f'❌ {e}' for e in errors)}")
+    summary(False, f"The file structure verification of the PR failed with the following errors:\n{formatList([f'❌ {e}' for e in errors], True)}")
 
 ghSet("OUTPUT", "targets=" + json.dumps([f for f in exploitFolders if not f.startswith("extra-")]))
 ghSet("OUTPUT", f"submission_dir={subDirName}")
