@@ -3,7 +3,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "kernelCTF submission metadata",
     "type": "object",
-    "required": ["$schema", "submission_id", "vulnerability", "exploits"],
+    "required": ["$schema", "submission_ids", "vulnerability", "exploits"],
     "properties": {
         "$schema": {
             "const": "https://google.github.io/security-research/kernelctf/metadata.schema.v2.json"
