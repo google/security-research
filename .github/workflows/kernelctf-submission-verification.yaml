@@ -1,6 +1,6 @@
 name: kernelCTF PR check
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
   workflow_dispatch:
