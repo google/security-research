@@ -200,6 +200,5 @@ jobs:
         env:
           STEPS: ${{ toJSON(steps) }}
         run: |
-          env
           echo $STEPS >> steps.json
           ./kernelctf/repro_summary.py ${{ github.run_id }}
