@@ -143,8 +143,9 @@ schemaVersionM = checkRegex(metadata["$schema"], r"^https://google.github.io/sec
 if schemaVersionM:
     schemaVersion = int(schemaVersionM.group(1))
     if schemaVersion < MIN_SCHEMA_VERSION:
-        error(f"The `metadata.json` schema version (v{schemaVersion}) is not supported anymore, " + "
+        error(f"The `metadata.json` schema version (v{schemaVersion}) is not supported anymore, " +
             f"please use `metadata.schema.v{MIN_SCHEMA_VERSION}.json`. Verifying file against v{MIN_SCHEMA_VERSION}.")
+
         schemaVersion = MIN_SCHEMA_VERSION
 
     schemaUrl = f"https://google.github.io/security-research/kernelctf/metadata.schema.v{schemaVersion}.json"
@@ -153,7 +154,7 @@ if schemaVersionM:
     metadataErrors = list(jsonschema.Draft202012Validator(schema).iter_errors(metadata))
     if len(metadataErrors) > 0:
         for err in metadataErrors:
-            error(f"Schema validation of `metadata.json` failed with the following error:\n```\n{err}\n```")
+            error(f"Schema validation of `metadata.json` failed at the `<root>{err.json_path[1:]}` node with the following error: `{err.message}`")
 
 submissionIds = metadata.get("submission_ids", None) or metadata["submission_id"]
 if isinstance(submissionIds, str):
