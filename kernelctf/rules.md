@@ -20,19 +20,23 @@ This instance uses the latest LTS (currently 6.1) with [COS kernel config](https
 
   * Stability bonus (+$10.000)
 
-    * ~~Criteria: 90% of runs successfully steal the flag~~
+    * Criteria: 90% of runs successfully steal the flag.
 
-    * Currently, all valid submissions receive this bonus (until the infrastructure required to enforcing this requirement is ready)
+    * More precisely, the [exploit_repro Github Action](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) reports `Reliability: 90%` or better in the `Reproduction summary` (after a sane amount of re-runs if needed)
+
+    * If the exploit requires us to provide a KASLR base address, then it is ineligible for the bonus (`requires_separate_kaslr_leak` is true in `metadata.json` file).
+
+    * Valid submissions with `Flag submission time` older than `2023-09-08T00:00:00Z` on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) automatically get the bonus.
 
   * Reduced attack surface bonus (+$20.000)
 
-    * Criteria: Exploit works without using unprivileged user namespaces
+    * Criteria: Exploit works without using unprivileged user namespaces.
 
-    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section)
+    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section).
 
   * 0-day bonus (+$20.000)
 
-    * Criteria: you are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below)
+    * Criteria: You are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below).
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
