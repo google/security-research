@@ -155,6 +155,8 @@ In this stage:
 
      * Save this exact file, you will need to send us this later.
 
+     * Try to keep this file to the minimum necessary, leave out large files like e.g. `vmlinux`, `bzImage` as they can be downloaded separately if needed.
+
   2. Submit the flag and the hash via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
