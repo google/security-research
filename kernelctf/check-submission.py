@@ -193,6 +193,8 @@ for submissionId in submissionIds:
 
             if exploitHash != calculated:
                 error(f"Expected `{archiveFn}` with SHA256 hash of `{exploitHash}`, but the file's checksum is `{calculated}`.")
+            else:
+                print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
 
     flags.extend(publicData["Flags"].strip().split('\n'))
 
@@ -201,7 +203,7 @@ for submissionId in submissionIds:
 
 flagTargets = set([checkRegex(flag, r"kernelCTF\{v1:([^:]+):\d+\}", f"The flag (`{flag}`) is invalid").group(1) for flag in flags])
 if "mitigation-6.1-v2" in flagTargets:
-    flagTargets = flagTargets - set(["mitigation-6.1-v2"]) | set(["mitigation-6.1"])
+    flagTargets = flagTargets - {"mitigation-6.1-v2"} | {"mitigation-6.1"}
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
 checkList(flagTargets, lambda t: t in exploitFolders, f"Missing exploit for target(s)")
 checkList(exploitFolders, lambda t: t in flagTargets, f"Found extra exploit(s) without flag submission", True)
