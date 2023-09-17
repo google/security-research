@@ -19,5 +19,5 @@ if [[ " $* " == *" kaslr_leak=1 "* ]]; then
     CMD="$CMD $KASLR_BASE"
 fi
 
-echo "running exploit, cmd=$CMD"
+echo "running exploit, cmd='$CMD', ::EXPLOIT OUTPUT FROM HERE::"
 su user -c "$CMD"

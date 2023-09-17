@@ -52,7 +52,7 @@ for repro in repros:
         if repro_error:
             result += f"Error during reproduction: `{repro_error}`.\n\n"
 
-        expl_out = split('su user -c /tmp/exp/exploit')
+        expl_out = split('::EXPLOIT OUTPUT FROM HERE::\n')
 
         m = re.search(r"exploit.*?: (segfault at.*)", expl_out)
         if m:
