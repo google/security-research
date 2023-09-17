@@ -114,6 +114,11 @@ jobs:
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
+      EXPLOIT_INFO: ${{ needs.structure_check.outputs[format('exploit_info_{0}', matrix.target)] }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./kernelctf/repro/
     steps:
       - name: Checkout repo content
         uses: actions/checkout@v3
@@ -133,12 +138,11 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: exploit_${{ env.RELEASE_ID }}
-          path: exp/
+          path: ./kernelctf/repro/exp/
 
       - name: Fetch rootfs
         run: |
-          wget https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v1.img.gz
-          mv rootfs_repro_v1.img.gz rootfs.img.gz
+          wget -O rootfs.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v2.img.gz
           gzip -d rootfs.img.gz
 
       - name: Download bzImage
@@ -146,56 +150,59 @@ jobs:
           if [ "$RELEASE_ID" == "mitigation-6.1" ]; then RELEASE_ID="mitigation-6.1-v2"; fi
           wget https://storage.googleapis.com/kernelctf-build/releases/$RELEASE_ID/bzImage
 
+      - name: List repro folder contents
+        run: ls -alR ./
+
       # ugly hack to make Github Actions UI to show repro logs separately in somewhat readable fashion
       - id: repro1
         name: Reproduction (1 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 1
+        run: ./repro.sh 1
 
       - id: repro2
         name: Reproduction (2 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 2
+        run: ./repro.sh 2
 
       - id: repro3
         name: Reproduction (3 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 3
+        run: ./repro.sh 3
 
       - id: repro4
         name: Reproduction (4 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 4
+        run: ./repro.sh 4
 
       - id: repro5
         name: Reproduction (5 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 5
+        run: ./repro.sh 5
 
       - id: repro6
         name: Reproduction (6 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 6
+        run: ./repro.sh 6
 
       - id: repro7
         name: Reproduction (7 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 7
+        run: ./repro.sh 7
 
       - id: repro8
         name: Reproduction (8 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 8
+        run: ./repro.sh 8
 
       - id: repro9
         name: Reproduction (9 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 9
+        run: ./repro.sh 9
 
       - id: repro10
         name: Reproduction (10 / 10)
         continue-on-error: true
-        run: ./kernelctf/repro.sh 10
+        run: ./repro.sh 10
 
       - name: Upload repro QEMU logs as an artifact
         uses: actions/upload-artifact@v3
@@ -208,4 +215,4 @@ jobs:
           STEPS: ${{ toJSON(steps) }}
         run: |
           echo $STEPS >> steps.json
-          ./kernelctf/repro_summary.py ${{ github.run_id }}
+          ../repro_summary.py ${{ github.run_id }}

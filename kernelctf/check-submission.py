@@ -9,12 +9,15 @@ import requests
 import csv
 import io
 import hashlib
+import time
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
 POC_FOLDER = "pocs/linux/kernelctf/"
 EXPLOIT_DIR = "exploit/"
+CACHE_DIR = f"{BASE_DIR}/.cache"
 MIN_SCHEMA_VERSION = 2
-DEBUG = "--debug" in sys.argv
+# DEBUG = "--debug" in sys.argv
 
 errors = []
 warnings = []
@@ -80,10 +83,19 @@ def checkRegex(text, pattern, errorMsg):
         error(f"{errorMsg}. Must match regex `{pattern}`")
     return m
 
-def fetch(url):
+def fetch(url, cache_name, cache_time=3600):
+    cache_fn = f"{CACHE_DIR}/{cache_name}"
+    if cache_name and os.path.isfile(cache_fn) and (time.time() - os.path.getmtime(cache_fn) < cache_time):
+        with open(cache_fn, "rb") as f: return f.read().decode('utf-8')
+
     response = requests.get(url)
     if response.status_code != 200:
         fail(f"expected 200 OK for request: {url}")
+
+    if cache_name:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(cache_fn, "wb") as f: f.write(response.content)
+
     return response.content.decode('utf-8')
 
 def parseCsv(csvContent):
@@ -93,7 +105,7 @@ def parseCsv(csvContent):
 argv = [arg for arg in sys.argv if not arg.startswith("--")]
 print(f"[-] Argv: {argv}")
 
-mergeInto = argv[1] if len(argv) >= 2 else "origin/main"
+mergeInto = argv[1] if len(argv) >= 2 else "origin/master"
 print(f"[-] Params: mergeInto = {mergeInto}")
 
 mergeBase = run(f"git merge-base HEAD {mergeInto}")[0]
@@ -149,7 +161,7 @@ if schemaVersionM:
         schemaVersion = MIN_SCHEMA_VERSION
 
     schemaUrl = f"https://google.github.io/security-research/kernelctf/metadata.schema.v{schemaVersion}.json"
-    schema = json.loads(fetch(schemaUrl))
+    schema = json.loads(fetch(schemaUrl, f"metadata.schema.v{schemaVersion}.json"))
 
     metadataErrors = list(jsonschema.Draft202012Validator(schema).iter_errors(metadata))
     if len(metadataErrors) > 0:
@@ -161,11 +173,7 @@ if isinstance(submissionIds, str):
     submissionIds = [submissionIds]
 print(f"[-] Submission IDs = {submissionIds}")
 
-if DEBUG:
-    with open("public.csv", "rt") as f: publicCsv = f.read()
-else:
-    publicCsv = fetch(PUBLIC_CSV_URL)
-
+publicCsv = fetch(PUBLIC_CSV_URL, "public.csv")
 publicSheet = { x["ID"]: x for x in parseCsv(publicCsv) }
 # print(json.dumps(publicSheet, indent=4))
 
@@ -207,6 +215,8 @@ if "mitigation-6.1-v2" in flagTargets:
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
 checkList(flagTargets, lambda t: t in exploitFolders, f"Missing exploit for target(s)")
 checkList(exploitFolders, lambda t: t in flagTargets, f"Found extra exploit(s) without flag submission", True)
+if schemaVersion >= 3:
+    checkList(flagTargets, lambda t: t in metadata["exploits"].keys(), f"Missing metadata information for exploit(s)")
 
 def ghSet(varName, content):
     varName = f"GITHUB_{varName}"
@@ -224,8 +234,17 @@ def summary(success, text):
 if len(errors) > 0:
     summary(False, f"The file structure verification of the PR failed with the following errors:\n{formatList([f'❌ {e}' for e in errors], True)}")
 
-ghSet("OUTPUT", "targets=" + json.dumps([f for f in exploitFolders if not f.startswith("extra-")]))
+ghSet("OUTPUT", "targets=" + json.dumps([f for f in flagTargets]))
 ghSet("OUTPUT", f"submission_dir={subDirName}")
+
+for target in flagTargets:
+    if schemaVersion >= 3:
+        exploit_info = metadata["exploits"].get(target)
+        if not exploit_info: continue
+        exploit_info = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
+    else:
+        exploit_info = {}
+    ghSet("OUTPUT", f"exploit_info_{target}={json.dumps(exploit_info)}")
 
 summary(True, f"✅ The file structure verification of the PR was successful!")
 
