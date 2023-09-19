@@ -12,7 +12,7 @@ We have observed an error on the AMD Zen 4 family of processors with
 EVEX encoded instructions that access the stack pointer.
 
 The error can be observed with instructions that operate on both vector
-regisers and general purpose registers simultaneously, such as `vpinsrw`,
+registers and general purpose registers simultaneously, such as `vpinsrw`,
 `vmovq`, `vctsi2ss`, and so on.
 
 The error only occurs if you use `RSP` with these instructions.
