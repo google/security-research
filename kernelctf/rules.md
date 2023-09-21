@@ -193,7 +193,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * If you'd like to speed up the CVE publication process, please make sure you fill out all the details needed for the CVE when you fill out the form. This way the disclosure happens earlier and your submission will be processed faster.
 
-  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to https://github.com/google/security-research/ (see required structure below).
+  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below).
 
   5. Make sure that the PR is merged (this is a requirement to get a reward).
 
