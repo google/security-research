@@ -263,7 +263,7 @@ The structure of this submission folder should be:
 
   * `metadata.json`
 
-    * Required, structured metadata information following [this JSON schema (version 2)](metadata.schema.v3.json).
+    * Required, structured metadata information following [this JSON schema (version 3)](metadata.schema.v3.json).
 
   * `docs/vulnerability.md`
 
