@@ -31,7 +31,7 @@ The following rules apply to the eligibility of exploits:
 
 ## Setup
 
-You can find a description of our v8CTF infrastructure in the [README](https://github.com/google/security-research/blob/master/v8ctf/readme.md).
+You can find a description of our v8CTF infrastructure in the [README](https://github.com/google/security-research/blob/master/v8ctf/README.md).
 
 ## Communication
 
