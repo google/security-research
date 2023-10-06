@@ -23,9 +23,9 @@ The following rules apply to the eligibility of exploits:
 1. Check [this sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTWvO0tFNl8fJbOmTV1nwGJi4fAy5pDg-6DsHARRubj8I6c7_11RQ36Jv735zj9EQggz6AWjAOaebJh/pubhtml?gid=0&single=true) if there’s already a submission for the currently deployed V8 version.
 1. Exploit the bug and capture the flag from our v8CTF environment.
 1. Create a .tar.gz archive of your exploit and calculate its sha256, e.g. with `sha256sum exploit.tar.gz`.
-  1. Please double check that the exploit doesn’t have any external dependencies.
+    1. Please double check that the exploit doesn’t have any external dependencies.
 1. Fill out [this form](https://docs.google.com/forms/d/e/1FAIpQLScoWE5-XoF85dXMjWKTIrJGTEfCybFaktsYZMCZ86iFPrW8Ew/viewform?usp=header_link) with the flag and the exploit sha256 sum.
-  1. For 0-day submissions, please use the same email address you reported the bug from.
+    1. For 0-day submissions, please use the same email address you reported the bug from.
 1. A bug in the Google Issue Tracker will be filed on your behalf. Attach the exploit matching the sha256 sum and a short write up to the bug.
 1. Give us a few days to validate your submission.
 
