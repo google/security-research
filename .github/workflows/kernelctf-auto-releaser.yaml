@@ -26,6 +26,7 @@ jobs:
 
   build_release:
     needs: get_new_builds
+    if: needs.get_new_builds.outputs.releases[0] != null
     strategy:
       matrix:
         release: ${{ fromJSON(needs.get_new_builds.outputs.releases) }}
