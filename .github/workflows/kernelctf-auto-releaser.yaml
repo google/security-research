@@ -1,0 +1,37 @@
+name: kernelCTF auto releaser
+on:
+  workflow_dispatch:
+  schedule:
+    - cron:  '0 12 * * *' # every day at 12:00 UTC
+permissions: {}
+defaults:
+  run:
+    shell: bash
+    working-directory: kernelctf
+jobs:
+  get_new_builds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install prerequisites
+        run: sudo apt install -yq --no-install-recommends python3-lxml
+
+      - id: check
+        name: Check latest kernel versions
+        run: ./get_latest_kernel_versions.py
+    outputs:
+      releases: ${{ steps.check.outputs.releases }}
+
+  build_release:
+    needs: get_new_builds
+    strategy:
+      matrix:
+        release: ${{ fromJSON(needs.get_new_builds.outputs.releases) }}
+      fail-fast: false # do not cancel other builds
+    uses: ./.github/workflows/kernelctf-release-build.yaml
+    secrets: inherit
+    with:
+      releaseId: ${{ matrix.release.releaseId }}
+      branch: ${{ matrix.release.branch }}

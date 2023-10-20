@@ -1,2 +1,4 @@
 .cache/
 __pycache__/
+builds/
+releases/
