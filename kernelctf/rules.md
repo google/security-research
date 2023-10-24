@@ -40,9 +40,11 @@ This instance uses the latest LTS (currently 6.1) with [COS kernel config](https
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
-The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on the base 6.1 commit), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
+The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on 6.1.55), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
 
 Only exploits which clearly bypass [our mitigations](https://github.com/thejh/linux/blob/slub-virtual/MITIGATION_README) are eligible (e.g. if a mitigation protects against UAF, but not against BoF, then an exploit using a BoF vulnerability is not eligible).
+
+As the current instance (`mitigation-v3-6.1.55`) uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
 
 #### Reward
 
