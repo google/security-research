@@ -25,12 +25,12 @@ jobs:
       - run: pip install -U jsonschema
 
       - name: Checkout repo content
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: master
 
       - name: Checkout PR content
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: pr
           ref: ${{ env.PR_REF }}
@@ -56,7 +56,7 @@ jobs:
       EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
     steps:
       - name: Checkout PR content
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: pr
           ref: ${{ env.PR_REF }}
@@ -121,7 +121,7 @@ jobs:
         working-directory: ./kernelctf/repro/
     steps:
       - name: Checkout repo content
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: master
 
