@@ -17,7 +17,20 @@
 import socket
 from pwn import *
 
+def handle_pow(r):
+    print(r.recvuntil(b'python3 '))
+    print(r.recvuntil(b' solve '))
+    challenge = r.recvline().decode('ascii').strip()
+    p = process(['kctf_bypass_pow', challenge])
+    solution = p.readall().strip()
+    r.sendline(solution)
+    print(r.recvuntil(b'Correct\n'))
+
 r = remote('127.0.0.1', 1337)
+print(r.recvuntil('== proof-of-work: '))
+if r.recvline().startswith(b'enabled'):
+    handle_pow(r)
+
 l = listen()
 
 r.readuntil(b'URL to open.', timeout=10)
@@ -28,4 +41,4 @@ _ = l.wait_for_connection()
 l.readuntil(b'GET /ok HTTP/1.1')
 l.send(b'HTTP/1.1 200 OK\nContent-Length: 0\n\n')
 
-exit (0)
+exit(0)
