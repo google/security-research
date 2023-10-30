@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-CHROME=/home/user/chrome-linux/chrome
+CHROME=/home/user/chrome-linux64/chrome
 
 echo "Version: $($CHROME --version | head -n1)"
 echo "Please send me a URL to open."

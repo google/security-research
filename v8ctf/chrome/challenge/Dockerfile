@@ -31,7 +31,8 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 RUN apt-get update && apt-get install -y unzip
 
 RUN mkdir /home/user
-RUN wget 'https://www.googleapis.com/download/storage/v1/b/chromium-browser-snapshots/o/Linux_x64%2F1181205%2Fchrome-linux.zip?generation=1691535836009137&alt=media' -O /home/user/chrome-linux.zip
+# This version is to be released on 2023-11-06
+RUN wget 'https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/118.0.5993.70/linux64/chrome-linux64.zip' -O /home/user/chrome-linux.zip
 RUN cd /home/user && unzip chrome-linux.zip && rm chrome-linux.zip
 
 COPY chal /home/user/
