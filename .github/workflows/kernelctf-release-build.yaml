@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Check release does not exist yet
         run: curl --fail -I https://storage.googleapis.com/kernelctf-build/releases/${{inputs.releaseId}}/bzImage && exit 1 || true
