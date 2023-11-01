@@ -115,7 +115,7 @@ jobs:
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
-      EXPLOIT_INFO: ${{ fromJSON(needs.structure_check.outputs.exploits_info)[matrix.target] }}
+      EXPLOIT_INFO: ${{ toJSON(fromJSON(needs.structure_check.outputs.exploits_info)[matrix.target]) }}
     defaults:
       run:
         shell: bash
