@@ -21,6 +21,7 @@ jobs:
     outputs:
       targets: ${{ steps.check_submission.outputs.targets }}
       submission_dir: ${{ steps.check_submission.outputs.submission_dir }}
+      exploits_info: ${{ steps.check_submission.outputs.exploits_info }}
     steps:
       - run: pip install -U jsonschema
 
@@ -114,7 +115,7 @@ jobs:
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
-      EXPLOIT_INFO: ${{ needs.structure_check.outputs[format('exploit_info_{0}', matrix.target)] }}
+      EXPLOIT_INFO: ${{ fromJSON(needs.structure_check.outputs.exploits_info)[matrix.target] }}
     defaults:
       run:
         shell: bash
@@ -208,7 +209,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: repro_logs_${{ env.RELEASE_ID }}
-          path: repro_log_*.txt
+          path: ./kernelctf/repro/repro_log_*.txt
 
       - name: Reproduction // Summary
         env:

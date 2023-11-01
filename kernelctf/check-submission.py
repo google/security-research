@@ -141,14 +141,13 @@ if len(errors) > 0:
 ghSet("OUTPUT", "targets=" + json.dumps([f for f in flagTargets]))
 ghSet("OUTPUT", f"submission_dir={subDirName}")
 
+exploits_info = {}
 for target in flagTargets:
     if schemaVersion >= 3:
         exploit_info = metadata["exploits"].get(target)
         if not exploit_info: continue
-        exploit_info = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
-    else:
-        exploit_info = {}
-    ghSet("OUTPUT", f"exploit_info_{target}={json.dumps(exploit_info)}")
+        exploits_info[target] = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
+ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
 
 summary(True, f"✅ The file structure verification of the PR was successful!")
 
