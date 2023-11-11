@@ -4,6 +4,7 @@ import sys
 import json
 import jsonschema
 import hashlib
+from datetime import datetime
 from utils import *
 
 PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
@@ -148,6 +149,7 @@ for target in flagTargets:
         if not exploit_info: continue
         exploits_info[target] = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
 ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
+ghSet("OUTPUT", f"artifact_backup_dir={'_'.join(submissionIds)}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
 
 summary(True, f"✅ The file structure verification of the PR was successful!")
 
