@@ -222,7 +222,7 @@ jobs:
       - name: Upload repro summary as an artifact
         uses: actions/upload-artifact@v3
         with:
-          name: repro_summary_${{ env.RELEASE_ID }}.txt
+          name: repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
 
   backup_artifacts:
@@ -244,5 +244,7 @@ jobs:
         uses: 'google-github-actions/upload-cloud-storage@v1'
         with:
           path: ./artifacts
-          destination: kernelctf-build/artifacts/${{ needs.structure_check.outputs.artifact_backup_dir }}
+          destination: kernelctf-build/artifacts/${{ needs.structure_check.outputs.artifact_backup_dir }}_${{ github.run_id }}
+          parent: false
+          predefinedAcl: publicRead
           process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
