@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import re
+from utils import *
 
 with open("steps.json", "rt") as f: steps = json.loads(f.read())
 
@@ -70,9 +71,10 @@ for repro in repros:
 </details>
 """
 
+result = result.strip()
 print(result)
 
-if "GITHUB_STEP_SUMMARY" in os.environ:
-    with open(os.environ["GITHUB_STEP_SUMMARY"], 'at') as f: f.write(result.strip() + "\n")
+with open("repro_summary.md", "wt") as f: f.write(result)
+ghSet("STEP_SUMMARY", result)
 
 os._exit(1 if success_count == 0 else 0)
