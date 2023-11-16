@@ -106,14 +106,17 @@ int main(int argc, char **argv)
             alarm(5);
 
             // Attempt to repro 64 times.
+            int a = 1, b = 1;
             for (int i = 0; i < 64; i++) {
-                if (!A || pthread_tryjoin_np(A, NULL) == 0)
+                if (!A || (a = pthread_tryjoin_np(A, NULL)) == 0)
                     A = spawn_thread_core(icelake_worker, NULL, coreA);
-                if (!B || pthread_tryjoin_np(B, NULL) == 0)
+                if (!B || (b = pthread_tryjoin_np(B, NULL)) == 0)
                     B = spawn_thread_core(icelake_worker, NULL, coreB);
 
-                usleep(delay);
-                fputc('.', stderr);
+                if (a == 0 || b == 0)
+                    fputc('.', stderr);
+                else
+                    usleep(delay);
             }
 
             // No luck, it might be in a weird state - restart.
