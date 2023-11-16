@@ -86,7 +86,6 @@ Please type `make` to build the testcase.
 
 ```
 $ ./zenbleed -h
-*** EMBARGOED SECURITY ISSUE --  DO NOT DISTRIBUTE! ***
 ZenBleed Testcase -- taviso@google.com
 
 NOTE: Try -h to see configuration options
