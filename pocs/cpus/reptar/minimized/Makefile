@@ -1,4 +1,4 @@
-all: rexit
+all: reptar
 
 %: %.o
 	ld $^ -o $@
@@ -7,4 +7,4 @@ all: rexit
 	nasm -g -F DWARF -f elf64 $^ -o $@
 
 clean:
-	rm -rf *.o rexit
+	rm -rf *.o reptar
