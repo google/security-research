@@ -1,4 +1,4 @@
-all: reptar
+all: reptar.loop reptar.loopless
 
 %: %.o
 	ld $^ -o $@
@@ -7,4 +7,4 @@ all: reptar
 	nasm -g -F DWARF -f elf64 $^ -o $@
 
 clean:
-	rm -rf *.o reptar
+	rm -rf *.o reptar.loop reptar.loopless
