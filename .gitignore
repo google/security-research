@@ -1,2 +1,2 @@
-pocs/cpus/reptar/minimized/reptar.loopless
-pocs/cpus/reptar/minimized/reptar
+pocs/cpus/reptar/minimized/reptar.*.out
+pocs/cpus/reptar/minimized/reptar.*.elf
