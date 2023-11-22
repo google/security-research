@@ -1,14 +1,14 @@
-all: reptar.loop reptar.loopless reptar.elf
+all: reptar.loop reptar.loopless reptar.vdsojmp.elf reptar.vdsopf.elf
 
-reptar.elf: reptar.elf.asm
-	nasm -f bin reptar.elf.asm -o reptar.elf
-	chmod +x reptar.elf
+%.elf: %.elf.asm
+	nasm -f bin $^ -o $@
+	chmod +x $@
 
-%: %.o
+%.out: %.o
 	ld $^ -o $@
 
 %.o: %.asm
 	nasm -g -F DWARF -f elf64 $^ -o $@
 
 clean:
-	rm -rf *.o reptar.loop reptar.loopless reptar.elf
+	rm -rf *.o reptar.loop reptar.loopless reptar.vdsojmp.elf reptar.vdsopf.elf
