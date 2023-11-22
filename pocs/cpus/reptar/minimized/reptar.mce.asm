@@ -50,12 +50,10 @@ section .text
         rep ; must be a prefix
         push rcx ; ignored
         push rcx ; ignored
-        mov rax, data
         .many_reptars:
-        %rep 0
-            clflush [rax]
-            clflush [rax+64]
-            xor rax, rax
+        %rep 10000
+            clflush [rdi-1]
+            clflush [rsi+63]
             dec rsi
             dec rdi
             inc rcx
@@ -63,8 +61,7 @@ section .text
             db 0x44; rex.r
             movsb
             pause
-            mov rax, data
-            xor rcx, rcx
+            pause
         %endrep
         nop
         times 1024 int3
