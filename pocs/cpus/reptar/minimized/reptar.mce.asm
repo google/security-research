@@ -8,7 +8,7 @@ section .text
         lea rsi, [rsp+1]
         mov rdi, rsi
         .many_reptars:
-        %rep 10000
+        %rep 100000
             clflush [rdi-1]
             clflush [rsi+63]
             dec rsi
