@@ -1,4 +1,4 @@
-all: reptar.loop reptar.loopless reptar.vdsojmp.elf reptar.vdsopf.elf
+all: reptar.loop.out reptar.loopless.out reptar.mce.out reptar.vdsojmp.elf reptar.vdsopf.elf
 
 %.elf: %.elf.asm
 	nasm -f bin $^ -o $@
@@ -11,4 +11,4 @@ all: reptar.loop reptar.loopless reptar.vdsojmp.elf reptar.vdsopf.elf
 	nasm -g -F DWARF -f elf64 $^ -o $@
 
 clean:
-	rm -rf *.o reptar.loop reptar.loopless reptar.vdsojmp.elf reptar.vdsopf.elf
+	rm -rf *.o *.out *.elf
