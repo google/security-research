@@ -1,4 +1,4 @@
-all: reptar.loop.out reptar.loopless.out reptar.mce.out reptar.vdsojmp.elf reptar.vdsopf.elf
+all: reptar.loop.out reptar.loopless.out reptar.mce.out reptar.align.out reptar.vdsojmp.elf reptar.vdsopf.elf
 
 %.elf: %.elf.asm
 	nasm -f bin $^ -o $@
