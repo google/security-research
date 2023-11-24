@@ -19,8 +19,6 @@
 //
 // This is a Work-in-Progress testcase for the Zenbleed vulnerability.
 //
-// ** DO NOT DISTRIBUTE - EMBARGOED SECURITY ISSUE **
-//
 // Tavis Ormandy <taviso@google.com>
 //
 
@@ -216,7 +214,6 @@ static pthread_t spawn_thread_core(void *(*start_routine)(void *), void *restric
 
 static void print_banner()
 {
-    logmsg("*** EMBARGOED SECURITY ISSUE --  DO NOT DISTRIBUTE! ***");
     logmsg("ZenBleed Testcase -- taviso@google.com");
     logmsg("");
     logmsg("NOTE: Try -h to see configuration options");
