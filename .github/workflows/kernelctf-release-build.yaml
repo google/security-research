@@ -69,4 +69,5 @@ jobs:
           path: kernelctf/releases/${{inputs.releaseId}}
           destination: kernelctf-build/releases
           predefinedAcl: publicRead
+          gzip: false # most of the files are compressed already, do not compress them again
           process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
