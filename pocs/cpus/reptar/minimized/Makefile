@@ -1,4 +1,7 @@
-all: reptar.loop.out reptar.loopless.out reptar.mce.out reptar.align.out reptar.vdsojmp.elf reptar.vdsopf.elf
+nasm_targets=$(shell find . -name '*.asm' -type f ! -name '*.elf.asm' -printf "%f\n" | sed 's/\.asm/\.out/' | xargs)
+elf_targets=$(shell find . -name '*.elf.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
+
+all: $(nasm_targets) $(elf_targets)
 
 %.elf: %.elf.asm
 	nasm -f bin $^ -o $@
