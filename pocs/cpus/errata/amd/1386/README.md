@@ -79,7 +79,7 @@ The code first writes a fixed value into `ymm0`, then forces a context switch wi
     syscall
 ```
 
-Now we zero `ymm0`, so it's previous value should be permanently lost. The
+Now we zero `ymm0`, so its previous value should be permanently lost. The
 method here is not important, `VZEROALL` or loading some other value are all
 acceptable.
 
