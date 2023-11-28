@@ -33,21 +33,19 @@ text_phdr:                                      ; Elf64_Phdr
 phdrsize    equ     $ - text_phdr
 
 _start:
-    mov rdx, .end_of_program
-    times 10 push rdx
+    mov cl, 7
     lea rax, [rsp - 0x1000]
     lea r8, [.after_reptar - .loop_only_on_bug]
     mov r10, 0x00007ffff7ffda40 ; after time
-    mov r11, .loop_only_on_bug
-    xor rdx, rdx
     xor rbx, rbx
-    xor r12, r12
-    mov r13, 0x13371337
+    mov rdx, .end_of_program
+    lea r13, [rsp-0x4000]
+    mov r15, .skip_reptar_alias
+    mov r11, .loop_only_on_bug
+    push rdx
+    xor rdx, rdx
     .loop_for_every_iteration:
-        jmp r11
         .loop_only_on_bug:
-            nop
-            nop
             clflush [rax]
             clflush [rax+64]
             mov rsi, rax
@@ -55,19 +53,15 @@ _start:
             mov cl, 1
             inc rdx
             mov r9, rdx
-            sub r9, r12
+            sub r9, rbx
             imul r9, r8
             add r9, r11
-            xor rbx, rbx
-            cmp r9, r10
-            setae bl
-            imul rbx, 0x4000
-            neg rbx
-            add rbx, rsp
-            nop
-            mov qword [rbx], r13
-            mov qword [rsp], r11
-            ;jae 0x00007ffff7ffda40 ; time
+            cmp r9, r10 ; we are past vdso
+            cmova r12, r13 ; this will PF but recover
+            cmova rax, rcx ; this will break/PF the clflush
+            cmovna r12, rsp ; ths wont PF
+            clflush [r12]
+            clflush [rax]
 
             .reptar:
                 rep
@@ -75,8 +69,8 @@ _start:
                 movsb
             .after_reptar:
                 rep
-                times 4 nop
-                jmp .skip_reptar_alias
+                times 64 nop
+                jmp r15
 
             .reptar_alias:
                 nop
@@ -84,10 +78,13 @@ _start:
                 nop
             .after_reptar_alias:
                 times 100 nop
-                int3
+                ; kill
+                mov eax, 0
+                mov ebx, 0
+                int 0x80
 
             .skip_reptar_alias:
-                inc r12
+                inc rbx
                 jmp .loop_for_every_iteration
             .end_of_program:
                 int3
