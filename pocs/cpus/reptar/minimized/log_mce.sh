@@ -11,7 +11,6 @@ echo 0 | sudo tee /proc/sys/kernel/watchdog
 echo 0 | sudo tee /proc/sys/kernel/printk_ratelimit
 echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 echo 0 | sudo tee /sys/bus/cpu/devices/cpu15/online
-echo 0 | sudo tee /sys/bus/cpu/devices/cpu2/online
 
 touch reptar.mce.asm
 make reptar.mce.out || true
