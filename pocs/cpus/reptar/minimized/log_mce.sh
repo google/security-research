@@ -3,6 +3,7 @@
 set -ex
 
 cat reptar.log
+echo > reptar.log
 
 sudo mount -t debugfs none /sys/kernel/debug
 echo 1 | sudo tee /sys/kernel/debug/mce/fake_panic
@@ -15,7 +16,7 @@ touch reptar.mce.asm
 make reptar.mce.out || true
 
 for i in {1..10}; do
-    echo $i | tee reptar.log
+    echo $i | tee -a reptar.log
     sudo sync
     sleep 0.3s
     taskset -c 7 ./reptar.mce.out &
