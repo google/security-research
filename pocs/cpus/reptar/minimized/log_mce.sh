@@ -18,8 +18,9 @@ for i in {1..10}; do
     echo $i | tee reptar.log
     sudo sync
     sleep 0.3s
-    taskset -c 7 ./reptar.mce.out || true
+    taskset -c 7 ./reptar.mce.out &
     sleep 1s
-    sudo cat /sys/kernel/debug/mce/severities-coverage | tr '\n' , | tr '\t' :
-    sudo dmesg | grep mce:
+    sudo dmesg -t | grep mce: | uniq -c | tee -a reptar.log
+    sudo cat /sys/kernel/debug/mce/severities-coverage | grep -v $'^0\t' | tr '\n' , | tr '\t' : | tee -a reptar.log
+    kill -9 %1 || true
 done
