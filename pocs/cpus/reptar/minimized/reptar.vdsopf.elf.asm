@@ -1,4 +1,6 @@
 bits 64
+; stolen from https://stackoverflow.com/questions/53382589/smallest-executable-program-x86-64
+
             org 0x7ffff7ff8000
 
 ehdr:                                           ; Elf64_Ehdr
