@@ -1,17 +1,20 @@
-nasm_targets=$(shell find . -name '*.asm' -type f ! -name '*.elf.asm' -printf "%f\n" | sed 's/\.asm/\.out/' | xargs)
 elf_targets=$(shell find . -name '*.elf.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
+bin_targets=$(shell find . -name '*.bin.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
 
-all: $(nasm_targets) $(elf_targets)
+all: $(elf_targets) $(bin_targets)
 
-%.elf: %.elf.asm
+%.bin.asm: third_party/*.asm
+	touch $@
+
+%.bin: %.bin.asm
 	nasm -f bin $^ -o $@
 	chmod +x $@
 
-%.out: %.o
-	ld $^ -o $@
-
-%.o: %.asm
+%.o: %.elf.asm
 	nasm -g -F DWARF -f elf64 $^ -o $@
 
+%.elf: %.o
+	ld $^ -o $@
+
 clean:
-	rm -rf *.o *.out *.elf
+	rm -rf *.o *.elf *.bin

