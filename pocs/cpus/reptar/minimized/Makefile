@@ -2,6 +2,13 @@ elf_targets=$(shell find . -name '*.elf.asm' -type f -printf "%f\n" | sed 's/\.a
 bin_targets=$(shell find . -name '*.bin.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
 
 all: $(elf_targets) $(bin_targets)
+always-rebuild:
+
+.PHONY: all always-rebuild
+
+# always rebuild mce because it depends on env vars
+reptar.mce.elf.asm: always-rebuild
+	touch reptar.mce.elf.asm
 
 %.bin.asm: third_party/*.asm
 	touch $@

