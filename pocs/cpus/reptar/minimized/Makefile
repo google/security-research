@@ -4,7 +4,7 @@ bin_targets=$(shell find . -name '*.bin.asm' -type f -printf "%f\n" | sed 's/\.a
 all: $(elf_targets) $(bin_targets)
 always-rebuild:
 
-.PHONY: all always-rebuild
+.PHONY: all clean always-rebuild
 
 # always rebuild mce because it depends on env vars
 reptar.mce.elf.asm: always-rebuild
