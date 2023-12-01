@@ -34,7 +34,6 @@
                 nop
                 mov qword [rbx], r13
                 mov qword [rsp], r11
-                jae 0x00007ffff7ffda40 ; time
 
                 .reptar:
                     rep
