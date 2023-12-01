@@ -1,6 +1,8 @@
 %macro TINY_ELF_PAYLOAD 0
 _start:
     lea rax, [rsp - 0x1000]
+    mov rbx, rax
+    mov r14, 0x41
     xor rbp, rbp
     mov rdx, .end_of_program
     lea r13, [rsp-0x4000]
@@ -21,10 +23,11 @@ _start:
             sub r9, rbp
             cmp r9, 0xb0 ; we are past vdso
             cmova rax, r13 ; this will PF but recover
+            cmova rbx, r14
             align 64
             times 64-16 nop
             clflush [rax]
-            clflush [rsp]
+            clflush [rbx+1]
             .reptar:
                 rep
                 db 0x44; rex.r
