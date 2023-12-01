@@ -1,17 +1,13 @@
 %macro TINY_ELF_PAYLOAD 0
 _start:
-    mov cl, 7
     lea rax, [rsp - 0x1000]
-    lea r8, [.after_reptar - .loop_only_on_bug]
-    mov r10, 0x00007ffff7ffda40 ; after time
     xor rbp, rbp
     mov rdx, .end_of_program
     lea r13, [rsp-0x4000]
     mov r15, .skip_reptar_alias
-    mov r11, .loop_only_on_bug
     push rdx
     xor rdx, rdx
-    align 64
+    align 128
     times 0x700 nop
     .loop_for_every_iteration:
         .loop_only_on_bug:
