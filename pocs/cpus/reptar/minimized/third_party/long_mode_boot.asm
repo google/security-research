@@ -1,7 +1,19 @@
 ; Stolen from https://wiki.osdev.org/Entering_Long_Mode_Directly
 %ifnmacro LONG_MODE_BOOT_PAYLOAD
     %macro LONG_MODE_BOOT_PAYLOAD 0
-        nop
+        ; Display "Hello World!"
+        mov edi, 0x00b8000              
+    
+        mov rax, 0x1F6C1F6C1F651F48    
+        mov [edi],rax
+    
+        mov rax, 0x1F6F1F571F201F6F
+        mov [edi + 8], rax
+    
+        mov rax, 0x1F211F641F6C1F72
+        mov [edi + 16], rax
+
+        jmp $
     %endmacro
 %endif
 
@@ -29,6 +41,15 @@ Main:
     mov fs, ax
     mov gs, ax
     cld
+
+    mov ah, 0x02
+    mov al, 1 + LongProgramSize/512
+    mov ch, 0x00
+    mov dh, 0x00
+    mov cl, 0x02
+    mov dl, 0x00
+    mov bx, LongProgram
+    int 0x13
  
     ; Point edi to a free space bracket.
     mov edi, FREE_SPACE
@@ -164,10 +185,16 @@ LongMode:
     mov rcx, 500                      ; Since we are clearing uint64_t over here, we put the count as Count/4.
     mov rax, 0x1F201F201F201F20       ; Set the value to set the screen to: Blue background, white foreground, blank spaces.
     rep stosq                         ; Clear the entire screen. 
- 
-    LONG_MODE_BOOT_PAYLOAD
+
+    jmp LongProgram
 
 BITS 16
  
 times 510 - ($-$$) db 0
 dw 0xAA55
+
+[BITS 64] 
+LongProgram:
+    LONG_MODE_BOOT_PAYLOAD
+
+LongProgramSize equ $ - LongProgram
