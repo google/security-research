@@ -1,0 +1,43 @@
+mce: [Hardware Error]: Machine check events logged
+mce: [Hardware Error]: CPU 7: Machine Check: 0 Bank 0: f6000000000f0150
+mce: [Hardware Error]: TSC 0 ADDR a540a56 
+mce: [Hardware Error]: PROCESSOR 0:806d1 TIME 1700915672 SOCKET 0 APIC e microcode 3c
+
+Machine check events logged
+Hardware event. This is not a software error.
+CPU 7 BANK 0 
+ADDR a540a56 
+TIME 1700915672 Sat Nov 25 13:34:32 2023
+MCG status:
+MCi status:
+Error overflow
+Uncorrected error
+Error enabled
+MCi_ADDR register valid
+Processor context corrupt
+MCA: Instruction CACHE Level-1 Instruction-Fetch Error
+STATUS f6000000000f0150 MCGSTATUS 0
+CPUID Vendor Intel Family 6 Model 141 Step 1
+SOCKET 0 APIC e microcode 3c
+
+mce: [Hardware Error]: Machine check events logged
+mce: [Hardware Error]: CPU 7: Machine Check: 0 Bank 3: be00000000800400
+mce: [Hardware Error]: TSC 0 ADDR 41a193 MISC 41a193 
+mce: [Hardware Error]: PROCESSOR 0:806d1 TIME 1700915672 SOCKET 0 APIC e microcode 3c
+
+Machine check events logged
+Hardware event. This is not a software error.
+CPU 7 BANK 3 
+MISC 41a193 ADDR 41a193 
+TIME 1700915672 Sat Nov 25 13:34:32 2023
+MCG status:
+MCi status:
+Uncorrected error
+Error enabled
+MCi_MISC register valid
+MCi_ADDR register valid
+Processor context corrupt
+MCA: Internal Timer error
+STATUS be00000000800400 MCGSTATUS 0
+CPUID Vendor Intel Family 6 Model 141 Step 1
+SOCKET 0 APIC e microcode 3c
