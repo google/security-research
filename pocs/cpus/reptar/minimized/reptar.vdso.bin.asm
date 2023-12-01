@@ -1,3 +1,4 @@
+%define TINY_ELF_BASE_ADDRESS 0x7ffff7ff8000
 %macro TINY_ELF_PAYLOAD 0
 _start:
     lea rax, [rsp - 0x1000]

@@ -1,12 +1,16 @@
-bits 64
 ; stolen from https://stackoverflow.com/questions/53382589/smallest-executable-program-x86-64
-            org 0x7ffff7ff8000
+%ifndef TINY_ELF_BASE_ADDRESS
+    %define TINY_ELF_BASE_ADDRESS 0x400000
+%endif
 
 %ifnmacro TINY_ELF_PAYLOAD
     %macro TINY_ELF_PAYLOAD 0
         _start:
     %endmacro
 %endif
+
+bits 64
+            org TINY_ELF_BASE_ADDRESS
 
 ehdr:                                           ; Elf64_Ehdr
             db  0x7F, "ELF", 2, 1, 1, 0         ;   e_ident
