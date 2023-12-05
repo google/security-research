@@ -23,16 +23,15 @@ section .text
     check_leak:
         %assign i 0
         %rep OUTPUT_SIZE
-            %assign masked_i i
-            %assign i i + 1
             mfence
             rdtsc
             mov r10, rax
-            mov rax, [crash_pad + (64 * OBF_PRIME) * masked_i]
+            mov rax, [crash_pad + (64 * OBF_PRIME) * i]
             mfence
             rdtsc
             sub rax, r10
-            mov [output + 4 * masked_i], eax
+            mov [output + 4 * i], eax
+            %assign i i + 1
         %endrep
         ret
     
