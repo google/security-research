@@ -9,7 +9,6 @@ section .data
     crash_pad: times 0x10000 db 0
     far_away: times 0x1000 db 0
     output: times OUTPUT_SIZE * 4 db 0
-    somewhere: times 0x1000 db 0
 
 section .text
     clean_crash_pad:
