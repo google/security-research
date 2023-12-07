@@ -1,14 +1,17 @@
 elf_targets=$(shell find . -name '*.elf.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
 bin_targets=$(shell find . -name '*.bin.asm' -type f -printf "%f\n" | sed 's/\.asm//' | xargs)
+test_targets=$(shell find . -name '*.gdb' -type f -printf "%f\n" | sed 's/\.gdb/.gdb.out/' | xargs)
 
+.PHONY: clean all test test_elf
 all: $(elf_targets) $(bin_targets)
-always-rebuild:
 
-.PHONY: all clean always-rebuild
+clean:
+	rm -rf *.o *.elf *.bin
 
-# always rebuild mce because it depends on env vars
-reptar.mce.elf.asm: always-rebuild
-	touch reptar.mce.elf.asm
+test: $(test_targets)
+
+%.gdb.out: %
+	gdb -n -batch-silent -x $^.gdb
 
 %.bin.asm: third_party/*.asm
 	touch $@
@@ -22,6 +25,3 @@ reptar.mce.elf.asm: always-rebuild
 
 %.elf: %.o
 	ld $^ -o $@
-
-clean:
-	rm -rf *.o *.elf *.bin

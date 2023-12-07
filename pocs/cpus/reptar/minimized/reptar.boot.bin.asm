@@ -1,6 +1,11 @@
 %macro LONG_MODE_BOOT_PAYLOAD 0
+    _start:
     xor rbx, rbx
+    xor rdx, rdx
+    inc r15
     .attack:
+    cmp rdx, 1000000
+    ja _start
     xor ecx, ecx
     lea rsi, [rsp+1]
     mov rdi, rsi
@@ -21,8 +26,12 @@
         movsb            ; 1 byte
         rep              ; 1 byte
         nop              ; 1 byte
-    mov dil, bl ; counter
-    jmp .attack
+    align 64
+    inc rdx
+    cmp rdx, rbx
+    je .attack
+    times 0x6000 nop
+    jmp _start
 %endmacro
 
 %include "third_party/long_mode_boot.asm"
