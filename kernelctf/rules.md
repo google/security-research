@@ -20,25 +20,31 @@ This instance uses the latest LTS (currently 6.1) with [COS kernel config](https
 
   * Stability bonus (+$10.000)
 
-    * ~~Criteria: 90% of runs successfully steal the flag~~
+    * Criteria: 90% of runs successfully steal the flag.
 
-    * Currently, all valid submissions receive this bonus (until the infrastructure required to enforcing this requirement is ready)
+    * More precisely, the [exploit_repro Github Action](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) reports `Reliability: 90%` or better in the `Reproduction summary` (after a sane amount of re-runs if needed)
+
+    * If the exploit requires us to provide a KASLR base address, then it is ineligible for the bonus (`requires_separate_kaslr_leak` is true in `metadata.json` file).
+
+    * Valid submissions with `Flag submission time` older than `2023-09-08T00:00:00Z` on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) automatically get the bonus.
 
   * Reduced attack surface bonus (+$20.000)
 
-    * Criteria: Exploit works without using unprivileged user namespaces
+    * Criteria: Exploit works without using unprivileged user namespaces.
 
-    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section)
+    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section).
 
   * 0-day bonus (+$20.000)
 
-    * Criteria: you are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below)
+    * Criteria: You are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below).
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
-The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on the base 6.1 commit), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
+The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on 6.1.55), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
 
 Only exploits which clearly bypass [our mitigations](https://github.com/thejh/linux/blob/slub-virtual/MITIGATION_README) are eligible (e.g. if a mitigation protects against UAF, but not against BoF, then an exploit using a BoF vulnerability is not eligible).
+
+As the current instance (`mitigation-v3-6.1.55`) uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
 
 #### Reward
 
@@ -151,6 +157,8 @@ In this stage:
 
      * Save this exact file, you will need to send us this later.
 
+     * Try to keep this file to the minimum necessary, leave out large files like e.g. `vmlinux`, `bzImage` as they can be downloaded separately if needed.
+
   2. Submit the flag and the hash via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
@@ -187,7 +195,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * If you'd like to speed up the CVE publication process, please make sure you fill out all the details needed for the CVE when you fill out the form. This way the disclosure happens earlier and your submission will be processed faster.
 
-  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to https://github.com/google/security-research/ (see required structure below).
+  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below).
 
   5. Make sure that the PR is merged (this is a requirement to get a reward).
 
@@ -257,7 +265,7 @@ The structure of this submission folder should be:
 
   * `metadata.json`
 
-    * Required, structured metadata information following [this JSON schema (version 2)](metadata.schema.v2.json).
+    * Required, structured metadata information following [this JSON schema (version 3)](metadata.schema.v3.json).
 
   * `docs/vulnerability.md`
 
@@ -372,9 +380,9 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e) Discord channel.
+We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel.
 
-If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/A3qZcyaZ69) Discord channel.
+If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
 
 ## Non-kernel vulnerabilities
 

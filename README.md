@@ -41,7 +41,7 @@ security vulnerabilities.
 | 2021 | Linux: KVM VM_IO\|VM_PFNMAP vma mishandling | [CVE-2021-22543](https://github.com/google/security-research/security/advisories/GHSA-7wq5-phmq-m584) | [PoC](pocs/linux/kvm_vma)
 | 2021 | BleedingTooth: Linux Bluetooth Zero-Click Remote Code Execution | [CVE-2020-24490](https://github.com/google/security-research/security/advisories/GHSA-ccx2-w2r4-x649), [CVE-2020-12351](https://github.com/google/security-research/security/advisories/GHSA-h637-c88j-47wq), [CVE-2020-12352](https://github.com/google/security-research/security/advisories/GHSA-7mh3-gq28-gfrq) | [Write-up](https://google.github.io/security-research/pocs/linux/bleedingtooth/writeup.html), [PoC](pocs/linux/bleedingtooth)
 
-# Licence & Patents
+# License & Patents
 
 The advisories and patches posted here are free and open source.
 

@@ -1,0 +1,5 @@
+releases/
+ramdisk*.img
+rootfs*.img
+qemu*.sh
+flag
