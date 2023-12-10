@@ -3,6 +3,7 @@
 _start:
     lea rax, [rsp - 0x1000]
     mov rbx, rax
+    add rbx, 16
     mov r14, 0x41
     xor rbp, rbp
     mov rdx, .end_of_program
@@ -53,8 +54,11 @@ _start:
                 inc rbp
                 jmp .loop_for_every_iteration
             .end_of_program:
-                int3
-                int3
+                mov rax, 1
+                mov rdi, 1
+                mov rdx, 4
+                syscall
+                ret
 %endmacro
 
 %include "third_party/tiny_elf.asm"
