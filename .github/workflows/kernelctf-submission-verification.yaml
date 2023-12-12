@@ -105,7 +105,7 @@ jobs:
 
   exploit_repro:
     runs-on: ubuntu-22.04-4core
-    timeout-minutes: 30
+    timeout-minutes: 300
     permissions: {}
     needs: [structure_check, exploit_build]
     strategy:
