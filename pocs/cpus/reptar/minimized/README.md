@@ -1,5 +1,8 @@
 # Minimized Reptar Experiments
 
+**NOTE: this is a working copy of our analysis. if you wish to contribute please just open an issue to discuss your idea and then send us your changes in a pull request.**
+
+
 For a detailed explanation of the background for this bug please review [this slide deck](http://reptar.fun/).
 
 ## Experiments Summary
