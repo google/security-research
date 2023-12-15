@@ -1,10 +1,11 @@
-# Minimized Reptar Examples
+# Minimized Reptar Experiments
 
+For a detailed explanation of the background for this bug please review [this slide deck](http://reptar.fun/).
+
+## Experiments Summary
 This directory provides a set of examples to reproduce and study the Reptar vulnerability.
 
-You can build them all simply by running `make`. Building the code requires `nasm`, `binutils` (for `ld`) and `make`. On an ubuntu system you can install these with `apt install -y nasm make binutils`.
-
-## Quick Summary
+You can build them all simply by running `make`. Building the code requires `nasm`, `binutils` (for `ld`) and `make`. On an ubuntu system you can install these with `apt install -y nasm make binutils`. For running the VM demos you also need qemu with KVM support.
 
 - **reptar.align.elf.asm**: This is a more reliable reproducer that triggers an error on the first iteration. The `clflush` and the reptar instruction need to be on different 16 byte windows. This could be related to the instruction decoder working on 16 byte instructions at a time. 
 - **reptar.boot.bin.asm**: Same as align, but instead intended to be ran from a VM using KVM. `qemu-system-x86_64 --enable-kvm -fda reptar.boot.bin`.
@@ -16,3 +17,53 @@ You can build them all simply by running `make`. Building the code requires `nas
 - **reptar.uncan.elf.bin.asm**: This is an experiment where we map ourselves at the end of the canonical address space for x86_64 (needs ASLR to be enabled) and then runs for as long as it can before it innevitably faults to see how far it can get into invalid address space. Error should be something like: `general protection fault ip:8000000019f5 error:0` with the last 4 bytes varying depending on how many iterations it did.
 - **reptar.mce.elf.asm**: Trigger this with `./log_mce.sh` and adjust the cpu 15/7 so they are siblings. This code will trigger an MCE on some affected CPUs and log the details. Look at `mce.txt` for the expected MCE errors. If no MCE is visible, define `MCE_INSTRUCTION='rep movsb'` as that works instead on some CPUs.
 - **reptar.mce.boot.bin.asm**: Same as mce, but instead intended to be ran from a VM using KVM. `qemu-system-x86_64 --enable-kvm -fda reptar.mce.boot.bin`.
+
+## Behavior Summary
+
+The vulnerability exhibits two behaviors:
+
+* MCE caused by a instruction cache discrepancy between L0 (DSB) and L1 (L1I). Likely an L1I miss on a DSB cache hit as MITE (legacy decoder) inserts uOPs to the DSB according to the Intel manual.
+    * Means we either:
+        * Evicted something from the L1I that should have been evicted from the DSB (but wasn't)
+        * Inserted something on the DSB that never entered the L1I.
+        * Made the DSB and/or the L1I addresses differ (note DSB and L1I are both in the Frontend).
+    * Question 1: **What explains the uOP cache discrepancy?**
+    * Question 2: **What type of uOP cache discrepancy do we have?**
+* Observed IP as observed by faults and exceptions is different from executed code. The RIP observed by RIP-relative memory references through LEA, and CALL as well as "relative" accesses points to the RIP being executed. The RIP observed by interrupts and faults is wrong (just keeps incrementing). Bug does not seem to happen speculatively, only architecturally. Retirement seems relevant.
+    * Means there are (at least) two copies of RIP.
+    * Question 3: **How can "executing at a wrong address" have a security impact?**
+
+## MCE Analysis (Q1&2)
+
+### Theories
+  * IP discrepancy theory:
+      * L1I IP is wrong - unlikely as it's connected to the L2 cache so fetching would be wrong all the way.
+      * L1I IP is right & DSB IP is wrong - could happen as these systems are engaged separately
+  * Insertion, Fetching and/or Eviction
+      * Insertion error. Entries are inserted on the DSB that shouldn't have. MITE is likely the one that triggers the path to insert to the DSB. Unlikely based on vDSO experiments.
+      * Eviction error. There's a path that evicts from L1I that doesn't also trigger eviction from the DSB. If the DSB IP differs from L1I IP, it could explain why the eviction doesn't happen. This does not explain the observation of wrong IP on faults.
+      * Fetching error. Entries are fetched from the DSB that shouldn't have. DSB fetches the wrong address, and L1I fetches the right ones. Execution behavior could be explained by this theory.
+
+## Experiments
+
+### Experiment for Insertion + BadDSBIP
+* **Theory**: The DSB inserts uops on the wrong IP, and as they are executed, we are constantly polluting the DSB (but not the L1I). When the CPU tries to execute some code it notices that they are on the DSB but are missing from the L1I, and MCEs.
+* **Privesc**: This could be privesc by having the wrong instructions being fetched from the DSB when another process executes.
+* **Experiment**: vdso experiment
+    * Put attack code before victim code and then jump to the "other" code and see what executes. If attack code executes then that means we polluted the DSB. If victim code executes then that means we did not.
+    * **Result**: after jump and pagefault the "right" code path was triggered. So we are likely not inserting bad uOPs. It indicates it's fetching badly instead of inserting. (see `reptar.vdso.elf.bin.asm`)
+
+### Experiment for Fetching + BadDSBIP
+* **Theory**: The DSB fetches uOPs from a bad IP. When L1I ends up evicting these instructions for new bytecode, the DSB should evict them too, but the DSB doesn't evict them, causing the MCE when the CPU fetches instructions from the evicted address (if they didn't get evicted then we would just continue executing them).
+* **Privesc**: TODO
+* **Experiment**: TODO
+
+## Kernel Exploitation (Q3)
+
+### SYSCALL/IRETQ
+
+On Intel CPUs, the sysret instruction faults with kernel RSP, which means the user can control the RSP being executed while an interrupt is happening. This was discovered in 2012 by [Xen](https://xenproject.org/2012/06/13/the-intel-sysret-privilege-escalation/). AMD was not affected. A similar attack can be conducted using IRET as it is documented in the [Fuchsia documentation](https://cs.opensource.google/fuchsia/fuchsia/+/main:docs/concepts/kernel/sysret_problem.md;bpv=0). If we can make a syscall on a non-canonical address, we could bypass some of the mitigations introduced by OS against this attack. The most common mitigation is to not allow the last page of the canonical address space to be mapped (see `reptar.uncan.elf.bin.asm`). Fuchsia was confirmed to be affected by this. [FreeBSD](https://github.com/freebsd/freebsd-src/blob/release/14.0.0/sys/amd64/amd64/exception.S#L451) and [Linux](https://elixir.bootlin.com/linux/v4.14/source/arch/x86/entry/entry_64.S#L1170) seem to have checks that prevent attacks of this type from working.
+
+### Sandboxes
+
+Some sandboxes might permit somewhat unconstrained control of x86 code within some boundaries. Since a REX prefix on MOVSB is not documented as valid (a REX prefix before 0xA5 is not valid), this is unlikely to be allowed, but given that 0xA4 and 0xA5 are [similar instructions](https://www.felixcloutier.com/x86/movs:movsb:movsw:movsd:movsq), it could be possible some sandboxes allow the necessary instructions. No sandbox has been found to be affected by this so far.
