@@ -64,6 +64,10 @@ The vulnerability exhibits two behaviors:
 
 On Intel CPUs, the sysret instruction faults with kernel RSP, which means the user can control the RSP being executed while an interrupt is happening. This was discovered in 2012 by [Xen](https://xenproject.org/2012/06/13/the-intel-sysret-privilege-escalation/). AMD was not affected. A similar attack can be conducted using IRET as it is documented in the [Fuchsia documentation](https://cs.opensource.google/fuchsia/fuchsia/+/main:docs/concepts/kernel/sysret_problem.md;bpv=0). If we can make a syscall on a non-canonical address, we could bypass some of the mitigations introduced by OS against this attack. The most common mitigation is to not allow the last page of the canonical address space to be mapped (see `reptar.uncan.elf.bin.asm`). Fuchsia was confirmed to be affected by this [in an old bug](https://fuchsia.googlesource.com/fuchsia/+/0054a8a1162c2ea857fb02553835b804ead7b124) which also worked with Reptar. [FreeBSD](https://github.com/freebsd/freebsd-src/blob/release/14.0.0/sys/amd64/amd64/exception.S#L451) and [Linux](https://elixir.bootlin.com/linux/v4.14/source/arch/x86/entry/entry_64.S#L1170) seem to have checks that prevent attacks of this type from working.
 
+### Speculation
+
+If the vulnerability works speculatively, we could have the CPU speculate to a misaligned instruction in the kernel, and corrupt the state of the CPU, and end up causing architectural side-effects. Unfortunately, experiments seem to indicate the vulnerability only works after the Reptar instruction retires (see `reptar.spec.elf.asm`).
+
 ### Sandboxes
 
 Some sandboxes might permit somewhat unconstrained control of x86 code within some boundaries. Since a REX prefix on MOVSB is not documented as valid (a REX prefix before 0xA5 is not valid), this is unlikely to be allowed, but given that 0xA4 and 0xA5 are [similar instructions](https://www.felixcloutier.com/x86/movs:movsb:movsw:movsd:movsq), it could be possible some sandboxes allow the necessary instructions. No sandbox has been found to be affected by this so far.
