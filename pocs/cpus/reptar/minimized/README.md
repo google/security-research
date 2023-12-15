@@ -58,7 +58,7 @@ The vulnerability exhibits two behaviors:
 * **Privesc**: TODO
 * **Experiment**: TODO
 
-## Kernel Exploitation (Q3)
+## Exploitation (Q3)
 
 ### SYSCALL/IRETQ
 
