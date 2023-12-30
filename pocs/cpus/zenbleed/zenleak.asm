@@ -3,8 +3,6 @@ BITS 64
 ;
 ; This is a Work-in-Progress testcase for the Zenbleed vulnerability.
 ;
-; ** DO NOT DISTRIBUTE - EMBARGOED SECURITY ISSUE **
-;
 ; Tavis Ormandy <taviso@google.com>
 ;
 

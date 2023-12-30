@@ -40,9 +40,11 @@ This instance uses the latest LTS (currently 6.1) with [COS kernel config](https
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
-The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on the base 6.1 commit), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
+The mitigation instance is upgraded far less frequently than the LTS instance (currently staying on 6.1.55), thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques.
 
 Only exploits which clearly bypass [our mitigations](https://github.com/thejh/linux/blob/slub-virtual/MITIGATION_README) are eligible (e.g. if a mitigation protects against UAF, but not against BoF, then an exploit using a BoF vulnerability is not eligible).
+
+As the current instance (`mitigation-v3-6.1.55`) uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
 
 #### Reward
 
@@ -155,6 +157,8 @@ In this stage:
 
      * Save this exact file, you will need to send us this later.
 
+     * Try to keep this file to the minimum necessary, leave out large files like e.g. `vmlinux`, `bzImage` as they can be downloaded separately if needed.
+
   2. Submit the flag and the hash via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
@@ -191,7 +195,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * If you'd like to speed up the CVE publication process, please make sure you fill out all the details needed for the CVE when you fill out the form. This way the disclosure happens earlier and your submission will be processed faster.
 
-  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to https://github.com/google/security-research/ (see required structure below).
+  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below).
 
   5. Make sure that the PR is merged (this is a requirement to get a reward).
 
@@ -261,7 +265,7 @@ The structure of this submission folder should be:
 
   * `metadata.json`
 
-    * Required, structured metadata information following [this JSON schema (version 2)](metadata.schema.v2.json).
+    * Required, structured metadata information following [this JSON schema (version 3)](metadata.schema.v3.json).
 
   * `docs/vulnerability.md`
 
@@ -376,9 +380,9 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e) Discord channel.
+We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel.
 
-If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/A3qZcyaZ69) Discord channel.
+If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
 
 ## Non-kernel vulnerabilities
 

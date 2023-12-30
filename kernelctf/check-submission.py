@@ -1,99 +1,21 @@
 #!/usr/bin/env -S python3 -u
 import os
-import re
-import subprocess
 import sys
 import json
 import jsonschema
-import requests
-import csv
-import io
 import hashlib
+from utils import *
 
 PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
 POC_FOLDER = "pocs/linux/kernelctf/"
 EXPLOIT_DIR = "exploit/"
 MIN_SCHEMA_VERSION = 2
-DEBUG = "--debug" in sys.argv
-
-errors = []
-warnings = []
-
-def error(msg):
-    global errors
-    msg = msg.replace('\n', '\n    ')
-    errors.append(msg)
-    print(f"\n[!] [ERROR] {msg}")
-
-def warning(msg):
-    global warnings
-    msg = msg.replace('\n', '\n    ')
-    warnings.append(msg)
-    print(f"\n[!] [WARN] {msg}")
-
-def fail(msg):
-    print("\n[!] [FAIL] " + msg.replace('\n', '\n    '))
-    os._exit(1)
-
-def run(cmd):
-    try:
-        result = subprocess.check_output(cmd, shell=True).decode('utf-8').split('\n')
-        return result if result[-1] != "" else result[0:-1]
-    except subprocess.CalledProcessError as e:
-        fail(f"executing '{cmd}' failed with exit code {e.returncode}")
-
-def subdirEntries(files, subdir):
-    return list(set([f[len(subdir):].split('/')[0] for f in files if f.startswith(subdir)]))
-
-def formatList(items, nl=False):
-    return ('\n' if nl else '').join([f"\n - {item}" for item in items])
-
-def printList(title, items):
-    print(f"\n{title}:" + formatList(items))
-
-def errorList(errorMsg, items, warningOnly=False):
-    itemsStr = ", ".join(f"`{x}`" for x in items)
-    errorMsg = errorMsg.replace("<LIST>", itemsStr) if "<LIST>" in errorMsg else f"{errorMsg}: {itemsStr}"
-    if warningOnly:
-        warning(errorMsg)
-    else:
-        error(errorMsg)
-
-def checkOnlyOne(list, errorMsg):
-    if len(list) > 1:
-        errorList(errorMsg, list)
-    return list[0]
-
-def checkList(items, isAllowedFunc, errorMsg, warningOnly=False):
-    disallowedItems = [item for item in items if not isAllowedFunc(item)]
-    if len(disallowedItems) > 0:
-        errorList(errorMsg, disallowedItems, warningOnly)
-    return list(sorted(set(items) - set(disallowedItems)))
-
-def checkAtLeastOne(list, errorMsg):
-    if len(list) == 0:
-        fail(errorMsg)
-
-def checkRegex(text, pattern, errorMsg):
-    m = re.match(pattern, text)
-    if not m:
-        error(f"{errorMsg}. Must match regex `{pattern}`")
-    return m
-
-def fetch(url):
-    response = requests.get(url)
-    if response.status_code != 200:
-        fail(f"expected 200 OK for request: {url}")
-    return response.content.decode('utf-8')
-
-def parseCsv(csvContent):
-    columns, *rows = list(csv.reader(io.StringIO(csvContent), strict=True))
-    return [{ columns[i]: row[i] for i in range(len(columns)) } for row in rows]
+# DEBUG = "--debug" in sys.argv
 
 argv = [arg for arg in sys.argv if not arg.startswith("--")]
 print(f"[-] Argv: {argv}")
 
-mergeInto = argv[1] if len(argv) >= 2 else "origin/main"
+mergeInto = argv[1] if len(argv) >= 2 else "origin/master"
 print(f"[-] Params: mergeInto = {mergeInto}")
 
 mergeBase = run(f"git merge-base HEAD {mergeInto}")[0]
@@ -149,7 +71,7 @@ if schemaVersionM:
         schemaVersion = MIN_SCHEMA_VERSION
 
     schemaUrl = f"https://google.github.io/security-research/kernelctf/metadata.schema.v{schemaVersion}.json"
-    schema = json.loads(fetch(schemaUrl))
+    schema = json.loads(fetch(schemaUrl, f"metadata.schema.v{schemaVersion}.json"))
 
     metadataErrors = list(jsonschema.Draft202012Validator(schema).iter_errors(metadata))
     if len(metadataErrors) > 0:
@@ -159,13 +81,10 @@ if schemaVersionM:
 submissionIds = metadata.get("submission_ids", None) or metadata["submission_id"]
 if isinstance(submissionIds, str):
     submissionIds = [submissionIds]
+submissionIds.sort()
 print(f"[-] Submission IDs = {submissionIds}")
 
-if DEBUG:
-    with open("public.csv", "rt") as f: publicCsv = f.read()
-else:
-    publicCsv = fetch(PUBLIC_CSV_URL)
-
+publicCsv = fetch(PUBLIC_CSV_URL, "public.csv")
 publicSheet = { x["ID"]: x for x in parseCsv(publicCsv) }
 # print(json.dumps(publicSheet, indent=4))
 
@@ -173,6 +92,7 @@ for submissionId in set(submissionIds).difference(publicSheet.keys()):
     fail(f"submission ID ({submissionId}) was not found on public spreadsheet")
 
 submissionIds = list(set(submissionIds).intersection(publicSheet.keys()))
+submissionIds.sort()
 
 flags = []
 for submissionId in submissionIds:
@@ -193,6 +113,8 @@ for submissionId in submissionIds:
 
             if exploitHash != calculated:
                 error(f"Expected `{archiveFn}` with SHA256 hash of `{exploitHash}`, but the file's checksum is `{calculated}`.")
+            else:
+                print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
 
     flags.extend(publicData["Flags"].strip().split('\n'))
 
@@ -201,16 +123,12 @@ for submissionId in submissionIds:
 
 flagTargets = set([checkRegex(flag, r"kernelCTF\{v1:([^:]+):\d+\}", f"The flag (`{flag}`) is invalid").group(1) for flag in flags])
 if "mitigation-6.1-v2" in flagTargets:
-    flagTargets = flagTargets - set(["mitigation-6.1-v2"]) | set(["mitigation-6.1"])
+    flagTargets = flagTargets - {"mitigation-6.1-v2"} | {"mitigation-6.1"}
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
 checkList(flagTargets, lambda t: t in exploitFolders, f"Missing exploit for target(s)")
 checkList(exploitFolders, lambda t: t in flagTargets, f"Found extra exploit(s) without flag submission", True)
-
-def ghSet(varName, content):
-    varName = f"GITHUB_{varName}"
-    print(f"[+] Writing {json.dumps(content)} to ${varName}")
-    if varName in os.environ:
-        with open(os.environ[varName], 'at') as f: f.write(content + "\n")
+if schemaVersion >= 3:
+    checkList(flagTargets, lambda t: t in metadata["exploits"].keys(), f"Missing metadata information for exploit(s)")
 
 def summary(success, text):
     if warnings:
@@ -222,8 +140,17 @@ def summary(success, text):
 if len(errors) > 0:
     summary(False, f"The file structure verification of the PR failed with the following errors:\n{formatList([f'❌ {e}' for e in errors], True)}")
 
-ghSet("OUTPUT", "targets=" + json.dumps([f for f in exploitFolders if not f.startswith("extra-")]))
+ghSet("OUTPUT", "targets=" + json.dumps([f for f in flagTargets]))
 ghSet("OUTPUT", f"submission_dir={subDirName}")
+
+exploits_info = {}
+for target in flagTargets:
+    if schemaVersion >= 3:
+        exploit_info = metadata["exploits"].get(target)
+        if not exploit_info: continue
+        exploits_info[target] = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
+ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
+ghSet("OUTPUT", f"artifact_backup_dir={'_'.join(submissionIds)}")
 
 summary(True, f"✅ The file structure verification of the PR was successful!")
 

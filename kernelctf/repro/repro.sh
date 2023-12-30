@@ -16,6 +16,9 @@ touch $QEMU_TXT
 
 START_TIME=$(date +%s)
 
+CMDLINE="console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro init=/init hostname=repro"
+if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then CMDLINE="$CMDLINE -- kaslr_leak=1"; fi
+
 expect -c '
     set timeout -1
     set stty_init raw
@@ -27,8 +30,9 @@ expect -c '
     -nic user,model=virtio-net-pci \
     -drive file=rootfs.img,if=virtio,cache=none,aio=native,format=raw,discard=on,readonly=on \
     -drive file=flag,if=virtio,format=raw,readonly=on \
-    -virtfs local,path=exp,mount_tag=exp,security_model=none \
-    -append "console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro init=/init hostname=repro" \
+    -virtfs local,path=init,mount_tag=init,security_model=none,readonly=on \
+    -virtfs local,path=exp,mount_tag=exp,security_model=none,readonly=on \
+    -append "'"$CMDLINE"'" \
     -nographic -no-reboot
 
     expect "# "
