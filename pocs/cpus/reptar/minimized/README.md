@@ -59,7 +59,8 @@ The vulnerability exhibits two behaviors:
 ### Experiment for Fetching + BadDSBIP
 * **Theory**: The DSB fetches uOPs from a bad IP. When L1I ends up evicting these instructions for new bytecode, the DSB should evict them too, but the DSB doesn't evict them, causing the MCE when the CPU fetches instructions from the evicted address (if they didn't get evicted then we would just continue executing them).
 * **Privesc**: TODO
-* **Experiment**: TODO
+* **Experiment**: hyperfork
+    * Fork to a sibling HyperThread and wait until the bug triggers. In the parent, modify the code being executed (eg, by changing `rex.r/0x44` to `rex/0x40`), then wait to see if it affects the code being ran by the child (since it is not decoded, it shouldn't be in the DSB yet). In the parent, execute the modified code speculatively (but not architecturally), then see if it affects the code ran by the child (speculatively executing the code should put it in the DSB).
 
 ## Exploitation (Q3)
 
