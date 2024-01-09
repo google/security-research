@@ -1,6 +1,7 @@
 name: kernelCTF test action
 on:
   workflow_dispatch:
+  push: # hack to make this workflow appear on the UI
 permissions: {}
 jobs:
   cpu_info:
