@@ -1,0 +1,20 @@
+name: kernelCTF test action
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  cpu_info:
+    runs-on: ubuntu-22.04-4core
+    steps:
+      - name: KPTI check
+        run: |
+          cat /proc/cpuinfo|grep " pti"
+          sudo dmesg | grep 'Kernel/User page tables isolation'
+          cat /sys/devices/system/cpu/vulnerabilities/meltdown
+          dmesg | grep isolation
+
+      - name: cpuinfo
+        run: cat /proc/cpuinfo
+
+      - name: dmesg
+        run: dmesg
