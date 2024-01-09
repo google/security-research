@@ -7,15 +7,26 @@ jobs:
   cpu_info:
     runs-on: ubuntu-22.04-4core
     steps:
-      - name: KPTI check
-        run: |
-          cat /proc/cpuinfo|grep " pti"
-          sudo dmesg | grep 'Kernel/User page tables isolation'
-          cat /sys/devices/system/cpu/vulnerabilities/meltdown
-          dmesg | grep isolation
+      - name: "KPTI check: cpuinfo"
+        continue-on-error: true
+        run: cat /proc/cpuinfo|grep " pti"
+
+      - name: "KPTI check: dmesg"
+        continue-on-error: true
+        run: sudo dmesg | grep 'Kernel/User page tables isolation'
+
+      - name: "KPTI check: dmesg isolation"
+        continue-on-error: true
+        run: sudo dmesg | grep isolation
+
+      - name: "Meltdown check"
+        continue-on-error: true
+        run: cat /sys/devices/system/cpu/vulnerabilities/meltdown
 
       - name: cpuinfo
+        continue-on-error: true
         run: cat /proc/cpuinfo
 
       - name: dmesg
-        run: dmesg
+        continue-on-error: true
+        run: sudo dmesg
