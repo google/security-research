@@ -4,7 +4,7 @@ This challenge is part of the v8CTF, an exploit VRP for the v8 JavaScript engine
 
 See RULES.md for how to participate.
 
-You can reach it at `nc v8.ctfcompetition.com 1337`.
+You can reach it at `nc v8.ctfcompetition.com 1337` or `nc $chalname.v8ctf.ctfcompetition.com 1337` for older versions, e.g. chrome-118$chalname.v8ctf.ctfcompetition.com.
 
 It runs a `chrome --headless=new` on a user-provided URL. You can find the command line in chrome/challenge/chal and the Chrome version in chrome/challenge/Dockerfile.
 
