@@ -27,18 +27,24 @@ def handle_pow(r):
     print(r.recvuntil(b'Correct\n'))
 
 r = remote('127.0.0.1', 1337)
-print(r.recvuntil('== proof-of-work: '))
+print(r.recvuntil(b'== proof-of-work: '))
 if r.recvline().startswith(b'enabled'):
     handle_pow(r)
 
 l = listen()
+l2 = listen()
 
 r.readuntil(b'URL to open.', timeout=10)
 r.sendline(bytes('http://localhost:{}/ok'.format(l.lport), 'ascii'))
 
 _ = l.wait_for_connection()
 
-l.readuntil(b'GET /ok HTTP/1.1')
-l.send(b'HTTP/1.1 200 OK\nContent-Length: 0\n\n')
+print(l.readuntil(b'GET /ok HTTP/1.1'))
+content = f"<script>fetch('http://localhost:{l2.lport}/foo')</script>"
+response = f'HTTP/1.1 200 OK\nContent-Length: {len(content)}\n\n{content}'
+l.send(response.encode())
+
+_ = l2.wait_for_connection()
+print(l2.readuntil(b'GET /foo HTTP/1.1'))
 
 exit(0)
