@@ -20,7 +20,7 @@ The following rules apply to the eligibility of exploits:
 ## Submission Process
 
 1. If your exploit targets a 0-day vulnerability, make sure to report it first to the [Chrome VRP](https://g.co/chrome/vrp).
-1. Check [this sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTWvO0tFNl8fJbOmTV1nwGJi4fAy5pDg-6DsHARRubj8I6c7_11RQ36Jv735zj9EQggz6AWjAOaebJh/pubhtml?gid=0&single=true) if there’s already a submission for the currently deployed V8 version.
+1. Check [this sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTWvO0tFNl8fJbOmTV1nwGJi4fAy5pDg-6DsHARRubj8I6c7_11RQ36Jv735zj9EQggz6AWjAOaebJh/pubhtml) if there’s already a submission for the currently deployed V8 version.
 1. Exploit the bug and capture the flag from our v8CTF environment.
 1. Create a .tar.gz archive of your exploit and calculate its sha256, e.g. with `sha256sum exploit.tar.gz`.
     1. Please double check that the exploit doesn’t have any external dependencies.
