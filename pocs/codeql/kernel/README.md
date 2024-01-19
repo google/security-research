@@ -4,7 +4,7 @@ This directory contains repositories focused on the security analysis of the Lin
 
 ## Available directories:
 
-### util:
+### util
 
 Description: Contains CodeQL queries for general-purpose analysis of the Linux kernel source code.
 Example query: `syscalls.ql` to identify and extract system calls and their
