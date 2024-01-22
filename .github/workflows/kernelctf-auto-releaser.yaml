@@ -12,6 +12,11 @@ jobs:
   get_new_builds:
     runs-on: ubuntu-latest
     steps:
+      - name: Test GCS SA key to fail quick before trying to make a build
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
