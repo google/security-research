@@ -16,6 +16,7 @@ jobs:
         uses: google-github-actions/auth@v1
         with:
           credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
+          create_credentials_file: false
 
       - name: Checkout repo
         uses: actions/checkout@v4
