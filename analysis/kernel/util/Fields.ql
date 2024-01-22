@@ -19,5 +19,7 @@ boolean isInteresting(Field f) {
 
 // Returns all the parent struct of all fields, their name, their type, their offset and if they could be interesting
 from Field f, Struct s
-where s.getAField() = f
+where
+  s.getAField() = f and
+  not s.isAnonymous()
 select s.getName(), f.getName(), f.getType().toString(), f.getByteOffset(), isInteresting(f)
