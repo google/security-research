@@ -23,6 +23,10 @@ jobs:
         continue-on-error: true
         run: cat /sys/devices/system/cpu/vulnerabilities/meltdown
 
+      - name: "CPU vuln check"
+        continue-on-error: true
+        run: grep -r . /sys/devices/system/cpu/vulnerabilities
+
       - name: cpuinfo
         continue-on-error: true
         run: cat /proc/cpuinfo
