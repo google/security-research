@@ -12,7 +12,7 @@ A submission can contain any number of the following 4 parts:
 
 ### 1. Exploit for the latest LTS instance
 
-This instance uses the latest LTS (currently 6.1) with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig), but with `io_uring` disabled. Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
+This instance uses the latest LTS (currently 6.1, soon 6.6) with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig), but with `io_uring` and `nftables` (for 6.6) [disabled](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/lts-6.6.config). Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
 
 #### Rewards
 
@@ -46,13 +46,15 @@ Only exploits which clearly bypass [our mitigations](https://github.com/thejh/li
 
 As the current instance (`mitigation-v3-6.1.55`) uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
 
+See the [source code](https://github.com/thejh/linux/tree/c64d47f3a86262fb0e4e43108daf785d875b0f7e) and the [extra kernel hardenings](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/mitigation-v3-full.config) turned on.
+
 #### Reward
 
   * $21.000
 
 ### 3. Exploits for COS instances
 
-These instances follow the live COS kernel config (which is also used in GKE), with the necessary modifications to make it work in our infrastructure. `io_uring` is enabled here.
+These instances follow the live COS kernel config (which is also used in GKE), with the necessary modifications to make it work in our infrastructure. `io_uring` and `nftables` are enabled here.
 
 Only the first submission is eligible per COS version unless it is part of a valid 0-day LTS submission. New COS versions are released every few weeks on average.
 
@@ -64,7 +66,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
     * This reward is based on whether the exploit works on GKE AutoPilot or not. AutoPilot currently does not enable unprivileged user namespaces and they are also considering disabling io\_uring.
 
-  * Currently, there are two instances available, with kernel versions 5.10 and 5.15 respectively. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
+  * Currently, there are two instances (COS 97 and COS 105) available, with kernel versions 5.10 and 5.15 respectively (soon we will switch to COS 105 and COS 109 - 5.15 & 6.1). The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
   * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e)).
 
@@ -111,7 +113,11 @@ If the same vulnerability is fixed in multiple patch commits (e.g. in commit A i
 
 The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
 
+If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/A3qZcyaZ69) before making the submission.
+
 ### Vulnerabilities used in kCTF VRP
+<details>
+  <summary>This should not be relevant anymore, but click here to expand.</summary>
 
 1. If a vulnerability was exploited against any target in kCTF VRP then it's not eligible against kernelCTF's LTS target.
 
@@ -124,8 +130,7 @@ The "novel techniques" category is an exception from these rules, as in that cat
 3. If a vulnerability was exploited against kCTF VRP's mitigation target then it's not eligible against kernelCTF's mitigation target.
 
    * If a vulnerability was exploited against a mitigation target then the "kCTF VRP" tab of the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) contains a flag which contains the `mitigation` substring.
-
-If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/A3qZcyaZ69) before making the submission.
+</details>
 
 # Submission process
 

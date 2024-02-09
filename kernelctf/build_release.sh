@@ -17,7 +17,11 @@ case $TARGET in
   lts)
     REPO="https://github.com/gregkh/linux"
     DEFAULT_BRANCH="v${VERSION}"
-    CONFIG_FN="lts.config"
+    case $VERSION in
+        6.6.*) CONFIG_FN="lts-6.6.config" ;;
+        6.1.*) CONFIG_FN="lts-6.1.config" ;;
+    esac
+    if [ -z "$CONFIG_FN" ]; then echo "Failed to select config (VERSION=$VERSION)"; exit 1; fi
     ;;
   cos)
     REPO="https://cos.googlesource.com/third_party/kernel"
@@ -44,6 +48,7 @@ if [ -z "$BRANCH" ]; then usage; fi
 
 echo "REPO=$REPO"
 echo "BRANCH=$BRANCH"
+echo "CONFIG_FN=$CONFIG_FN"
 
 BASEDIR=`pwd`
 BUILD_DIR="$BASEDIR/builds/$RELEASE_NAME"
