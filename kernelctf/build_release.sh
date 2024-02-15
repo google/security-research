@@ -66,6 +66,12 @@ if ! git checkout $BRANCH; then
     git checkout $BRANCH
 fi
 
+# not necessary for the build itself, but it can be useful for comparing the config changes
+if [ "$TARGET" == "lts" ]; then
+    make defconfig
+    mv .config upstream_defconfig
+fi
+
 if [ "$TARGET" == "cos" ]; then
     rm lakitu_defconfig || true
     make lakitu_defconfig
@@ -110,4 +116,5 @@ echo "REPOSITORY_URL=$REPO" > $RELEASE_DIR/COMMIT_INFO
 cp $BUILD_DIR/arch/x86/boot/bzImage $RELEASE_DIR/
 cp $BUILD_DIR/lakitu_defconfig $RELEASE_DIR/
 cp $BUILD_DIR/.config $RELEASE_DIR/
+if [ "$TARGET" == "lts" ]; then cp $BUILD_DIR/upstream_defconfig $RELEASE_DIR/; fi
 gzip -c $BUILD_DIR/vmlinux > $RELEASE_DIR/vmlinux.gz
