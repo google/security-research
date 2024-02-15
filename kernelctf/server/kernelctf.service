@@ -1,0 +1,10 @@
+[Unit]
+Description=kernelCTF
+
+[Service]
+ExecStart=/home/poprdi/service.sh
+User=kernelctf
+Group=kernelctf
+
+[Install]
+WantedBy=multi-user.target

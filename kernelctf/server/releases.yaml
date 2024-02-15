@@ -1,0 +1,129 @@
+lts-6.1.76:
+  release-date: 2024-02-20T12:00:00Z
+cos-97-16919.450.16:
+  release-date: 2024-02-20T12:00:00Z
+cos-105-17412.294.23:
+  release-date: 2024-02-20T12:00:00Z
+
+lts-6.1.77:
+  release-date: 2024-02-09T12:00:00Z
+cos-97-16919.450.6:
+  release-date: 2024-02-09T12:00:00Z
+cos-105-17412.294.10:
+  release-date: 2024-02-09T12:00:00Z
+
+lts-6.1.74:
+  release-date: 2024-01-26T12:00:00Z
+cos-97-16919.404.34:
+  release-date: 2024-01-26T12:00:00Z
+cos-105-17412.226.68:
+  release-date: 2024-01-26T12:00:00Z
+
+lts-6.1.72:
+  release-date: 2024-01-19T12:00:00Z
+cos-97-16919.404.33:
+  release-date: 2024-01-19T12:00:00Z
+cos-105-17412.226.67:
+  release-date: 2024-01-19T12:00:00Z
+
+lts-6.1.70:
+  release-date: 2024-01-12T12:00:00Z
+cos-105-17412.226.52:
+  release-date: 2024-01-12T12:00:00Z
+cos-97-16919.404.26:
+  release-date: 2024-01-12T12:00:00Z
+
+lts-6.1.67:
+  release-date: 2023-12-18T12:00:00Z
+cos-105-17412.226.43:
+  release-date: 2023-12-18T12:00:00Z
+cos-97-16919.404.21:
+  release-date: 2023-12-18T12:00:00Z
+
+lts-6.1.63:
+  release-date: 2023-12-01T12:00:00Z
+
+lts-6.1.61:
+  release-date: 2023-11-17T12:00:00Z
+cos-105-17412.226.28:
+  release-date: 2023-11-17T12:00:00Z
+cos-97-16919.404.13:
+  release-date: 2023-11-17T12:00:00Z
+
+lts-6.1.60:
+  release-date: 2023-11-03T12:00:00Z
+cos-105-17412.226.18:
+  release-date: 2023-11-03T12:00:00Z
+cos-97-16919.404.4:
+  release-date: 2023-11-03T12:00:00Z
+
+mitigation-v3-6.1.55:
+  release-date: 2023-10-21T12:00:00Z
+
+lts-6.1.58:
+  release-date: 2023-10-20T12:00:00Z
+cos-105-17412.156.69:
+  release-date: 2023-10-20T12:00:00Z
+cos-97-16919.353.53:
+  release-date: 2023-10-20T12:00:00Z
+
+lts-6.1.54:
+  release-date: 2023-09-29T12:00:00Z
+cos-105-17412.156.59:
+  release-date: 2023-09-29T12:00:00Z
+cos-97-16919.353.46:
+  release-date: 2023-09-29T12:00:00Z
+
+lts-6.1.52:
+  release-date: 2023-09-13T12:00:00Z
+cos-105-17412.156.30:
+  release-date: 2023-09-13T12:00:00Z
+
+lts-6.1.47:
+  release-date: 2023-08-30T12:00:00Z
+cos-105-17412.156.23:
+  release-date: 2023-08-30T12:00:00Z
+cos-97-16919.353.23:
+  release-date: 2023-08-30T12:00:00Z
+
+lts-6.1.36:
+  release-date: 2023-06-30T13:35:00Z
+cos-105-17412.101.42:
+  release-date: 2023-07-19T00:00:00Z
+cos-101-17162.210.48:
+  release-date: 2023-07-19T00:00:00Z
+  deprecated: true
+cos-97-16919.294.48:
+  release-date: 2023-07-19T00:00:00Z
+cos-93-16623.402.40:
+  release-date: 2023-07-19T00:00:00Z
+  deprecated: true
+mitigation-6.1-v2:
+  release-date: 2023-07-08T17:20:00Z
+  available-until: 2023-10-21T12:00:00Z
+
+lts-6.1.35:
+  release-date: 2023-06-30T14:05:00Z
+
+lts-6.1.31:
+  release-date: 2023-06-14T16:00:00Z
+  vmlinux: false
+cos-105-17412.101.17:
+  release-date: 2023-06-14T16:00:00Z
+  vmlinux: false
+cos-101-17162.127.42:
+  release-date: 2023-06-14T16:00:00Z
+  deprecated: true
+  vmlinux: false
+cos-97-16919.294.28:
+  release-date: 2023-06-14T16:00:00Z
+  vmlinux: false
+cos-93-16623.341.29:
+  release-date: 2023-06-14T16:00:00Z
+  deprecated: true
+  vmlinux: false
+mitigation-6.1-broken:
+  release-date: 2023-06-14T16:00:00Z
+  deprecated: true
+  vmlinux: false
+  available-until: 2023-07-08T17:20:00Z
