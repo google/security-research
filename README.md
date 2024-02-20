@@ -27,6 +27,7 @@ security vulnerabilities.
 
 | Year | Title | Advisories | Links |
 | ---- | ----- | ---------- | ----- |
+| 2023 | Oracle VM VirtualBox 7.0.10 r158379 Escape | [CVE-2023-22098](https://github.com/google/security-research/security/advisories/GHSA-q7p4-pxjx-6h42) | [PoC](pocs/oracle/virtualbox/cve-2023-22098)
 | 2023 | Linux: eBPF Path Pruning gone wrong | [CVE-2023-2163](https://github.com/google/security-research/security/advisories/GHSA-j87x-j6mh-mv8v) | [PoC](pocs/linux/cve-2023-2163)
 | 2023 | XGETBV is non-deterministic on Intel CPUs | | [PoC](pocs/cpus/xgetbv)
 | 2023 | XSAVES Instruction May Fail to Save XMM Registers | | [PoC](pocs/cpus/errata/amd/1386)
