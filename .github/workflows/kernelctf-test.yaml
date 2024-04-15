@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   cpu_info:
-    # runs-on: ubuntu-22.04-4core
+    runs-on: ubuntu-latest
     steps:
       - name: "KPTI check: cpuinfo"
         continue-on-error: true
