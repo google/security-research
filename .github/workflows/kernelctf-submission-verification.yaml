@@ -8,10 +8,11 @@ on:
       prNumber:
         description: 'PR number'
         type: number
-        required: true
+      shaHash:
+        description: 'SHA hash'
 permissions: {}
 env:
-  PR_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', github.event.inputs.prNumber) || github.event.pull_request.head.sha }}
+  PR_REF: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.shaHash || format('refs/pull/{0}/merge', github.event.inputs.prNumber)) || github.event.pull_request.head.sha }}
 jobs:
   structure_check:
     # if labeling triggered the job then only run in case of the "recheck" label
