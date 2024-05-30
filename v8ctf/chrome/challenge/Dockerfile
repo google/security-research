@@ -31,8 +31,8 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 RUN apt-get update && apt-get install -y unzip
 
 RUN mkdir /home/user
-# This version is to be released on 2024-03-22
-RUN wget 'https://storage.googleapis.com/chrome-for-testing-public/123.0.6312.58/linux64/chrome-linux64.zip' -O /opt/chrome-linux.zip
+# This version is to be released on 2024-05-17
+RUN wget 'https://storage.googleapis.com/chrome-for-testing-public/125.0.6422.60/linux64/chrome-linux64.zip' -O /opt/chrome-linux.zip
 RUN cd /opt && unzip chrome-linux.zip && rm chrome-linux.zip
 
 COPY chal /opt/
