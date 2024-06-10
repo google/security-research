@@ -107,7 +107,7 @@ if [ ! -z "$CONFIG_FULL_FN" ]; then
 fi
 
 # since cos-109-17800-218-14, COS does not build due to __cold redefinition, quickfix this until its fixed in the COS repo
-if [ "$TARGET" == "cos" ]; then
+if [ "$TARGET" == "cos" ] && grep __cold include/linux/compiler_types.h; then
     sed -i 's/.*#define.__cold.*//' include/linux/compiler_attributes.h
 fi
 
