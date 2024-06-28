@@ -18,7 +18,7 @@ The host runs v6.1.74 and runs on an Intel(R) Xeon(R) Gold 5222 CPU @ 3.80GHz.
 Participants will have the option to select whether they want the host to run
 with `CONFIG_KASAN` disabled or enabled. The complete setup of the host can be
 downloaded
-[here](https://storage.mtls.cloud.google.com/kvmctf_setup/latest.tar.gz) in a
+[here](https://storage.googleapis.com/kvmctf/latest.tar.gz) in a
 gzip format and contains the following:
 * The kernel patch we applied on the kernel tree.
 * The kernel configuration files.
