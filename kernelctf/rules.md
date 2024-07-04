@@ -68,7 +68,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
   * Currently, there are two instances (COS 97 and COS 105) available, with kernel versions 5.10 and 5.15 respectively (soon we will switch to COS 105 and COS 109 - 5.15 & 6.1). The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
-  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/AjGJ3acF2e)).
+  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/yXue2RwDEA)).
 
   * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
 
@@ -113,7 +113,7 @@ If the same vulnerability is fixed in multiple patch commits (e.g. in commit A i
 
 The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
 
-If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/A3qZcyaZ69) before making the submission.
+If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/ECS5VnJZys) before making the submission.
 
 ### Vulnerabilities used in kCTF VRP
 <details>

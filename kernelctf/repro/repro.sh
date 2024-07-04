@@ -25,7 +25,7 @@ expect -c '
 
     spawn qemu-system-x86_64 -m 3.5G -nographic \
     -monitor none \
-    -enable-kvm -cpu host -smp cores=2 \
+    -enable-kvm -cpu host,-avx512f -smp cores=2 \
     -kernel bzImage \
     -nic user,model=virtio-net-pci \
     -drive file=rootfs.img,if=virtio,cache=none,aio=native,format=raw,discard=on,readonly=on \
