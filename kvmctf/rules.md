@@ -33,7 +33,7 @@ Participants will be connected to a Debian 12.5 (bookworm) guest that runs on a
 `v6.1.0-21` kernel compiled with the default Debian config.
 
 The goal is to perform a successful guest-to-host attack. Currently we do not
-reward QEMU, host-to-KVM or CPU-based vulnerabilities.
+reward QEMU, host-to-KVM or CPU/DRAM/HW-based vulnerabilities.
 
 ## Rewards
 | Tier                   | Reward   |
