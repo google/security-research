@@ -47,6 +47,7 @@ jobs:
           name: ${{inputs.releaseId}}
           path: kernelctf/releases/${{inputs.releaseId}}
           if-no-files-found: error
+          include-hidden-files: true
 
   upload:
     runs-on: ubuntu-latest
