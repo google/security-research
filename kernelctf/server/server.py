@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
+DEPRECATED_TARGETS = ["cos-97"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
 from httplib2 import Http
@@ -61,7 +62,7 @@ def get_releases():
 
         target = m.group('target')
 
-        if released and not release.get('deprecated', False):
+        if released and not release.get('deprecated', False) and target not in DEPRECATED_TARGETS:
             if not target in target_latest or target_latest[target]['release-date'] < release['release-date']:
                 target_latest[target] = release
 
