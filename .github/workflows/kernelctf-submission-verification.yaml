@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload exploit (newly compiled)
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: exploit_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit
@@ -90,7 +90,7 @@ jobs:
 
       - name: Upload exploit (original, build failed)
         if: failure() && steps.build_exploit.outcome == 'failure'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: exploit_${{ env.RELEASE_ID }}
           path: ./exploit
@@ -138,7 +138,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Download exploit
-        uses: actions/download-artifact@v4.1.7
+        uses: actions/download-artifact@v4
         with:
           name: exploit_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/exp/
