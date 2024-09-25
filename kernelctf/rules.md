@@ -387,7 +387,9 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel.
 
-If you have any question regarding kernelCTF, feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
+## Questions about program
+
+If you have any question regarding kernelCTF, check [FAQ](faq.md) page and feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
 
 ## Non-kernel vulnerabilities
 
