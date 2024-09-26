@@ -389,7 +389,7 @@ We announce major program changes on [Google's Security Blog](https://security.g
 
 ## Questions about program
 
-If you have any question regarding kernelCTF, check [FAQ](faq.md) page and feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
+If you have any questions regarding kernelCTF, check [the FAQ page](faq.md) and feel free to ask on the [#kernelctf](https://discord.gg/ECS5VnJZys) Discord channel.
 
 ## Non-kernel vulnerabilities
 
