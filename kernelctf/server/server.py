@@ -49,7 +49,7 @@ def get_releases():
             del releases[release_id]
             continue
 
-        m = re.match(r'(?P<target>lts|mitigation(-v3)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
+        m = re.match(r'(?P<target>lts|mitigation(-v3|-v3b)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
         if m is None:
             warning(f'release {release_id} does not match regex')
             del releases[release_id]
@@ -102,7 +102,7 @@ def print_releases(releases, slots, deprecated_only):
         print_filtered('Deprecated targets', 'deprecated')
     else:
         print_filtered('Current targets', 'latest')
-        print_filtered('Future targets', 'future')    
+        print_filtered('Future targets', 'future')
 
 def are_you_sure(prompt):
     print(prompt)
