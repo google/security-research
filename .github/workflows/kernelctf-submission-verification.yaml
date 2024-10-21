@@ -232,7 +232,7 @@ jobs:
     if: always() && needs.structure_check.result == 'success'
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4.1.7
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
