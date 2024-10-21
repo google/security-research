@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test GCS SA key to fail quick before trying to make a build
-        uses: google-github-actions/auth@v1
+        uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
           create_credentials_file: false
