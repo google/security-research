@@ -208,7 +208,7 @@ jobs:
         run: ./repro.sh 10
 
       - name: Upload repro QEMU logs as an artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: repro_logs_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_log_*.txt
@@ -221,7 +221,7 @@ jobs:
           ../repro_summary.py ${{ github.run_id }}
 
       - name: Upload repro summary as an artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
