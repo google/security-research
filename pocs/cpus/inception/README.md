@@ -108,8 +108,7 @@ invalidation of RAS entries injected as a result of PhantomCALL speculation.
 We didn't research what impact does this finding have on safeRET. Given that
 this vulnerability happens in microarchitectural conditions created by dispatch
 serializing instructions and that such instructions are microcoded, we think AMD
-might be able to issue a microcode fix. We confirmed that IBPB mitigates this
-issue on Zen 3 and Zen 4.
+might be able to issue a microcode fix. We confirmed this issue is mitigated with IBPB + RAS filling on Zen3 and with IBPB on Zen4.
 
 #### New mitigation discussion
 
@@ -178,17 +177,6 @@ interleaved in the RAS.
 
 With this method we could chain up to three (3) gadgets. In our KVM exploit, we
 only need to chain two gadgets to achieve a reliable disclosure primitive.
-
-### Disclosure
-
-We are privately disclosing this vulnerability to you so that you can develop a
-fix and manage its rollout. We do not require you to keep any information of
-this report secret, but if you make it public then please let us know that you
-did. This advisory will be kept private by Google for 30 days after a fix is
-publicly available or after 90 days if no fix is made. After this deadline we
-plan to disclose this advisory in full at:
-http://github.com/google/security-research/. Please read more details about this
-policy here: https://g.co/appsecurity
 
 Finder: Andy Nguyen of the Google Security Team
 
