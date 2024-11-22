@@ -102,7 +102,7 @@ def print_releases(releases, slots, deprecated_only):
         print_filtered('Deprecated targets', 'deprecated')
     else:
         print_filtered('Current targets', 'latest')
-        print_filtered('Future targets', 'future')
+        print_filtered('Future targets', 'future')    
 
 def are_you_sure(prompt):
     print(prompt)
