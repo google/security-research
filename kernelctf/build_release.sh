@@ -29,6 +29,10 @@ case $TARGET in
   mitigation)
     REPO="https://github.com/thejh/linux"
     case $VERSION in
+        v4*)
+            DEFAULT_BRANCH="slub-virtual-v6.6"
+            CONFIG_FN="mitigation-v4.config"
+            ;;
         v3-* | v3b-*)
             DEFAULT_BRANCH="mitigations-next"
             case $VERSION in
