@@ -27,7 +27,7 @@ checkAtLeastOne(prFiles, "There are no files in the submission")
 prFiles = checkList(prFiles, lambda f: f.startswith(POC_FOLDER), f"The following files are outside of the `{POC_FOLDER}` folder which is not allowed")
 
 subDirName = checkOnlyOne(subdirEntries(prFiles, POC_FOLDER), "Only one submission is allowed per PR. Found multiple submissions")
-checkRegex(subDirName, r"^CVE-\d+-\d+(_lts|_cos|_mitigation)+$", f"The submission folder name is invalid (`{subDirName}`)")
+checkRegex(subDirName, r"^CVE-\d+-\d+(_lts|_cos|_mitigation)+(_\d+)?$", f"The submission folder name is invalid (`{subDirName}`)")
 
 print(f"[-] Processing submission... Folder = {subDirName}")
 cve, *targets = subDirName.split('_')
