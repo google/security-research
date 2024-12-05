@@ -17,7 +17,17 @@ touch $QEMU_TXT
 START_TIME=$(date +%s)
 
 CMDLINE="console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro init=/init hostname=repro"
-if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"; fi
+
+if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then
+  CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"
+fi
+
+# Check if the exploit uses io_uring
+if ! echo $EXPLOIT_INFO | jq -e '.uses | index("io_uring")' > /dev/null 2>&1; then
+  CMDLINE="$CMDLINE sysctl.io_uring_disabled=2"
+fi
+
+echo $CMDLINE
 
 expect -c '
     set timeout -1
