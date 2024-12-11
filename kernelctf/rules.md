@@ -8,7 +8,7 @@ We are asking researchers to publish their submissions, helping the community to
 
 ## Targets
 
-A submission can contain any number of the following 4 parts:
+A submission can contain any number of the following 5 parts:
 
 ### 1. Exploit for the latest LTS instance
 
@@ -81,6 +81,22 @@ Novel techniques can be submitted at any time exploiting any available environme
 #### Reward
 
   * From $0 to $20.000 per technique, at our discretion.
+
+
+### 5. Promotion
+
+For a limited time, io_uring will be re-enabled on our LTS and mitigation instances (io_uring is already enabled on COS). Between December 13, 2024 and February 26, 2025, you can submit io_uring exploits against the LTS instance to kernelCTF. We will accept a maximum of 5 kernelCTF submissions which contain io_uring exploits affecting the LTS instance.
+
+These submissions are not bound by the slot rules: multiple submissions can be sent for the same target (as long as they target separate vulnerabilities).
+
+In cases where multiple submissions are received for the same vulnerability, priority will be given to the submission with the earliest timestamp. Only the first valid submission will be eligible for the reward.
+
+The submissions can be 0-days or 1-days.
+
+#### Reward
+
+* General reward rules apply to this promotion.
+
 
 ### Target instances
 
