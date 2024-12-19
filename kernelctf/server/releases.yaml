@@ -1,3 +1,19 @@
+lts-6.6.66:
+  release-date: 2024-12-27T12:00:00Z
+cos-105-17412.495.73:
+  release-date: 2024-12-27T12:00:00Z
+cos-109-17800.372.71:
+  release-date: 2024-12-27T12:00:00Z
+
+lts-6.6.64:
+  release-date: 2024-12-13T12:00:00Z
+cos-105-17412.495.62:
+  release-date: 2024-12-13T12:00:00Z
+cos-109-17800.372.64:
+  release-date: 2024-12-13T12:00:00Z
+mitigation-v4-6.6:
+  release-date: 2024-12-13T12:00:00Z
+
 lts-6.6.62:
   release-date: 2024-11-29T12:00:00Z
 cos-105-17412.495.37:

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
 DEPRECATED_TARGETS = ["cos-97"]
+ALLOWED_CAPABILITIES = ["io_uring"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
 from httplib2 import Http
@@ -49,7 +50,7 @@ def get_releases():
             del releases[release_id]
             continue
 
-        m = re.match(r'(?P<target>lts|mitigation(-v3|-v3b)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
+        m = re.match(r'(?P<target>lts|mitigation(-v3|-v3b|-v4)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
         if m is None:
             warning(f'release {release_id} does not match regex')
             del releases[release_id]
@@ -176,6 +177,21 @@ def main():
                 elif release['status'] == 'latest':
                     flagPrefix = ''
 
+                capabilities_done = False
+                while not capabilities_done:
+                    print("Enter capabilities needed (comma-separated, or leave empty)")
+                    print(f"options: {ALLOWED_CAPABILITIES}")
+                    capabilities = input(": ").strip()
+                    capabilities_done = True
+
+                    capabilities = [capability.strip() for capability in capabilities.split(",")] if capabilities else []
+                    capabilities = list(set(capabilities))
+
+                    for capability in capabilities:
+                        if capability not in ALLOWED_CAPABILITIES:
+                            print(f"{capability} not in the available capabilities.")
+                            capabilities_done = False
+
                 if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
                     import pow
                     if not pow.ask(7337):
@@ -186,12 +202,15 @@ def main():
                 with tempfile.TemporaryDirectory() as temp_dir:
                     flag_fn = f'{temp_dir}/flag'
                     with open(flag_fn, 'wt') as f:
-                        flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
+                        if len(capabilities) == 0:
+                            flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
+                        else:
+                            flag_content = f'{flagPrefix}v2:{release_id}:{",".join(capabilities)}:{int(time.time())}'
                         signature = hmac.new(server_secrets.flag_key.encode('utf-8'), flag_content.encode('utf-8'), hashlib.sha1).hexdigest()
                         flag = f'kernelCTF{{{flag_content}:{signature}}}'
                         f.write(flag + '\n')
 
-                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh'])
+                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])
             else:
                 print('Invalid action. Expected one of the followings: run, info, back')
                 print()
