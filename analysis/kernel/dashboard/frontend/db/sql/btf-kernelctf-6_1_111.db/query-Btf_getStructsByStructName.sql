@@ -1,0 +1,43 @@
+SELECT
+    struct_name,
+    struct_size,
+    allocSizeMax,
+    allocSizeMin,
+    allocSize,
+    call_startLine,
+    call_uri,
+    call_value,
+    depth,
+    flagsMax,
+    flagsMin,
+    flags,
+    function,
+    function_start_line,
+    function_end_line,
+    COUNT(DISTINCT syscall) FILTER (WHERE syscall IS NOT NULL) syscalls_num,
+    kmalloc_bucket_name,
+    kmalloc_cgroup_name,
+    kmalloc_dyn
+FROM
+    structs_with_allocs_search
+WHERE
+    $struct_name = struct_or_parent
+GROUP BY
+    struct_name,
+    struct_size,
+    allocSizeMax,
+    allocSizeMin,
+    allocSize,
+    call_startLine,
+    call_uri,
+    call_value,
+    depth,
+    flagsMax,
+    flagsMin,
+    flags,
+    function,
+    function_start_line,
+    function_end_line,
+    kmalloc_bucket_name,
+    kmalloc_cgroup_name,
+    kmalloc_dyn;
