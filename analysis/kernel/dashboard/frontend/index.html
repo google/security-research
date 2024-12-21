@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<head>
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>🐧 kernel explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Code+Pro&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@200&display=swap&text=kernel explorer" rel="stylesheet">
+    <script src="./dist/bundle.js"></script>
+</head>
+<body>
+    <div class="explorer-sandwich">
+        <input type="checkbox" id="explorer-filter-visible">
+        <label for="explorer-filter-visible">🐧</label>
+    </div>
+    <div class="explorer-filters">
+        <div class="explorer-header">
+            <h3 class="kernel-explorer-title">
+                kernel explorer
+            </h3>
+        </div>
+        <div class="explorer-tabs">
+            <label>code<input class="file-explorer-tab" name=tab type=radio></label>
+            <label>heap<input class="struct-explorer-tab" name=tab type=radio checked></label>
+        </div>
+        <div class="explorer-panels">
+            <div class="struct-explorer" tabindex="-1">
+                <div class="struct-root-node"></div>
+                <div class="field-explorer">
+                    <div class="fields-root-node"></div>
+                    <div class="access-root-node"></div>
+                </div>
+            </div>
+            <div class="file-explorer">
+                <input type="search">
+                <div class="file-root-node"></div>
+            </div>
+        </div>
+    </div>
+    <div class="code-explorer">
+        <div class="snippets-root-node"></div>
+    </div>
+    <div class="dialog-root-node"></div>
+</body>

@@ -1,0 +1,170 @@
+.struct-explorer {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 0;
+
+    width: min-content;
+    z-index: 10;
+
+    background: #2d2d2dcc;
+
+    .struct-explorer-top {
+        display: flex;
+        flex-direction: row;
+        min-width: 0;
+
+        label {
+            white-space: nowrap;
+            width: 0;
+            input {
+                margin: 0;
+            }
+            span {
+                width: 100vw;
+                display: inline-block;
+            }
+        }
+    }
+
+    .struct-root-node {
+        overflow: hidden;
+        flex: 0 1 50%;
+        max-height: max-content;
+
+        box-shadow: inset white 0 0 5px;
+
+        .struct-list {
+            display: grid;
+            grid-template-columns: repeat(4, auto);
+            align-items: start;
+            align-content: flex-start;
+
+            padding: 0;
+            height: 100%;
+            overflow: auto;
+            border: 1px solid black;
+            box-shadow: 0 0 0.5em #999;
+            scrollbar-color: hsla(24, 20%, 50%,.4) #2d2d2d;
+
+            font-size: 0.8em;
+            color: #eee;
+
+            & :is(a, a:visited) {
+                color: inherit;
+            }
+
+            .struct-entry {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                grid-column: 1 / 5;
+
+                column-gap: 1ex;
+                margin: 20px 0 0 0;
+                padding: 1ex;
+
+                box-shadow: 0 0 0.5em #999;
+                background: hsla(24, 20%, 50%,.4);
+
+                & input {
+                    visibility: hidden;
+                    position: absolute;
+                }
+                &:not(:has(:checked)) + .struct-alloc {
+                    visibility: hidden;
+                    height: 0;
+                }
+            }
+            .struct-alloc {
+                display: grid;
+                grid-column: 1 / 5;
+                grid-template-columns: subgrid;
+
+                & > * {
+                    padding: 1ex;
+                    border-bottom: 1px dashed #ccc;
+                }
+                .struct-alloc-cache {
+                    margin-left: 3em;
+                    white-space: nowrap;
+                }
+                .struct-alloc-call {
+                    text-align: end;
+                }
+                .struct-alloc-metadata {
+                    white-space: nowrap;
+                }
+            }
+        }
+    }
+    & .field-explorer {
+        display: flex;
+        flex-direction: row;
+        flex: 1 1 50%;
+        max-height: max-content;
+        overflow: hidden;
+        background: hsla(24, 20%, 50%,.4);
+        a {
+            color: inherit;
+        }
+        .fields-root-node {
+            flex: 0 1 50%;
+            min-width: min-content;
+            max-width: max-content;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-color: #bbb #2d2d2d;
+            max-height: 100%;
+            font-size: 0.8em;
+            background: #2d2d2d88;
+            padding: 0;
+            white-space: nowrap;
+            box-shadow: inset white 0 0 5px;
+            border-radius: 5px;
+            & > .tree-leaf > .tree-leaf-content {
+                font-weight: bold;
+                background: black;
+                position: sticky;
+                top: 0;
+                z-index: 1;
+            }
+            .tree-leaf-content {
+                overflow-y: scroll;
+                scrollbar-width: none;
+                &::-webkit-scrollbar {
+                    display: none;
+                }
+            }
+        }
+        .access-root-node {
+            flex: 1 1 100%;
+            &:not(:empty) {
+                overflow-y: scroll;
+            }
+            scrollbar-color: #bbb transparent;
+            .access-list {
+                display: grid;
+                grid-template-columns: auto 1fr auto;
+                white-space: nowrap;
+                font-size: 0.8em;
+                .access-field {
+                    display: grid;
+                    grid-column: 1/4;
+                    grid-template-columns: subgrid;
+
+                    background: #2d2d2d88;
+                    padding-top: 10px;
+                }
+                .access-calls {
+                    display: grid;
+                    grid-column: 1/4;
+                    grid-template-columns: subgrid;
+
+                    background: hsla(24, 20%, 50%,.4);
+                    .access-call-type {
+                        margin-left: auto;
+                    }
+                }
+            }
+        }
+    }
+}
