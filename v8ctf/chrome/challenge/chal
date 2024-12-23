@@ -11,4 +11,4 @@ if ! echo $url | grep -E '^https?://[A-Za-z0-9.:/?%\-_+&=]*$' -q; then
 fi
 
 dbus-daemon --system
-dbus-run-session -- $CHROME --headless=new --no-sandbox --disable-crashpad --disable-breakpad --disable-crash-reporter --enable-logging=stderr "${url}"
+dbus-run-session -- $CHROME --headless=new --no-sandbox --disable-crashpad --disable-breakpad --disable-crash-reporter --enable-logging=stderr --user-data-dir=/home/user "${url}"
