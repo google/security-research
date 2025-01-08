@@ -54,44 +54,44 @@
             }
 
             .struct-entry {
-                display: grid;
-                grid-template-columns: auto 1fr;
                 grid-column: 1 / 5;
-
-                column-gap: 1ex;
-                margin: 20px 0 0 0;
-                padding: 1ex;
 
                 box-shadow: 0 0 0.5em #999;
                 background: hsla(24, 20%, 50%,.4);
+                .struct-entry-container {
+                    display: grid;
+                    grid-template-columns: auto 1fr;
 
-                & input {
-                    visibility: hidden;
-                    position: absolute;
-                }
-                &:not(:has(:checked)) + .struct-alloc {
-                    visibility: hidden;
-                    height: 0;
+                    column-gap: 1ex;
+                    padding: 1ex;
                 }
             }
             .struct-alloc {
-                display: grid;
                 grid-column: 1 / 5;
+
+                display: grid;
                 grid-template-columns: subgrid;
 
-                & > * {
-                    padding: 1ex;
-                    border-bottom: 1px dashed #ccc;
-                }
-                .struct-alloc-cache {
-                    margin-left: 3em;
-                    white-space: nowrap;
-                }
-                .struct-alloc-call {
-                    text-align: end;
-                }
-                .struct-alloc-metadata {
-                    white-space: nowrap;
+                margin-bottom: 20px;
+
+                .struct-alloc-container {
+                    display: grid;
+                    grid-column: 1 / 5;
+                    grid-template-columns: subgrid;
+                    & > * {
+                        padding: 1ex;
+                        border-bottom: 1px dashed #ccc;
+                    }
+                    .struct-alloc-cache {
+                        margin-left: 3em;
+                        white-space: nowrap;
+                    }
+                    .struct-alloc-call {
+                        text-align: end;
+                    }
+                    .struct-alloc-metadata {
+                        white-space: nowrap;
+                    }
                 }
             }
         }
