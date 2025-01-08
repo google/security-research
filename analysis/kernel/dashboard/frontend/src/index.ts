@@ -14,7 +14,7 @@ export class Index {
     switch (true) {
       case !!locationHash.match(/^#!heap/):
         await (await this.heapPromise).onLocationChange(locationHash);
-        (document.querySelector('.struct-explorer') as HTMLDivElement).focus();
+        (document.querySelector('#explorer-filter-visible') as HTMLInputElement).checked = true;
         break;
       case !!locationHash.match(/^#\w+[/]/):
         await (await this.reachabilityPromise).onLocationChange(locationHash);
@@ -25,15 +25,24 @@ export class Index {
     }
   }
 
+  static async loadPage(index: Index) {
+    document.documentElement.style.cursor = 'progress';
+    await index.onLocationChange(location.hash);
+    document.documentElement.style.cursor = '';
+  }
+
   static async init() {
     let index: Index = new Index(
       Promise.resolve().then(() => Reachability.init(index)),
       Promise.resolve().then(() => Heap.init(index))
     );
-    document.onreadystatechange = onhashchange = async () => {
-      document.documentElement.style.cursor = 'progress';
-      await index.onLocationChange(location.hash);
-      document.documentElement.style.cursor = '';
+    document.onreadystatechange = async (e) => {
+      if (document.readyState == "complete") {
+        Index.loadPage(index);
+      }
+    };
+    onhashchange = () => {
+      Index.loadPage(index);
     };
     return index;
   }
