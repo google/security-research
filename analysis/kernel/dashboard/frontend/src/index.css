@@ -55,6 +55,9 @@
                     &:has(input:checked) {
                         border-bottom-color: hsla(24, 20%, 40%, 1);
                     }
+                    input {
+                        visibility: hidden;
+                    }
                 }
             }
             .explorer-panels {

@@ -11,27 +11,27 @@
 <body>
     <div class="explorer-sandwich">
         <input type="checkbox" id="explorer-filter-visible">
-        <label for="explorer-filter-visible">🐧</label>
+        <label for="explorer-filter-visible" role="button">🐧</label>
     </div>
-    <div class="explorer-filters">
+    <div class="explorer-filters" role="navigation">
         <div class="explorer-header">
             <h3 class="kernel-explorer-title">
                 kernel explorer
             </h3>
         </div>
-        <div class="explorer-tabs">
-            <label>code<input class="file-explorer-tab" name=tab type=radio></label>
-            <label>heap<input class="struct-explorer-tab" name=tab type=radio checked></label>
+        <div class="explorer-tabs" role="tablist">
+            <label role="tab">code<input class="file-explorer-tab" name=tab type=radio></label>
+            <label role="tab">heap<input class="struct-explorer-tab" name=tab type=radio checked ></label>
         </div>
         <div class="explorer-panels">
-            <div class="struct-explorer" tabindex="-1">
+            <div class="struct-explorer" role="tabpanel" tabindex="-1">
                 <div class="struct-root-node"></div>
                 <div class="field-explorer">
                     <div class="fields-root-node"></div>
                     <div class="access-root-node"></div>
                 </div>
             </div>
-            <div class="file-explorer">
+            <div class="file-explorer" role="tabpanel" tabindex="-1">
                 <input type="search">
                 <div class="file-root-node"></div>
             </div>
