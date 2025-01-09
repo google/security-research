@@ -11,8 +11,8 @@ CAPABILITIES=$4
 RELEASE=$(basename "$RELEASE_PATH")
 
 HARDENING=""
-if [[ "$RELEASE" == "mitigation-v3"* ]]; then
-  HARDENING="sysctl.kernel.dmesg_restrict=1 sysctl.kernel.kptr_restrict=2 sysctl.kernel.unprivileged_bpf_disabled=2 sysctl.net.core.bpf_jit_harden=1 sysctl.kernel.yama.ptrace_scope=1";
+if [[ "$RELEASE" == "mitigation-"* ]]; then
+  HARDENING="sysctl.kernel.dmesg_restrict=1 sysctl.kernel.kptr_restrict=2 sysctl.kernel.unprivileged_bpf_disabled=2 sysctl.net.core.bpf_jit_harden=1 sysctl.kernel.yama.ptrace_scope=1 slab_virtual=1 slab_virtual_guards=1";
 fi
 
 IO_URING="sysctl.kernel.io_uring_disabled=2"
