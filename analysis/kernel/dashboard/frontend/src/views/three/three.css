@@ -1,0 +1,85 @@
+.three-node {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 1 1 100%;
+    align-content: start;
+    min-width: 0;
+
+    &[aria-selected="true"] {
+        background-color: var(--three-selected-background-color, #ffffff20);
+    }
+
+    &[aria-expanded="false"] .three-node {
+        display: none;
+    }
+
+    >.three-label {
+        flex: 1 1 100%;
+        margin: 0;
+        padding: 1em 1ex 0;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    &:hover>.three-label {
+        z-index: 100;
+    }
+
+    >.three-edges {
+        display: flex;
+        flex-direction: row;
+
+        flex: 1 1 100%;
+
+        >.three-left,
+        >.three-right {
+            flex: 1 1 50%;
+            display: flex;
+            flex-wrap: wrap;
+
+            padding: 0;
+            margin: 0;
+
+            &:empty::before {
+                content: "\a0";
+                min-width: 2ex;
+            }
+        }
+
+        >.three-left {
+            >.three-node {
+                text-align: right;
+
+                &:not(:last-child),
+                &:last-child>.three-label {
+                    border-right: var(--three-line-width, 2px) var(--three-line-style, solid) var(--three-line-color, white);
+                }
+
+                >.three-edges {
+                    >.three-right {
+                        border-top: var(--three-line-width, 2px) var(--three-line-style, solid) var(--three-line-color, white);
+                    }
+                }
+            }
+        }
+
+        >.three-right {
+            >.three-node {
+                text-align: left;
+
+                &:not(:last-child),
+                &:last-child>.three-label {
+                    border-left: var(--three-line-width, 2px) var(--three-line-style, solid) var(--three-line-color, white);
+                }
+
+                >.three-edges {
+                    >.three-left {
+                        border-top: var(--three-line-width, 2px) var(--three-line-style, solid) var(--three-line-color, white);
+                    }
+                }
+            }
+        }
+    }
+
+}

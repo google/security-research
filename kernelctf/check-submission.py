@@ -42,7 +42,7 @@ validExploitFolderPrefixes = [f"{t}-" for t in targets] + ["extra-"]
 checkList(exploitFolders, lambda f: any(f.startswith(p) for p in validExploitFolderPrefixes),
     f"The submission folder name (`{subDirName}`) is not consistent with the exploits in the `{EXPLOIT_DIR}` folder. " +
     f"Based on the folder name (`{subDirName}`), the subfolders are expected to be prefixed with one of these: {', '.join(f'`{t}-`' for t in targets)}, " +
-    "but this is not true for the following entries: <LIST>. You can put the extra files into a folder prefixed with `extra-`, " + 
+    "but this is not true for the following entries: <LIST>. You can put the extra files into a folder prefixed with `extra-`, " +
     "but try to make it clear what's the difference between this exploit and the others.")
 
 reqFilesPerExploit = ["Makefile", "exploit.c", "exploit"]
@@ -121,7 +121,17 @@ for submissionId in submissionIds:
     if cve != publicData["CVE"]:
         error(f"The CVE on the public spreadsheet for submission `{submissionId}` is `{publicData['CVE']}` but the PR is for `{cve}`.")
 
-flagTargets = set([checkRegex(flag, r"kernelCTF\{v1:([^:]+):\d+\}", f"The flag (`{flag}`) is invalid").group(1) for flag in flags])
+flagRegex = r"kernelCTF\{(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
+def flagTarget(flag):
+    match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
+    if match.group(1):
+        # v1 flag
+        return match.group(1)
+
+    # v2 flag
+    return match.group(2)
+
+flagTargets = set([flagTarget(flag) for flag in flags])
 if "mitigation-6.1-v2" in flagTargets:
     flagTargets = flagTargets - {"mitigation-6.1-v2"} | {"mitigation-6.1"}
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
@@ -153,4 +163,3 @@ ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
 ghSet("OUTPUT", f"artifact_backup_dir={'_'.join(submissionIds)}")
 
 summary(True, f"✅ The file structure verification of the PR was successful!")
-
