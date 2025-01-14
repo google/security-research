@@ -165,18 +165,6 @@ def main():
                 print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
                 print()
             elif root or action == 'run':
-                flagPrefix = 'invalid:'
-                if release['status'] == 'future':
-                    flagPrefix = 'future:'
-                    if not are_you_sure('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.'):
-                        continue
-                elif release['status'] == 'deprecated':
-                    flagPrefix = 'deprecated:'
-                    if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
-                        continue
-                elif release['status'] == 'latest':
-                    flagPrefix = ''
-
                 capabilities_done = False
                 while not capabilities_done:
                     print("Enter capabilities needed (comma-separated, or leave empty)")
@@ -191,6 +179,21 @@ def main():
                         if capability not in ALLOWED_CAPABILITIES:
                             print(f"{capability} not in the available capabilities.")
                             capabilities_done = False
+
+                flagPrefix = 'invalid:'
+                if release['status'] == 'future':
+                    flagPrefix = 'future:'
+                    if not are_you_sure('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.'):
+                        continue
+                elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
+                    # you can target deprecated releases during the io_uring promotion
+                    flagPrefix = ''
+                elif release['status'] == 'deprecated':
+                    flagPrefix = 'deprecated:'
+                    if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
+                        continue
+                elif release['status'] == 'latest':
+                    flagPrefix = ''
 
                 if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
                     import pow
