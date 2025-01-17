@@ -150,6 +150,8 @@ If you are unsure about eligibility, contact us on the [#kernelctf Discord chann
 
 _Note: Minor details of the submission process may change from time to time, please make sure you check this page again for updates when you make a new submission._
 
+Before you start the submission process, please make sure that the target's slot you are planning to exploit is not taken by looking at the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml). The server also tries to warn you about this by putting "Slot is taken by expNNN" next to the target.
+
 Submissions can target 0-day and 1-day bugs.
 
 ## Non-patched and 0-day submissions
@@ -181,12 +183,14 @@ In this stage:
   2. Submit the flag and the hash via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
+    
+  3. Check the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) that you actually took a free slot and your submission is not a dupe (if there is a race for a slot, it is possible that someone else was faster than you and took the slot). If your submission was dupe, you have to wait for new, empty slot to be released.
 
-  3. Report the vulnerability to security@kernel.org within 7 days of the first form submission.
+  4. Report the vulnerability to security@kernel.org within 7 days of the first form submission.
 
      * Note: A submission will be considered ineligible if it turns out that this requirement was not respected.
 
-  4. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+  5. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
 
      * Use the same email address in the `Reported-By` tag as you use for the form submission or in the "Email address used in Reported-By tag" field of the form.
 
@@ -194,9 +198,9 @@ In this stage:
 
      * If it is unclear who reported the bug, then the 0-day bonus can be split (multiple reporters), reduced, invalidated or the 0-day submission protection can be lost at our discretion.
 
-  5. Wait for the patch to land in a release candidate on the mainline tree (and tagged in Git), or committed on a stable tree.
+  6. Wait for the patch to land in a release candidate on the mainline tree (and tagged in Git), or committed on a stable tree.
 
-  6. Modify the form within 7 days by following the previously saved link and fill out the extra details as described below in the 1-day section.
+  7. Modify the form within 7 days by following the previously saved link and fill out the extra details as described below in the 1-day section.
 
      * If the 7-day deadline is missed, then the first stage 0-day protection expires and other 1-day submissions can take priority over this submission (which makes this submission a duplicate and thus ineligible for reward).
 
@@ -208,15 +212,17 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   1. Submit the requested vulnerability details via [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) (without including additional details on the exploitation technique for now).
 
-  2. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/) (please follow the process described below).
+  2. Check the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) that you actually took a free slot and your submission is not a dupe (if there is a race for a slot, it is possible that someone else was faster than you and took the slot). If your submission was dupe, you have to wait for new, empty slot to be released.
 
-  3. Wait for us to publish the CVE or publish the vulnerability details yourself on [oss-sec](https://seclists.org/oss-sec/).
+  3. Send us the description of the vulnerability via [bughunters.google.com](https://bughunters.google.com/) (please follow the process described below).
+
+  4. Wait for us to publish the CVE or publish the vulnerability details yourself on [oss-sec](https://seclists.org/oss-sec/).
 
      * If you'd like to speed up the CVE publication process, please make sure you fill out all the details needed for the CVE when you fill out the form. This way the disclosure happens earlier and your submission will be processed faster.
 
-  4. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below).
+  5. After the vulnerability is disclosed via a CVE or oss-sec, wait 30 days (recommendation, see notes below) and send us your exploit with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below).
 
-  5. Make sure that the PR is merged (this is a requirement to get a reward).
+  6. Make sure that the PR is merged (this is a requirement to get a reward).
 
 ### Google Bughunter's website submission process
 
