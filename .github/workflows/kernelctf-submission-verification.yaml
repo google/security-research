@@ -105,7 +105,7 @@ jobs:
         run: printf '❌ The exploit compilation failed.\n\nPlease fix it.\n\nYou can see the build logs by clicking on `...` here and then on "View job logs". Or by selecting `exploit_build (${{ env.RELEASE_ID }})` under Jobs in the left menubar.\n' >> $GITHUB_STEP_SUMMARY
 
   exploit_repro:
-    runs-on: ubuntu-22.04-4core
+    runs-on: ubuntu-latest
     timeout-minutes: 300
     permissions: {}
     needs: [structure_check, exploit_build]
