@@ -149,7 +149,7 @@ def main():
             print()
 
             # long random generated secret, not bruteforcable
-            root = hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
+            root = '--root' in sys.argv or hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
 
             if action == 'back':
                 break
@@ -182,8 +182,24 @@ def main():
 
                 flagPrefix = 'invalid:'
                 if release['status'] == 'future':
-                    flagPrefix = 'future:'
-                    if not are_you_sure('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.'):
+                    print('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.')
+                    answer = input('Do you want to run anyway (y/n) or wait until the slot opening (w) ')
+                    if answer == 'y':
+                        flagPrefix = 'future:'
+                    elif answer == 'w':
+                        prev_notification = 0
+                        while True:
+                            time_left = int((release['release-date'] - datetime.now(timezone.utc)).total_seconds())
+                            if time_left <= 0:
+                                flagPrefix = ''
+                                break
+
+                            if prev_notification != time_left:
+                                print(f'Only {time_left} seconds left...')
+                                prev_notification = time_left
+
+                            time.sleep(0.05) # check 20 times per second, start as soon as possible
+                    else:
                         continue
                 elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
                     # you can target deprecated releases during the io_uring promotion
