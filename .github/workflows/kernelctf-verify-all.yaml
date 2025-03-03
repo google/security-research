@@ -1,0 +1,25 @@
+name: Verify all PRs again
+on:
+  workflow_dispatch:
+    inputs:
+      prs:
+        description: 'PRs to verify'
+        type: string
+        required: true
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
+permissions: {}
+jobs:
+  tests:
+    strategy:
+      matrix:
+        pr: ${{ fromJSON(inputs.prs) }}
+      fail-fast: false # do not cancel test of other targets
+    uses: ./.github/workflows/kernelctf-submission-verification.yaml
+    secrets: inherit
+    with:
+      prNumber: ${{ matrix.pr }}
+      skipRepro: ${{ inputs.skipRepro }}
