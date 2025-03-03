@@ -157,6 +157,7 @@ jobs:
             make prerequisites
           fi
           make exploit_debug
+          file exploit_debug | grep debug_info
 
       - name: Upload debug build
         uses: actions/upload-artifact@v4
