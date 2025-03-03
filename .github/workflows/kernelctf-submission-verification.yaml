@@ -3,6 +3,19 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
+  workflow_call:
+    inputs:
+      prNumber:
+        description: 'PR number'
+        type: number
+      shaHash:
+        description: 'SHA hash'
+        type: string
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       prNumber:
@@ -17,7 +30,7 @@ on:
         default: false
 permissions: {}
 env:
-  PR_REF: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.shaHash || format('refs/pull/{0}/merge', github.event.inputs.prNumber)) || github.event.pull_request.head.sha }}
+  PR_REF: ${{ contains(github.event_name, 'workflow_') && (inputs.shaHash || format('refs/pull/{0}/merge', inputs.prNumber)) || github.event.pull_request.head.sha }}
 jobs:
   structure_check:
     # if labeling triggered the job then only run in case of the "recheck" label

@@ -1,4 +1,4 @@
-name: Verify all PRs again
+name: kernelCTF verify all PRs again
 on:
   workflow_dispatch:
     inputs:
@@ -13,10 +13,10 @@ on:
         default: false
 permissions: {}
 jobs:
-  tests:
+  verify:
     strategy:
       matrix:
-        pr: ${{ fromJSON(inputs.prs) }}
+        pr: ${{ fromJSON(format('[{0}]', inputs.prs)) }}
       fail-fast: false # do not cancel test of other targets
     uses: ./.github/workflows/kernelctf-submission-verification.yaml
     secrets: inherit
