@@ -43,7 +43,7 @@ jobs:
         uses: 'google-github-actions/upload-cloud-storage@v2'
         with:
           path: ./artifacts
-          destination: kernelctf-build/artifacts/verify_all_${{ github.run_id }}_pr${{ join(fromJSON(format('[{0}]', inputs.prs)), "_") }}
+          destination: kernelctf-build/artifacts/verify_all_${{ github.run_id }}_pr${{ join(fromJSON(format('[{0}]', inputs.prs)), '_') }}
           parent: false
           predefinedAcl: publicRead
           process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
