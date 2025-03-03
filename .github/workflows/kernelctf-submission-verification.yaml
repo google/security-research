@@ -10,6 +10,11 @@ on:
         type: number
       shaHash:
         description: 'SHA hash'
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
 permissions: {}
 env:
   PR_REF: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.shaHash || format('refs/pull/{0}/merge', github.event.inputs.prNumber)) || github.event.pull_request.head.sha }}
@@ -104,6 +109,49 @@ jobs:
         if: failure() && steps.build_exploit.outcome == 'failure'
         run: printf '❌ The exploit compilation failed.\n\nPlease fix it.\n\nYou can see the build logs by clicking on `...` here and then on "View job logs". Or by selecting `exploit_build (${{ env.RELEASE_ID }})` under Jobs in the left menubar.\n' >> $GITHUB_STEP_SUMMARY
 
+  exploit_build_debug:
+    runs-on: ubuntu-latest
+    needs: structure_check
+    permissions: {}
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
+      fail-fast: false # do not cancel other targets
+    env:
+      RELEASE_ID: ${{ matrix.target }}
+      EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
+    steps:
+      - name: Checkout PR content
+        uses: actions/checkout@v4
+        with:
+          path: pr
+          ref: ${{ env.PR_REF }}
+          fetch-depth: 0
+
+      - name: Convert exploit to debug build
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+          sed -i '/gcc -g/!s/gcc/gcc -g/g' Makefile
+          sed -i '/configure --enable-debug/!s/configure/configure --enable-debug/g' Makefile
+          sed -i 's/-o exploit /-o exploit_debug /g' Makefile
+          sed -i 's/ -s\b//g' Makefile
+          sed -i 's/exploit:/exploit_debug:/g' Makefile
+
+      - name: Build exploit
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+          if make -n prerequisites; then
+            make prerequisites
+          fi
+          make exploit_debug
+
+      - name: Upload debug build
+        uses: actions/upload-artifact@v4
+        with:
+          name: exploit_debug_${{ env.RELEASE_ID }}
+          path: ${{ env.EXPLOIT_DIR }}/exploit_debug
+          if-no-files-found: error
+
   exploit_repro:
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -113,7 +161,7 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
       fail-fast: false
-    if: always() && needs.structure_check.result == 'success'
+    if: always() && needs.structure_check.result == 'success' && !inputs.skipRepro
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
@@ -228,7 +276,7 @@ jobs:
 
   backup_artifacts:
     runs-on: ubuntu-latest
-    needs: [structure_check, exploit_build, exploit_repro]
+    needs: [structure_check, exploit_build, exploit_build_debug, exploit_repro]
     if: always() && needs.structure_check.result == 'success'
     steps:
       - name: Download artifacts
