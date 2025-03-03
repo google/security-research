@@ -102,7 +102,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit
           if-no-files-found: error
 
@@ -110,7 +110,7 @@ jobs:
         if: failure() && steps.build_exploit.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./exploit
           if-no-files-found: error
 
@@ -161,7 +161,7 @@ jobs:
       - name: Upload debug build
         uses: actions/upload-artifact@v4
         with:
-          name: exploit_debug_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_debug_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit_debug
           if-no-files-found: error
 
@@ -271,7 +271,7 @@ jobs:
       - name: Upload repro QEMU logs as an artifact
         uses: actions/upload-artifact@v4
         with:
-          name: repro_logs_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_logs_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_log_*.txt
 
       - name: Reproduction // Summary
@@ -284,13 +284,13 @@ jobs:
       - name: Upload repro summary as an artifact
         uses: actions/upload-artifact@v4
         with:
-          name: repro_summary_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
 
   backup_artifacts:
     runs-on: ubuntu-latest
     needs: [structure_check, exploit_build, exploit_build_debug, exploit_repro]
-    if: always() && needs.structure_check.result == 'success'
+    if: always() && needs.structure_check.result == 'success' && github.event_name != 'workflow_call'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
