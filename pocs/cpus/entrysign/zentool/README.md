@@ -1,5 +1,3 @@
-> ***EMBARGOED SECURITY ISSUE - DO NOT DISTRIBUTE***
-
 # Zentool -- AMD Zen Microcode Manipulation Utility
 
 This package provides a suite of tools for analyzing, manipulating and
