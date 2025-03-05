@@ -1,0 +1,3 @@
+[submodule "pocs/cpus/entrysign/zentool/CPUMicrocodes"]
+	path = pocs/cpus/entrysign/zentool/data/CPUMicrocodes
+	url = https://github.com/platomav/CPUMicrocodes
