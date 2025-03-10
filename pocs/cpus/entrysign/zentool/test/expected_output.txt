@@ -1,0 +1,1073 @@
+%../zentool print ../data/cpu00830F10_ver0830101C_2019-05-08_8DC96EF2.bin
+Date:       05082019 (Wed May  8 2019)
+Revision:   0830101c
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  4f... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0830101c (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301025_2019-07-11_337F26F5.bin
+Date:       07112019 (Thu Jul 11 2019)
+Revision:   08301025
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  86... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08301025 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301034_2019-10-24_1D1A2F9D.bin
+Date:       10242019 (Thu Oct 24 2019)
+Revision:   08301034
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  9e... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08301034 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301038_2019-12-24_29A93343.bin
+Date:       12242019 (Tue Dec 24 2019)
+Revision:   08301038
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  99... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08301038 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301039_2020-02-07_9A4141DB.bin
+Date:       02072020 (Fri Feb  7 2020)
+Revision:   08301039
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  09... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08301039 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver0830104D_2020-07-28_22CD4D3D.bin
+Date:       07282020 (Tue Jul 28 2020)
+Revision:   0830104d
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  aa... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0830104d (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301052_2021-11-11_490C60F8.bin
+Date:       11112021 (Thu Nov 11 2021)
+Revision:   08301052
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  0b... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08301052 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301055_2022-02-15_65A2763D.bin
+Date:       02152022 (Tue Feb 15 2022)
+Revision:   08301055
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  9d... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  false
+Revision:   08301055 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver08301072_2022-02-15_B2AE2EBD.bin
+Date:       02152022 (Tue Feb 15 2022)
+Revision:   08301072
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  6d... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   08301072 (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver0830107A_2023-05-17_D7882D6C.bin
+Date:       05172023 (Wed May 17 2023)
+Revision:   0830107a
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  88... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0830107a (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver0830107B_2023-08-16_8F6C1421.bin
+Date:       08162023 (Wed Aug 16 2023)
+Revision:   0830107b
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  85... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0830107b (Signed)
+%%
+%../zentool print ../data/cpu00830F10_ver0830107C_2023-12-18_6CEA85AD.bin
+Date:       12182023 (Mon Dec 18 2023)
+Revision:   0830107c
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008310 Zen/Zen+/Zen2
+  Stepping  0
+  Model:    1
+  Extmodel: 3
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  7a... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  false
+Revision:   0830107c (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver08600102_2019-11-17_444C1A3D.bin
+Date:       11172019 (Sun Nov 17 2019)
+Revision:   08600102
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  0b... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08600102 (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver08600103_2020-01-27_4F9C2C4C.bin
+Date:       01272020 (Mon Jan 27 2020)
+Revision:   08600103
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  03... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08600103 (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver08600104_2020-05-26_6D414322.bin
+Date:       05262020 (Tue May 26 2020)
+Revision:   08600104
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  11... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08600104 (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver08600106_2020-06-19_ACE2511D.bin
+Date:       06192020 (Fri Jun 19 2020)
+Revision:   08600106
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  a4... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08600106 (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver08600109_2022-03-28_DA3355E7.bin
+Date:       03282022 (Mon Mar 28 2022)
+Revision:   08600109
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  76... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  false
+Revision:   08600109 (Signed)
+%%
+%../zentool print ../data/cpu00860F01_ver0860010C_2023-10-07_3D4A6C3D.bin
+Date:       10072023 (Sat Oct  7 2023)
+Revision:   0860010c
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
+  Stepping  1
+  Model:    0
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  77... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  false
+Revision:   0860010c (Signed)
+%%
+%../zentool print ../data/cpu00860F81_ver08608103_2020-07-02_19A74DF3.bin
+Date:       07022020 (Thu Jul  2 2020)
+Revision:   08608103
+Format:     8004
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      00008681 AMD Ryzen (Zen2, Lucienne)
+  Stepping  1
+  Model:    8
+  Extmodel: 6
+  Extfam:   8
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  8a... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   08608103 (Signed)
+%%
+%../zentool print ../data/cpu00A40F00_ver0A400016_2021-03-30_B8EFF68B.bin
+Date:       03302021 (Tue Mar 30 2021)
+Revision:   0a400016
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a400 AMD Ryzen (Zen3+, Rembrandt)
+  Stepping  0
+  Model:    0
+  Extmodel: 4
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  69... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0a400016 (Signed)
+%%
+%../zentool print ../data/cpu00A40F40_ver0A404002_2021-04-08_35A6F7C3.bin
+Date:       04082021 (Thu Apr  8 2021)
+Revision:   0a404002
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a440 Zen3/Zen4
+  Stepping  0
+  Model:    4
+  Extmodel: 4
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  99... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0a404002 (Signed)
+%%
+%../zentool print ../data/cpu00A40F41_ver0A404101_2021-10-18_17FBEE6D.bin
+Date:       10182021 (Mon Oct 18 2021)
+Revision:   0a404101
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a441 Zen3/Zen4
+  Stepping  1
+  Model:    4
+  Extmodel: 4
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  51... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0a404101 (Signed)
+%%
+%../zentool print ../data/cpu00A40F41_ver0A404102_2021-10-18_78BCFB87.bin
+Date:       10182021 (Mon Oct 18 2021)
+Revision:   0a404102
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a441 Zen3/Zen4
+  Stepping  1
+  Model:    4
+  Extmodel: 4
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  7d... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  false
+Revision:   0a404102 (Signed)
+%%
+%../zentool print ../data/cpu00A40F41_ver0A404105_2023-07-07_3657C9F8.bin
+Date:       07072023 (Fri Jul  7 2023)
+Revision:   0a404105
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a441 Zen3/Zen4
+  Stepping  1
+  Model:    4
+  Extmodel: 4
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  8a... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a404105 (Signed)
+%%
+%../zentool print ../data/cpu00A50F00_ver0A500008_2020-07-10_BE10AB67.bin
+Date:       07102020 (Fri Jul 10 2020)
+Revision:   0a500008
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
+  Stepping  0
+  Model:    0
+  Extmodel: 5
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  ae... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a500008 (Signed)
+%%
+%../zentool print ../data/cpu00A50F00_ver0A50000B_2020-08-21_7F768F82.bin
+Date:       08212020 (Fri Aug 21 2020)
+Revision:   0a50000b
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
+  Stepping  0
+  Model:    0
+  Extmodel: 5
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  94... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a50000b (Signed)
+%%
+%../zentool print ../data/cpu00A50F00_ver0A50000C_2020-12-08_A47A9DC7.bin
+Date:       12082020 (Tue Dec  8 2020)
+Revision:   0a50000c
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
+  Stepping  0
+  Model:    0
+  Extmodel: 5
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  1a... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a50000c (Signed)
+%%
+%../zentool print ../data/cpu00A50F00_ver0A50000D_2021-10-14_DDD9A4AA.bin
+Date:       10142021 (Thu Oct 14 2021)
+Revision:   0a50000d
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
+  Stepping  0
+  Model:    0
+  Extmodel: 5
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  6a... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a50000d (Signed)
+%%
+%../zentool print ../data/cpu00A50F00_ver0A50000F_2023-07-07_72B4B8C6.bin
+Date:       07072023 (Fri Jul  7 2023)
+Revision:   0a50000f
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
+  Stepping  0
+  Model:    0
+  Extmodel: 5
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  54... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a50000f (Signed)
+%%
+%../zentool print ../data/cpu00A70F00_ver0A700003_2022-05-17_3D81C7E0.bin
+Date:       05172022 (Tue May 17 2022)
+Revision:   0a700003
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a700 AMD Ryzen (Zen4, Phoenix)
+  Stepping  0
+  Model:    0
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  1c... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a700003 (Signed)
+%%
+%../zentool print ../data/cpu00A70F40_ver0A704001_2022-07-21_5BD9C29C.bin
+Date:       07212022 (Thu Jul 21 2022)
+Revision:   0a704001
+Format:     8005
+Patchlen:   00
+Init:       00
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a740 Zen3/Zen4
+  Stepping  0
+  Model:    4
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  92... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a704001 (Signed)
+%%
+%../zentool print ../data/cpu00A70F41_ver0A704103_2023-04-17_8FC1AB4C.bin
+Date:       04172023 (Mon Apr 17 2023)
+Revision:   0a704103
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a741 Zen3/Zen4
+  Stepping  1
+  Model:    4
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  9b... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a704103 (Signed)
+%%
+%../zentool print ../data/cpu00A70F41_ver0A704104_2023-07-13_3C8FAC0D.bin
+Date:       07132023 (Thu Jul 13 2023)
+Revision:   0a704104
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a741 Zen3/Zen4
+  Stepping  1
+  Model:    4
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  6c... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a704104 (Signed)
+%%
+%../zentool print ../data/cpu00A70F42_ver0A704201_2022-10-03_EF03AE09.bin
+Date:       10032022 (Mon Oct  3 2022)
+Revision:   0a704201
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a742 Zen3/Zen4
+  Stepping  2
+  Model:    4
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  72... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a704201 (Signed)
+%%
+%../zentool print ../data/cpu00A70F42_ver0A704202_2023-07-13_D616C48D.bin
+Date:       07132023 (Thu Jul 13 2023)
+Revision:   0a704202
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a742 Zen3/Zen4
+  Stepping  2
+  Model:    4
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  8f... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a704202 (Signed)
+%%
+%../zentool print ../data/cpu00A70F52_ver0A705203_2023-07-13_4B8DA9D5.bin
+Date:       07132023 (Thu Jul 13 2023)
+Revision:   0a705203
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a752 Zen3/Zen4
+  Stepping  2
+  Model:    5
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  35... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a705203 (Signed)
+%%
+%../zentool print ../data/cpu00A70F52_ver0A705205_2024-01-12_753FB641.bin
+Date:       01122024 (Fri Jan 12 2024)
+Revision:   0a705205
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a752 Zen3/Zen4
+  Stepping  2
+  Model:    5
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  a6... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a705205 (Signed)
+%%
+%../zentool print ../data/cpu00A70F80_ver0A708000_2022-10-04_8893BFB8.bin
+Date:       10042022 (Tue Oct  4 2022)
+Revision:   0a708000
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
+  Stepping  0
+  Model:    8
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  03... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a708000 (Signed)
+%%
+%../zentool print ../data/cpu00A70F80_ver0A708004_2023-07-13_BC63AEE6.bin
+Date:       07132023 (Thu Jul 13 2023)
+Revision:   0a708004
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
+  Stepping  0
+  Model:    8
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  8d... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a708004 (Signed)
+%%
+%../zentool print ../data/cpu00A70F80_ver0A708006_2024-01-12_AD8FB607.bin
+Date:       01122024 (Fri Jan 12 2024)
+Revision:   0a708006
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
+  Stepping  0
+  Model:    8
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  a6... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    true
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a708006 (Signed)
+%%
+%../zentool print ../data/cpu00A70FC0_ver0A70C002_2023-07-13_0A12A8E0.bin
+Date:       07132023 (Thu Jul 13 2023)
+Revision:   0a70c002
+Format:     8005
+Patchlen:   5c
+Init:       01
+Checksum:   00000000
+NorthBridge: 0000:0000
+SouthBridge: 0000:0000
+Cpuid:      0000a7c0 AMD Ryzen (Hawk Point)
+  Stepping  0
+  Model:    12
+  Extmodel: 7
+  Extfam:   10
+BiosRev:     00
+Flags:      00
+Reserved:   0000
+Signature:  c6... (use --verbose to see) (GOOD)
+Modulus:    c7... (use --verbose to see)
+Check:      5a... (use --verbose to see) (GOOD)
+Autorun:    false
+Encrypted:  true
+    Use `zentool decrypt` to decrypt update
+Revision:   0a70c002 (Signed)
+%%
+%../mcas add rax, rbx, rcx
+	; 382F9C184E200000 0011100000101111100111000001100001001110001000000000000000000000
+	; .imm16    :    0                                                 0000000000000000
+	; .isig     :    0                                                0
+	; .mode3    :    0                                             0
+	; .reg0     :   11                                       10001
+	; .reg1     :   13                                  10011
+	; .reg2     :   10                             10000
+	; .rmod     :    1                            1
+	; .cc       :    0                        0000
+	; .ss       :    0                       0
+	; .size     :    3                     11
+	; .sizemsb  :    1                    1
+	; .pada     :    0                  00
+	; .type     :   5F          01011111
+	; .ext      :    0      0000
+	; .class    :    7   111
+	add     	rax, rbx, rcx
+%%
+%../mcop 382E9C1110E00000
+	; 382E9C1110E00000 0011100000101110100111000001000100010000111000000000000000000000
+	; .imm16    :    0                                                 0000000000000000
+	; .isig     :    0                                                0
+	; .mode3    :    0                                             0
+	; .reg0     :    7                                       00111
+	; .reg1     :    4                                  00100
+	; .reg2     :    2                             00010
+	; .rmod     :    1                            1
+	; .cc       :    0                        0000
+	; .ss       :    0                       0
+	; .size     :    3                     11
+	; .sizemsb  :    1                    1
+	; .pada     :    0                  00
+	; .type     :   5D          01011101
+	; .ext      :    0      0000
+	; .class    :    7   111
+	adc     	reg2, reg2, reg7
+%%
+%../mcas nop
+	; 007F9C0000000000 0000000001111111100111000000000000000000000000000000000000000000
+	; .imm16    :    0                                                 0000000000000000
+	; .isig     :    0                                                0
+	; .mode3    :    0                                             0
+	; .reg0     :    0                                       00000
+	; .reg1     :    0                                  00000
+	; .reg2     :    0                             00000
+	; .rmod     :    0                            0
+	; .size     :    3                     11
+	; .sizemsb  :    1                    1
+	; .type     :   FF          11111111
+	; .class    :    0   000
+	nop.q
+%%
+%../mcop 0x007f9c0000000000
+	; 007F9C0000000000 0000000001111111100111000000000000000000000000000000000000000000
+	; .imm16    :    0                                                 0000000000000000
+	; .isig     :    0                                                0
+	; .mode3    :    0                                             0
+	; .reg0     :    0                                       00000
+	; .reg1     :    0                                  00000
+	; .reg2     :    0                             00000
+	; .rmod     :    0                            0
+	; .size     :    3                     11
+	; .sizemsb  :    1                    1
+	; .type     :   FF          11111111
+	; .class    :    0   000
+	nop.q   
+%%

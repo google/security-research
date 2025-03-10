@@ -1,0 +1,49 @@
+name: kernelCTF verify all PRs again
+on:
+  workflow_dispatch:
+    inputs:
+      prs:
+        description: 'PRs to verify'
+        type: string
+        required: true
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
+permissions: {}
+jobs:
+  verify:
+    strategy:
+      matrix:
+        pr: ${{ fromJSON(format('[{0}]', inputs.prs)) }}
+      fail-fast: false # do not cancel test of other targets
+    uses: ./.github/workflows/kernelctf-submission-verification.yaml
+    secrets: inherit
+    with:
+      prNumber: ${{ matrix.pr }}
+      skipRepro: ${{ inputs.skipRepro }}
+
+  backup_artifacts:
+    runs-on: ubuntu-latest
+    needs: [verify]
+    if: always()
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
+
+      - name: Upload artifacts to GCS
+        uses: 'google-github-actions/upload-cloud-storage@v2'
+        with:
+          path: ./artifacts
+          destination: kernelctf-build/artifacts/verify_all_${{ github.run_id }}_pr${{ join(fromJSON(format('[{0}]', inputs.prs)), '_') }}
+          parent: false
+          predefinedAcl: publicRead
+          process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
