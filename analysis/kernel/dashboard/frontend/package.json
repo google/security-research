@@ -15,7 +15,7 @@
   "dependencies": {
     "js-treeview": "^1.1.5",
     "leader-line-new": "^1.1.9",
-    "prismjs": "^1.29.0",
+    "prismjs": "^1.30.0",
     "raw-loader": "^4.0.2",
     "sqlite-wasm-http": "^1.2.0"
   }
