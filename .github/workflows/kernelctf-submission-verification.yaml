@@ -202,7 +202,7 @@ jobs:
       - name: Download exploit
         uses: actions/download-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/exp/
 
       - name: Fetch rootfs
