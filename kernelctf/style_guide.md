@@ -413,7 +413,7 @@ mnl_attr_put_u32(nlh, …, htonl(-0x35));
 
 ## Naming conventions
 
-Use describing names for including but not limited to: variables, functions, defines.
+Use descriptive names for including but not limited to: variables, functions, defines.
 
 Make sure that the name is not misleading.
 
@@ -597,7 +597,7 @@ void some_func()
 
 ## ROP chains
 
-We prefer collecting target related details like symbol, ROP gadget and stack pivot offsets and structure sizes as `#define`s at the top of the file with describing names.
+We prefer collecting target related details like symbol, ROP gadget and stack pivot offsets and structure sizes as `#define`s at the top of the file with descriptive names.
 
 The exact kernel symbols names should be used which could be found in the kernel.
 
@@ -730,7 +730,8 @@ void some_func()
         tfd = timerfd_create(CLOCK_MONOTONIC, 0);
         …
     } else {
-        // local variable, conflicts with the other local one
+        // local variable, conflicts with
+        // the other local one
         int tfd;
         …
         // sets a different local variable
@@ -915,7 +916,8 @@ usleep(300*1000);
 ```c
 del_chain(trig_chain_name);
 
-// @sleep(kernel_func="nft_commit_release", desc="wait for victim chain (trig_chain_name) to be freed")
+// @sleep(kernel_func="nft_commit_release",
+//        desc="wait for victim chain (trig_chain_name) to be freed")
 usleep(300*1000);
 ```
 </td>
@@ -1053,10 +1055,12 @@ struct nftnl_set * set_elem_triggers[0x200];
 
 for(int i = 1 ; i <= 20; i++)
     for (int j = 1 ; j <= 20; j++)
-        set_elem_triggers[(i-1) * 20 + (j-1)] = set_elem_trigger;
+        set_elem_triggers[(i-1) * 20 + (j-1)] =
+            set_elem_trigger;
 
 for(int i = 0 ; i < 200; i++)
-    nftnl_set_elems_nlmsg_build_payload(nlh, set_elem_triggers[i]);
+    nftnl_set_elems_nlmsg_build_payload(nlh,
+        set_elem_triggers[i]);
 ```
 
 The code above:
@@ -1077,10 +1081,12 @@ struct nftnl_set * set_elem_triggers[SPRAY_COUNT];
 
 for(int i = 1 ; i <= SPRAY_DIM_X; i++)
     for (int j = 1 ; j <= SPRAY_DIM_Y; j++)
-        set_elem_triggers[(i-1) * SPRAY_DIM_Y + (j-1)] = set_elem_trigger;
+        set_elem_triggers[(i-1) * SPRAY_DIM_Y + (j-1)] =
+            set_elem_trigger;
 
 for(int i = 0 ; i < SPRAY_COUNT; i++)
-    nftnl_set_elems_nlmsg_build_payload(nlh, set_elem_triggers[i]);
+    nftnl_set_elems_nlmsg_build_payload(nlh,
+        set_elem_triggers[i]);
 ```
 </td>
     </tr>
@@ -1120,7 +1126,7 @@ __u64 lost;          // Number of lost events
     </tr>
 </table>
 
-## Miscellaneous code quality issues
+## Miscellaneous notes
 
 ### Code duplication
 
@@ -1139,46 +1145,47 @@ You can always add arguments and simple branches to the helper functions if need
 <td valign="top" markdown="1" style="background:rgba(255,0,0,0.05)">
 
 ```c
-void create_payload_for_trigger()
+void vuln_trigger()
 {
     struct nlmsghdr *nlh = mnl_nlmsg_create_header();
 
     … 15 lines of setting of the structure …
 
-    … 2 lines unique for create_payload_for_trigger …
+    … 2 lines unique for vuln_trigger …
 }
 
-void create_payload_for_spray()
+void spray_nlmsg()
 {
     struct nlmsghdr *nlh = mnl_nlmsg_create_header();
 
     … same 15 lines of code like previously …
 
-    … 2 lines unique for create_payload_for_spray …
+    … 2 lines unique for spray_nlmsg …
 }
 ```
 </td>
 <td valign="top" markdown="1" style="background:rgba(0,255,0,0.05)">
 
 ```c
-struct nlmsghdr *prepare_nlmsg(...args...) {
+struct nlmsghdr *util_nlmsg_create(/* args */)
+{
     struct nlmsghdr *nlh = mnl_nlmsg_create_header();
 
     … 15 lines of setting of the structure …
 }
 
-void create_payload_for_trigger()
+void vuln_trigger()
 {
-    struct nlmsghdr *nlh = prepare_nlmsg();
+    struct nlmsghdr *nlh = util_nlmsg_create();
 
-    … 2 lines unique for create_payload_for_trigger …
+    … 2 lines unique for vuln_trigger …
 }
 
-void create_payload_for_spray()
+void spray_nlmsg()
 {
-    struct nlmsghdr *nlh = prepare_nlmsg();
+    struct nlmsghdr *nlh = util_nlmsg_create();
 
-    … 2 lines unique for create_payload_for_spray …
+    … 2 lines unique for spray_nlmsg …
 }
 ```
 </td>
@@ -1198,10 +1205,10 @@ Only use global variables if you really must to. Prefer using local variables in
 <td valign="top" markdown="1" style="background:rgba(255,0,0,0.05)">
 
 ```c
-// global variable, never used outside of do_epoll_enqueue
+// global variable, never used outside of race_do_epoll_enqueue
 int timefds[0x1000];
 
-static void do_epoll_enqueue(int fd, int f)
+static void race_do_epoll_enqueue(int fd, int f)
 {
     …
     for (int i = 0; i < 0x100; i++)
@@ -1213,12 +1220,12 @@ static void do_epoll_enqueue(int fd, int f)
 </td>
 <td valign="top" markdown="1" style="background:rgba(0,255,0,0.05)">
 
-The `timefds` variable was moved inside the `do_epoll_enqueue` function.
+The `timefds` variable was moved inside the `race_do_epoll_enqueue` function.
 
 (Also, the array size now matches actual usage - `0x100` instead of `0x1000`.)
 
 ```c
-static void do_epoll_enqueue(int fd, int f)
+static void race_do_epoll_enqueue(int fd, int f)
 {
     int timefds[0x100];
     …
@@ -1231,3 +1238,7 @@ static void do_epoll_enqueue(int fd, int f)
 </td>
     </tr>
 </table>
+
+### Indentation
+
+We prefer 4 spaces.
