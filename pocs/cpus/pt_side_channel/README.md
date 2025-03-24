@@ -354,6 +354,8 @@ In steady state (when leaking long sequence of bytes), we would know all the
 previous bytes - so in reality we'd only guess 8 new bits. Correlating `y`'s
 should in most cases be easy.
 
+The sliding technique is also described in the Peek-a-Walk paper.
+
 ## Limitations
 
 Both methods - Evict+Time and Prime+Probe - assume that the page walk actually
