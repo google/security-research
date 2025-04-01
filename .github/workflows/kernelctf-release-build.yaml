@@ -33,7 +33,9 @@ jobs:
         run: curl --fail -I https://storage.googleapis.com/kernelctf-build/releases/${{inputs.releaseId}}/bzImage && exit 1 || true
 
       - name: Install prerequisites
-        run: sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole
+        run: |
+          sudo apt-get update
+          sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole
 
       - name: Build
         run: ./build_release.sh ${{inputs.releaseId}} ${{inputs.branch}}
