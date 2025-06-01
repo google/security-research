@@ -29,9 +29,16 @@ case $TARGET in
   mitigation)
     REPO="https://github.com/thejh/linux"
     case $VERSION in
-        v3-6.1.55)
+        v4*)
+            DEFAULT_BRANCH="slub-virtual-v6.6"
+            CONFIG_FN="mitigation-v4.config"
+            ;;
+        v3-* | v3b-*)
             DEFAULT_BRANCH="mitigations-next"
-            CONFIG_FN="mitigation-v3.config"
+            case $VERSION in
+                v3-6.1.55) CONFIG_FN="mitigation-v3.config" ;;
+                v3b-6.1.55) CONFIG_FN="mitigation-v3b.config" ;;
+            esac
             CONFIG_FULL_FN="mitigation-v3-full.config"
             ;;
         6.1 | 6.1-v2)
@@ -56,6 +63,17 @@ RELEASE_DIR="$BASEDIR/releases/$RELEASE_NAME"
 CONFIGS_DIR="$BASEDIR/kernel_configs"
 
 if [ -d "$RELEASE_DIR" ]; then echo "Release directory already exists. Stopping."; exit 1; fi
+
+echo "GCC version"
+echo "================="
+gcc --version || true
+echo
+
+echo "Clang version"
+echo "================="
+clang --version || true
+echo "================="
+echo
 
 mkdir -p $BUILD_DIR 2>/dev/null || true
 cd $BUILD_DIR

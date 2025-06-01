@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
+DEPRECATED_TARGETS = ["cos-97"]
+ALLOWED_CAPABILITIES = ["io_uring"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
 from httplib2 import Http
@@ -48,7 +50,7 @@ def get_releases():
             del releases[release_id]
             continue
 
-        m = re.match(r'(?P<target>lts|mitigation(-v3)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
+        m = re.match(r'(?P<target>lts|mitigation(-v3|-v3b|-v4)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
         if m is None:
             warning(f'release {release_id} does not match regex')
             del releases[release_id]
@@ -61,7 +63,7 @@ def get_releases():
 
         target = m.group('target')
 
-        if released and not release.get('deprecated', False):
+        if released and not release.get('deprecated', False) and target not in DEPRECATED_TARGETS:
             if not target in target_latest or target_latest[target]['release-date'] < release['release-date']:
                 target_latest[target] = release
 
@@ -147,7 +149,7 @@ def main():
             print()
 
             # long random generated secret, not bruteforcable
-            root = hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
+            root = '--root' in sys.argv or hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
 
             if action == 'back':
                 break
@@ -163,11 +165,45 @@ def main():
                 print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
                 print()
             elif root or action == 'run':
+                capabilities_done = False
+                while not capabilities_done:
+                    print("Enter capabilities needed (comma-separated, or leave empty)")
+                    print(f"options: {ALLOWED_CAPABILITIES}")
+                    capabilities = input(": ").strip()
+                    capabilities_done = True
+
+                    capabilities = [capability.strip() for capability in capabilities.split(",")] if capabilities else []
+                    capabilities = list(set(capabilities))
+
+                    for capability in capabilities:
+                        if capability not in ALLOWED_CAPABILITIES:
+                            print(f"{capability} not in the available capabilities.")
+                            capabilities_done = False
+
                 flagPrefix = 'invalid:'
                 if release['status'] == 'future':
-                    flagPrefix = 'future:'
-                    if not are_you_sure('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.'):
+                    print('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.')
+                    answer = input('Do you want to run anyway (y/n) or wait until the slot opening (w) ')
+                    if answer == 'y':
+                        flagPrefix = 'future:'
+                    elif answer == 'w':
+                        prev_notification = 0
+                        while True:
+                            time_left = int((release['release-date'] - datetime.now(timezone.utc)).total_seconds())
+                            if time_left <= 0:
+                                flagPrefix = ''
+                                break
+
+                            if prev_notification != time_left:
+                                print(f'Only {time_left} seconds left...')
+                                prev_notification = time_left
+
+                            time.sleep(0.05) # check 20 times per second, start as soon as possible
+                    else:
                         continue
+                elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
+                    # you can target deprecated releases during the io_uring promotion
+                    flagPrefix = ''
                 elif release['status'] == 'deprecated':
                     flagPrefix = 'deprecated:'
                     if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
@@ -175,22 +211,25 @@ def main():
                 elif release['status'] == 'latest':
                     flagPrefix = ''
 
-                if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
-                    import pow
-                    if not pow.ask(7337):
-                        exit(1)
+                # if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
+                #     import pow
+                #     if not pow.ask(7337):
+                #         exit(1)
 
                 print('Executing target %s' % release_id)
 
                 with tempfile.TemporaryDirectory() as temp_dir:
                     flag_fn = f'{temp_dir}/flag'
                     with open(flag_fn, 'wt') as f:
-                        flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
+                        if len(capabilities) == 0:
+                            flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
+                        else:
+                            flag_content = f'{flagPrefix}v2:{release_id}:{",".join(capabilities)}:{int(time.time())}'
                         signature = hmac.new(server_secrets.flag_key.encode('utf-8'), flag_content.encode('utf-8'), hashlib.sha1).hexdigest()
                         flag = f'kernelCTF{{{flag_content}:{signature}}}'
                         f.write(flag + '\n')
 
-                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh'])
+                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])
             else:
                 print('Invalid action. Expected one of the followings: run, info, back')
                 print()

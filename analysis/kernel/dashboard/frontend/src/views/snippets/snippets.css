@@ -1,0 +1,284 @@
+label.collapse-button {
+    display: block;
+    margin: 5px;
+    padding: 0 5px;
+    order: 3;
+    font-size: small;
+    width: 1em;
+    z-index: 10;
+    background-color: inherit;
+    &:hover {
+        outline: 1px outset white;
+    }
+    &:active {
+        outline: 1px inset white;
+    }
+    &::before {
+        content: "🗕";
+        color: white;
+    }
+    &:has(:checked)::before {
+        content: "🗖";
+    }
+    & input[type="checkbox"] {
+        appearance: none;
+        position: absolute;
+    }
+}
+
+.snippets-root-node {
+    /* Each file below the other */
+    display: flex;
+    flex-direction: column;
+    width: fit-content;
+    --code-file-box-shadow: transparent;
+    --panning-sticky: sticky; /* can be overwritten during panning */
+    & .code-file {
+        /* Put the children to the right of snippets */
+        display: flex;
+        flex-direction: row;
+        box-shadow: var(--code-file-box-shadow) 0/*x*/ 0/*y*/ 20px/*blur*/ 0/*spread*/;
+        padding: 20px 0 20px 20px;
+        margin-top: 10px;
+        width: fit-content;
+        border-radius: 5px;
+        & .code-snippets {
+            /* Each snippet below the prev */
+            display: flex;
+            flex-direction: column;
+            margin: 10px;
+            &:has(> .code-file-path-container :checked) > .code-body {
+                display: none;
+            }
+            & .code-file-path-container {
+                background: #2d2d2d;
+                color: #ccc;
+                padding: 10px 0 10px 10px;
+                font-size: larger;
+                position: var(--panning-sticky);
+                top: 0px;
+                border: 1px solid #888;
+                z-index: 1;
+                display: flex;
+                flex-direction: row;
+                border-radius: 5px;
+                & .code-file-path {
+                    position: var(--panning-sticky);
+                    right: 10px;
+                    display: block;
+                    width: fit-content;
+                    margin: auto 10px auto auto;
+                    z-index: 2;
+                }
+            }
+            & .code-body {
+                display: flex;
+                flex-direction: column;
+                margin: 2px 0;
+                align-self: var(--code-body-alignment);
+                &:has(> .code-metadata :checked) > .code-snippet {
+                    display: none;
+                }
+                & .code-metadata {
+                    display: flex;
+                    justify-content: flex-end;
+                    background: #2d2d2d;
+                    position: var(--panning-sticky);
+                    top: 50px;
+                    border: 1px solid #888;
+                    z-index: 1;
+                    & .code-title {
+                        font-size: medium;
+                        color: white;
+                        margin: 0 0 0 auto;
+                        position: var(--panning-sticky);
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        right: 0;
+                        padding-right: 10px;
+                        order: 2;
+                        z-index: 2;
+                        background: inherit;
+                    }
+                    & .label {
+                        display: inline-block;
+                        padding: 10px;
+                        border-radius: 10%;
+                        color: white;
+                        font-size: small;
+                        outline: 1px solid #888;
+                    }
+                    & .label-syscalls {
+                        background-color: hsla(24, 20%, 50%,.4);
+                        cursor: pointer;
+                        color: #f08d49;
+                        outline: 1px solid #f08d49;
+                        position: sticky;
+                        left: 0;
+                        order: 1;
+                        z-index: 1;
+                    }
+                }
+                & .code-filter-table {
+                    display: grid;
+                    grid-template-columns: auto 1fr auto auto;
+                    border: 1px solid #f08d49;
+                    border-radius: 10px;
+                    font-size: small;
+                    position: sticky;
+                    left: 0px;
+                    max-width: 50vw;
+                    width: fit-content;
+                    overflow: auto;
+                    scrollbar-color: #f08d49 #2d2d2d ;
+                    max-height: 200px;
+                    height: fit-content;
+                    background: #222;
+                    color: #ccc;
+                    --filtered-syscall-appearance: auto;
+                    --filtered-syscall-display-hit: grid;
+                    --filtered-syscall-display: none;
+
+                    &[data-filter-coverage~="any"] [data-filtered-coverage]:not([data-filtered-coverage~="any"]),
+                    &[data-filter-coverage~="yes"] [data-filtered-coverage]:not([data-filtered-coverage~="yes"]),
+                    &[data-filter-coverage~="no"]  [data-filtered-coverage]:not([data-filtered-coverage~="no"]) {
+                        display: var(--filtered-syscall-display);
+                    }
+
+                    &[data-filter-conditions~="c"]    [data-filtered-conditions]:not([data-filtered-conditions~="c"]),
+                    &[data-filter-conditions~="n"]    [data-filtered-conditions]:not([data-filtered-conditions~="n"]),
+                    &[data-filter-conditions~="m"]    [data-filtered-conditions]:not([data-filtered-conditions~="m"]),
+                    &[data-filter-conditions~="s"]    [data-filtered-conditions]:not([data-filtered-conditions~="s"]),
+                    &[data-filter-conditions~="none"] [data-filtered-conditions]:not([data-filtered-conditions~="none"]),
+                    &[data-filter-conditions~="any"]  [data-filtered-conditions]:not([data-filtered-conditions~="any"]) {
+                        display: var(--filtered-syscall-display);
+                    }
+
+                    .code-filter-header {
+                        background: hsla(24, 20%, 20%);
+                        color: #f08d49;
+                        display: flex;
+                        align-items: center;
+                        position: sticky;
+                        top: 0;
+                        & select {
+                            background-color: #2d2d2d;
+                            color: #ccc;
+                        }
+                        & input[type="checkbox"] {
+                            accent-color: #f08d49;
+                        }
+                    }
+
+                    .code-filter-syscall {
+                        display: grid;
+                        grid-template-columns: subgrid;
+                        grid-column: 1 / 5;
+                        padding: 10px;
+                        & input[type="checkbox"] {
+                            accent-color: #f08d49;
+                            &:not(:checked) {
+                                --filtered-syscall-appearance-hit: none;
+                                appearance: var(--filtered-syscall-appearance);
+                            }
+                        }
+                        &[for]:hover {
+                            color: #f08d49;
+                        }
+                        .code-filter-syscall-coverage-link, .code-filter-syscall-condition-link {
+                            text-decoration: underline;
+                            color: #f08d49;
+                            cursor: pointer;
+                        }
+                    }
+                  }
+                & .code-snippet {
+                    flex-direction: row;
+                    display: flex;
+                    width: max-content;
+                    height: fit-content;
+                    & .parent-files {
+                        margin: 10px;
+                        &:empty {
+                            margin: 0;
+                            max-width: 0;
+                        }
+                        flex: 1 0 auto;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-end;
+                        --code-body-alignment: flex-end;
+                        --code-file-box-shadow: rgba(0, 0, 0, 0.25);
+                        & > .code-file {
+                            background-color: hsla(24, 20%, 50%,.4);
+                        }
+                    }
+                    & .parent-browser {
+                        background-color: #ffffff40;
+                        min-width: 250px;
+                        max-width: 300px;
+                        height: fit-content;
+                        flex: 1 0 0;
+                        padding: 0 1em 1ex 1em;
+                        font-size: small;
+                        & div {
+                            scrollbar-width: none;
+                            &::-webkit-scrollbar {
+                                display: none;
+                            }
+                            &.filtered-syscall {
+                                --filtered-syscall-color-hit: #753911;
+                                --filtered-syscall-highlight-hit: #ffffff80;
+                                background-color: var(--filtered-syscall-highlight);
+                                color: var(--filtered-syscall-color);
+                            }
+                            overflow: auto;
+                        }
+                        &::before {
+                            content: '☎️ callers';
+                            display: block;
+                            padding: 10px;
+                            background: #0000007f;
+                            color: white;
+                            margin: 5px 0 20px;
+                            font-size: small;
+                        }
+                        &[data-loading-finished="true"]:empty {
+                            &::after {
+                                content: 'empty 📵';
+                                font-size: x-small;
+                                display: block;
+                                margin: auto;
+                                text-align: center;
+                            }
+                        }
+                    }
+                    & pre {
+                        overflow: hidden;
+                        align-self: flex-start;
+                        margin: 0;
+                    }
+                }
+            }
+        }
+        & .child-files {
+            margin: 10px;
+            --code-body-alignment: flex-start;
+            --code-file-box-shadow: #cccccc60 inset;
+            & > .code-file {
+                background-color: #0000007f;
+                clip-path: inset(-20px 0 0 -20px);
+            }
+        }
+    }
+    .navigation-edge, .navigation-struct {
+        text-decoration: underline;
+        cursor: pointer;
+    }
+    .navigation-missing-edge {
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        cursor: context-menu;
+    }
+}

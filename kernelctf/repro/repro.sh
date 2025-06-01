@@ -17,7 +17,22 @@ touch $QEMU_TXT
 START_TIME=$(date +%s)
 
 CMDLINE="console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro init=/init hostname=repro"
-if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"; fi
+
+# Check if the exploit uses io_uring
+if ! echo $EXPLOIT_INFO | jq -e '.uses | index("io_uring")' > /dev/null 2>&1; then
+  CMDLINE="$CMDLINE sysctl.io_uring_disabled=2"
+fi
+
+if [[ "$RELEASE_ID" == "mitigation-"* ]]; then
+  CMDLINE="$CMDLINE sysctl.kernel.dmesg_restrict=1 sysctl.kernel.kptr_restrict=2 sysctl.kernel.unprivileged_bpf_disabled=2 sysctl.net.core.bpf_jit_harden=1 sysctl.kernel.yama.ptrace_scope=1 slab_virtual=1 slab_virtual_guards=1";
+fi
+
+# Keep this as the last check as it contains "--", everything comes after this is not passed to the kernel
+if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then
+  CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"
+fi
+
+echo $CMDLINE
 
 expect -c '
     set timeout -1

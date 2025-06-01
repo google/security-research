@@ -1,3 +1,216 @@
+lts-6.6.91:
+  release-date: 2025-05-30T12:00:00Z
+cos-109-17800.519.7:
+  release-date: 2025-05-30T12:00:00Z
+
+lts-6.6.90:
+  release-date: 2025-05-16T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-05-16T12:00:00Z
+cos-109-17800.519.1:
+  release-date: 2025-05-16T12:00:00Z
+
+lts-6.6.87:
+  release-date: 2025-05-02T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-05-02T12:00:00Z
+cos-109-17800.436.99:
+  release-date: 2025-05-02T12:00:00Z
+
+lts-6.6.86:
+  release-date: 2025-04-18T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-04-18T12:00:00Z
+cos-109-17800.436.91:
+  release-date: 2025-04-18T12:00:00Z
+
+lts-6.6.84:
+  release-date: 2025-04-04T12:00:00Z
+cos-105-17412.535.78:
+  release-date: 2025-04-04T12:00:00Z
+cos-109-17800.436.64:
+  release-date: 2025-04-04T12:00:00Z
+
+lts-6.6.83:
+  release-date: 2025-03-21T12:00:00Z
+cos-105-17412.535.63:
+  release-date: 2025-03-21T12:00:00Z
+cos-109-17800.436.60:
+  release-date: 2025-03-21T12:00:00Z
+
+lts-6.6.80:
+  release-date: 2025-03-07T12:00:00Z
+cos-105-17412.535.61:
+  release-date: 2025-03-07T12:00:00Z
+cos-109-17800.436.42:
+  release-date: 2025-03-07T12:00:00Z
+
+lts-6.6.77:
+  release-date: 2025-02-21T12:00:00Z
+cos-105-17412.535.55:
+  release-date: 2025-02-21T12:00:00Z
+cos-109-17800.436.33:
+  release-date: 2025-02-21T12:00:00Z
+
+lts-6.6.75:
+  release-date: 2025-02-07T12:00:00Z
+cos-105-17412.535.34:
+  release-date: 2025-02-07T12:00:00Z
+cos-109-17800.436.14:
+  release-date: 2025-02-07T12:00:00Z
+
+lts-6.6.71:
+  release-date: 2025-01-24T12:00:00Z
+cos-105-17412.535.6:
+  release-date: 2025-01-24T12:00:00Z
+cos-109-17800.372.99:
+  release-date: 2025-01-24T12:00:00Z
+
+lts-6.6.69:
+  release-date: 2025-01-10T12:00:00Z
+cos-105-17412.495.75:
+  release-date: 2025-01-10T12:00:00Z
+cos-109-17800.372.84:
+  release-date: 2025-01-10T12:00:00Z
+
+lts-6.6.66:
+  release-date: 2024-12-27T12:00:00Z
+cos-105-17412.495.73:
+  release-date: 2024-12-27T12:00:00Z
+cos-109-17800.372.71:
+  release-date: 2024-12-27T12:00:00Z
+
+lts-6.6.64:
+  release-date: 2024-12-13T12:00:00Z
+cos-105-17412.495.62:
+  release-date: 2024-12-13T12:00:00Z
+cos-109-17800.372.64:
+  release-date: 2024-12-13T12:00:00Z
+mitigation-v4-6.6:
+  release-date: 2024-12-13T12:00:00Z
+
+lts-6.6.62:
+  release-date: 2024-11-29T12:00:00Z
+cos-105-17412.495.37:
+  release-date: 2024-11-29T12:00:00Z
+cos-109-17800.372.38:
+  release-date: 2024-11-29T12:00:00Z
+
+lts-6.6.60:
+  release-date: 2024-11-15T12:00:00Z
+cos-105-17412.495.28:
+  release-date: 2024-11-15T12:00:00Z
+cos-109-17800.372.31:
+  release-date: 2024-11-15T12:00:00Z
+
+lts-6.6.56:
+  release-date: 2024-10-18T12:00:00Z
+cos-105-17412.448.61:
+  release-date: 2024-10-18T12:00:00Z
+cos-109-17800.309.84:
+  release-date: 2024-10-18T12:00:00Z
+
+mitigation-v3b-6.1.55:
+  release-date: 2024-10-14T12:00:00Z
+
+lts-6.6.52:
+  release-date: 2024-09-27T12:00:00Z
+cos-105-17412.448.36:
+  release-date: 2024-09-27T12:00:00Z
+cos-109-17800.309.59:
+  release-date: 2024-09-27T12:00:00Z
+
+lts-6.6.50:
+  release-date: 2024-09-13T12:00:00Z
+cos-105-17412.448.22:
+  release-date: 2024-09-13T12:00:00Z
+cos-109-17800.309.33:
+  release-date: 2024-09-13T12:00:00Z
+  
+lts-6.6.47:
+  release-date: 2024-08-30T12:00:00Z
+cos-105-17412.448.12:
+  release-date: 2024-08-30T12:00:00Z
+cos-109-17800.309.20:
+  release-date: 2024-08-30T12:00:00Z
+
+lts-6.6.45:
+  release-date: 2024-08-16T12:00:00Z
+cos-105-17412.370.78:
+  release-date: 2024-08-16T12:00:00Z
+cos-109-17800.309.7:
+  release-date: 2024-08-16T12:00:00Z
+
+lts-6.6.42:
+  release-date: 2024-07-31T12:00:00Z
+cos-105-17412.370.75:
+  release-date: 2024-07-31T12:00:00Z
+cos-109-17800.218.76:
+  release-date: 2024-07-31T12:00:00Z
+
+lts-6.6.38:
+  release-date: 2024-07-12T12:00:00Z
+cos-105-17412.370.67:
+  release-date: 2024-07-12T12:00:00Z
+cos-109-17800.218.69:
+  release-date: 2024-07-12T12:00:00Z
+
+lts-6.6.35:
+  release-date: 2024-06-28T12:00:00Z
+cos-105-17412.370.58:
+  release-date: 2024-06-28T12:00:00Z
+cos-109-17800.218.61:
+  release-date: 2024-06-28T12:00:00Z
+
+lts-6.6.31:
+  release-date: 2024-06-14T12:00:00Z
+cos-105-17412.370.44:
+  release-date: 2024-06-14T12:00:00Z
+cos-109-17800.218.44:
+  release-date: 2024-06-14T12:00:00Z
+
+lts-6.6.32:
+  release-date: 2024-05-31T12:00:00Z
+cos-105-17412.370.34:
+  release-date: 2024-05-31T12:00:00Z
+cos-109-17800.218.32:
+  release-date: 2024-05-31T12:00:00Z
+  
+lts-6.6.30:
+  release-date: 2024-05-17T12:00:00Z
+cos-109-17800.218.20:
+  release-date: 2024-05-17T12:00:00Z
+cos-105-17412.370.23:
+  release-date: 2024-05-17T12:00:00Z
+
+lts-6.6.28:
+  release-date: 2024-05-03T12:00:00Z
+cos-109-17800.147.60:
+  release-date: 2024-05-03T12:00:00Z
+cos-105-17412.294.68:
+  release-date: 2024-05-03T12:00:00Z
+
+lts-6.6.27:
+  release-date: 2024-04-19T12:00:00Z
+cos-109-17800.147.54:
+  release-date: 2024-04-19T12:00:00Z
+cos-105-17412.294.62:
+  release-date: 2024-04-19T12:00:00Z
+
+lts-6.6.23:
+  release-date: 2024-04-05T12:00:00Z
+cos-109-17800.147.41:
+  release-date: 2024-04-05T12:00:00Z
+cos-105-17412.294.48:
+  release-date: 2024-04-05T12:00:00Z
+
+lts-6.1.81:
+  release-date: 2024-03-22T12:00:00Z
+cos-97-16919.450.26:
+  release-date: 2024-03-22T12:00:00Z
+cos-105-17412.294.36:
+  release-date: 2024-03-22T12:00:00Z
+
 lts-6.1.79:
   release-date: 2024-03-08T12:00:00Z
 cos-105-17412.294.34:
@@ -69,6 +282,7 @@ cos-97-16919.404.4:
 
 mitigation-v3-6.1.55:
   release-date: 2023-10-21T12:00:00Z
+  available-until: 2024-10-14T12:00:00Z
 
 lts-6.1.58:
   release-date: 2023-10-20T12:00:00Z

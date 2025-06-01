@@ -1,0 +1,113 @@
+:root {
+    display: flex;
+    height: max-content;
+    width: max-content;
+    overflow: scroll;
+    padding: 100vh 100vw 100vh 100vw;
+    scrollbar-color: #888 #222;
+
+    body {
+        background: linear-gradient(#222, #001) fixed;
+        color: #eee;
+        font-family: "Source Code Pro", Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+        .explorer-sandwich:has(#explorer-filter-visible:checked) ~ .explorer-filters {
+            transform: scaleX(1);
+        }
+        .explorer-filters {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            --panning-sticky: sticky;
+            --panning-visible: visible;
+            visibility: var(--panning-visible);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transform-origin: left;
+            transition-delay: 3s;
+            transition: transform 300ms linear;
+            &:not(:hover):not(:focus-within) {
+                transform: scaleX(0.0001);
+            }
+            .explorer-header{
+                background: linear-gradient(hsla(24, 20%, 20%, .8), hsla(24, 20%, 50%, 1));;
+                .kernel-explorer-title {
+                    font-family: Oxanium, serif;
+                    font-weight: 200;
+                    padding-left: calc(25pt + 20px);
+                    padding-right: 1em;
+                    line-height: 25pt;
+                }
+            }
+            .explorer-tabs {
+                flex: 0 0 auto;
+                background: #2d2d2ddd;
+                border-bottom: 5px solid hsla(24, 20%, 40%, 1);
+                label {
+                    display: inline-block;
+                    border-radius: 33% 33% 0 0;
+                    background: hsla(24, 20%, 40%, 1);
+                    padding: 5px 10px;
+                    margin-top: 5px;
+                    border-bottom: 1px solid black;
+                    &:has(input:checked) {
+                        border-bottom-color: hsla(24, 20%, 40%, 1);
+                    }
+                    input {
+                        visibility: hidden;
+                    }
+                }
+            }
+            .explorer-panels {
+                flex: 1 1 0;
+                overflow: hidden;
+                display: flex;
+            }
+            .explorer-tabs:has(.struct-explorer-tab:not(:checked)) ~ .explorer-panels .struct-explorer,
+            .explorer-tabs:has(.file-explorer-tab:not(:checked)) ~ .explorer-panels .file-explorer {
+                display: none;
+            }
+        }
+        .explorer-sandwich {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+            margin: 6px 3px;
+            --panning-visible: visible;
+            visibility: var(--panning-visible);
+            label {
+                user-select: none;
+                display: inline-block;
+                font-size: 17pt;
+                padding: 3px;
+                border-radius: 50%;
+                border: 1px solid #888;
+                background: #222;
+                height: 25pt;
+                width: 25pt;
+                margin: auto;
+                line-height: 25pt;
+                text-align: center;
+                &:active:hover {
+                    font-size: 15pt;
+                    box-shadow: 0 0 16px 0 #ccc, 0 0 16px 0 #aaa;
+                }
+                &:hover {
+                    font-size: 20pt;
+                    box-shadow: inset 0 0 16px 0 #ccc, inset 0 0 16px 0 #aaa;
+                }
+            }
+            input {
+                appearance: none;
+                width: 0;
+                display: block;
+            }
+        }
+        .code-explorer {
+            z-index: 0;
+        }
+    }
+}

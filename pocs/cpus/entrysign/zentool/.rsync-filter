@@ -1,0 +1,16 @@
++ data/*.json
++ data/*.bin
+- *.bin
+- *.o
+- *.a
+- .*.sw?
+- *.json
+- .git
+- .sw?
+- autoexec.sh
+- opcodes
+- mcas
+- mcop
+- zentool
+- mtalk
+- *.tar.gz

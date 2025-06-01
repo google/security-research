@@ -27,7 +27,8 @@ slots = {}
 for row in publicSheet:
     for slot in [row["LTS slot"], row["COS slot"]]:
         if slot != "" and not slot.startswith("("):
-            slots[slot] = row["ID"]
+            slot = slot.split(' (')[0]
+            slots[slot] = (slots[slot] + ", " if slot in slots else "") + row["ID"]
 slots = dict(sorted(slots.items()))
 
 print("Taken slots:")

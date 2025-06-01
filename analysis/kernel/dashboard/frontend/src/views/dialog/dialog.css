@@ -1,0 +1,32 @@
+:is(.dialog-syzkaller, .dialog-conditions, .dialog-edge-selection) {
+    color: #f08d49;
+    padding: 2px;
+    background: hsla(24, 20%, 20%, 1);
+    box-shadow: 0 0 0.5em #999;
+    width: min-content;
+    min-width: 20vw;
+    overflow: auto;
+    font-size: small;
+    h3 {
+        text-align: center;
+    }
+    code {
+        display: block;
+        white-space: pre-wrap;
+        padding: 5px;
+        margin: 2px;
+        background: #222;
+        color: #ccc;
+    }
+    a {
+        color: white;
+    }
+    input, button {
+        color: #f08d49;
+        background: hsla(24, 20%, 50%, 0.4);
+    }
+
+    &::backdrop {
+        background: #22222280;
+    }
+}

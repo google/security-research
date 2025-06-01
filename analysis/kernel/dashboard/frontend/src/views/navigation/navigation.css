@@ -1,0 +1,14 @@
+.leader-line {
+    z-index: 1;
+}
+
+.navigation-panning {
+    transform: scale(var(--navigation-panning-scale)) !important;
+    transform-origin: var(--navigation-panning-x) var(--navigation-panning-y) !important;
+    transition: all 0.1s linear !important;
+    & * {
+        /* override sticky positioning on children */
+        --panning-sticky: static !important;
+        --panning-visible: hidden !important;
+    }
+}
