@@ -393,7 +393,7 @@ function kctf_cluster_ip_ranges {
   set_cloud_armor_policy "${RANGES}" || return
 
   # stop the operator
-  "${KCTF_BIN}/yq" eval "select(.kind == \"Deployment\")" "${KCTF_CTF_DIR}/kctf/resources/operator.yaml" \
+  "${KCTF_BIN}/yq" eval "select(.kind == \"Deployment\")" "${KCTF_CTF_DIR}/kctf/resources/install.yaml" \
     | "${KCTF_BIN}/kubectl" delete -f - || return
 
   start_operator_gce || return
@@ -401,16 +401,16 @@ function kctf_cluster_ip_ranges {
 
 function start_operator_gce {
   if [[ "${DISABLE_SRC_RANGES}" == "1" ]]; then
-     "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/operator.yaml" || return
+     "${KCTF_BIN}/kubectl" apply --server-side -f "${KCTF_CTF_DIR}/kctf/resources/install.yaml" || return
   else
     get_cloud_armor_policy || return
     RANGES=$ret
     SUFFIX=$(echo "${PROJECT}-${CLUSTER_NAME}-${ZONE}" | sha1sum)
     POLICY_NAME="kctf-policy-${SUFFIX:0:16}"
     # restart the operator with the new range
-    "${KCTF_BIN}/yq" eval "(select(.kind == \"Deployment\").spec.template.spec.containers[] | select(.name == \"manager\").env[] | select(.name == \"ALLOWED_IPS\").value) |= \"${RANGES}\"" "${KCTF_CTF_DIR}/kctf/resources/operator.yaml" \
+    "${KCTF_BIN}/yq" eval "(select(.kind == \"Deployment\").spec.template.spec.containers[] | select(.name == \"manager\").env[] | select(.name == \"ALLOWED_IPS\").value) |= \"${RANGES}\"" "${KCTF_CTF_DIR}/kctf/resources/install.yaml" \
       | "${KCTF_BIN}/yq" eval "(select(.kind == \"Deployment\").spec.template.spec.containers[] | select(.name == \"manager\").env[] | select(.name == \"SECURITY_POLICY\").value) |= \"${POLICY_NAME}\"" - \
-      | "${KCTF_BIN}/kubectl" apply -f - || return
+      | "${KCTF_BIN}/kubectl" apply --server-side -f - || return
   fi
 }
 
@@ -441,17 +441,13 @@ function create_cloud_armor_policy {
 }
 
 function create_operator {
-  # Creating CRD, rbac and operator
-  "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/kctf.dev_challenges.yaml" || return
-  "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/kctf-operator-metrics-reader_rbac.authorization.k8s.io_v1_clusterrole.yaml" || return
-  "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/kctf-operator-manager-config_v1_configmap.yaml" || return
-  "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/kctf-operator-controller-manager-metrics-service_v1_service.yaml" || return
+  # install.yaml is an unified file for creating CRD, rbac and operator
   if [[ "$CLUSTER_TYPE" == "gce" ]]; then
     start_operator_gce || return
   else
-    "${KCTF_BIN}/kubectl" apply -f "${KCTF_CTF_DIR}/kctf/resources/operator.yaml" || return
+    "${KCTF_BIN}/kubectl" apply --server-side -f "${KCTF_CTF_DIR}/kctf/resources/install.yaml" || return
   fi
-  OPERATOR_IMAGE=$("${KCTF_BIN}/yq" eval '.spec.template.spec.containers[].image | select(.=="*kctf-operator*")' "${KCTF_CTF_DIR}/kctf/resources/operator.yaml")
+  OPERATOR_IMAGE=$("${KCTF_BIN}/yq" eval '.spec.template.spec.containers[].image | select(.=="*kctf-operator*")' "${KCTF_CTF_DIR}/kctf/resources/install.yaml")
   if [[ $? -ne 0 ]]; then
     echo "Failed to find the operator image." >&2
     return 1
