@@ -31,20 +31,27 @@ print(r.recvuntil(b'== proof-of-work: '))
 if r.recvline().startswith(b'enabled'):
     handle_pow(r)
 
-l = listen()
-l2 = listen()
+server1 = server()
+server2 = server()
 
 r.readuntil(b'URL to open.', timeout=10)
-r.sendline(bytes('http://localhost:{}/ok'.format(l.lport), 'ascii'))
+r.sendline(bytes('http://localhost:{}/ok'.format(server1.lport), 'ascii'))
 
-_ = l.wait_for_connection()
+def wait_for_line(serv, line, maxtries=6):
+    for i in range(maxtries):
+        conn = serv.next_connection()
+        try:
+            print(conn.readuntil(line))
+            return conn
+        except EOFError:
+            print('eof')
+    raise 'no GET /ok found'
 
-print(l.readuntil(b'GET /ok HTTP/1.1'))
-content = f"<script>fetch('http://localhost:{l2.lport}/foo')</script>"
+conn = wait_for_line(server1, b'GET /ok HTTP/1.1')
+content = f"<script>fetch('http://localhost:{server2.lport}/foo')</script>"
 response = f'HTTP/1.1 200 OK\nContent-Length: {len(content)}\n\n{content}'
-l.send(response.encode())
+conn.send(response.encode())
 
-_ = l2.wait_for_connection()
-print(l2.readuntil(b'GET /foo HTTP/1.1'))
+wait_for_line(server2, b'GET /foo HTTP/1.1')
 
 exit(0)
