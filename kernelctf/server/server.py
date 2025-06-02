@@ -211,11 +211,6 @@ def main():
                 elif release['status'] == 'latest':
                     flagPrefix = ''
 
-                # if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
-                #     import pow
-                #     if not pow.ask(7337):
-                #         exit(1)
-
                 print('Executing target %s' % release_id)
 
                 with tempfile.TemporaryDirectory() as temp_dir:
