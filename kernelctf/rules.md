@@ -232,6 +232,8 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
   10. You can optionally donate twice the reward to charity if you select "Donate to charity and double my reward."
 
   11. Submit your report.
+  
+  12. We highly recommend to change your payment provider to BugCrowd for a better payment process. You can [read here](https://bughunters.google.com/blog/6483936851394560/announcing-bugcrowd-as-a-new-bughunters-google-com-payment-option) how.
 
 ## Note about making the exploit public
 
