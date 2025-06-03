@@ -23,6 +23,7 @@ The following rules apply to the eligibility of exploits:
 1. Check [this sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTWvO0tFNl8fJbOmTV1nwGJi4fAy5pDg-6DsHARRubj8I6c7_11RQ36Jv735zj9EQggz6AWjAOaebJh/pubhtml) if there’s already a submission for the currently deployed V8 version.
 1. Exploit the bug and capture the flag from our v8CTF environment.
 1. Create a .tar.gz archive of your exploit and calculate its sha256, e.g. with `sha256sum exploit.tar.gz`.
+    1. Provide an archive that can be verified using our reproduction setup (see [repro-chrome/README.md](repro-chrome/README.md))
     1. Please double check that the exploit doesn’t have any external dependencies.
 1. Fill out [this form](https://docs.google.com/forms/d/e/1FAIpQLScoWE5-XoF85dXMjWKTIrJGTEfCybFaktsYZMCZ86iFPrW8Ew/viewform?usp=header_link) with the flag and the exploit sha256 sum.
     1. For 0-day submissions, please use the same email address you reported the bug from.
