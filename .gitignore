@@ -3,3 +3,5 @@ pocs/cpus/reptar/minimized/reptar.*.elf
 pocs/cpus/reptar/minimized/reptar.log
 v8ctf/kctf/bin
 v8ctf/kctf/config/.lastconfig
+v8ctf/repro-chrome
+v8ctf/repro-exploit
