@@ -1,3 +1,5 @@
 pocs/cpus/reptar/minimized/reptar.*.bin
 pocs/cpus/reptar/minimized/reptar.*.elf
 pocs/cpus/reptar/minimized/reptar.log
+v8ctf/kctf/bin
+v8ctf/kctf/config/.lastconfig
