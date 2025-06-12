@@ -1,0 +1,35 @@
+name: Update v8CTF Challenges
+
+on:
+  schedule:
+    # This schedule runs at 00:00 UTC every Wednesday.
+    - cron: '0 0 * * 3'
+jobs:
+  update-challenges:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xxd
+
+      - name: Run the update script
+        run: |
+          ./v8ctf/scripts/update_challenges.sh
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'v8CTF github action'
+          git config --global user.email 'sroettger@google.com'
+          
+          # Check if there are any changes to commit
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -am "[v8ctf] Update v8CTF challenges"
+          git push
