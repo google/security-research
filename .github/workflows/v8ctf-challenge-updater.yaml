@@ -30,6 +30,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          
+
+          git add v8ctf
           git commit -am "[v8ctf] Update v8CTF challenges"
           git push
