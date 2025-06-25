@@ -8,6 +8,8 @@ on:
 jobs:
   update-challenges:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
