@@ -32,7 +32,7 @@ This instance uses the latest LTS with [COS kernel config](https://cos.googlesou
 
     * Note: The bonus applies to all the submissions since July 1st, 2025, as we temporary don't accept the LTS submissions with unpriviledged user namespaces.
 
-    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section).
+    * Note: We may change the bonus definition from time to time (for example adding additional restrictions). Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
 
   * 0-day bonus (+$20,000)
 
@@ -68,7 +68,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
   * Currently, there are two instances (COS 105 and COS 109) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
-  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/yXue2RwDEA)).
+  * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes. 
 
   * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
 
@@ -382,7 +382,7 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel.
+We announce program changes through [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel. All major changes are going to be announced 1 month in advance before they take an effect. This document will be updated to reflect current set of kernelCTF rules.
 
 ## Questions about program
 
