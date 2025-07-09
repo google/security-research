@@ -4,8 +4,6 @@ kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rule
 
 We are asking researchers to publish their submissions, helping the community to learn from each other's techniques.
 
-> ⚠️ This document describes the rules which apply from 2025-07-01. For older versions, check the [Github history of the rules page](https://github.com/google/security-research/commits/master/kernelctf/rules.md).
-
 # Reward structure and targets
 
 ## Targets
@@ -197,7 +195,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   5. Send us your exploit within 90 days of Step 1 with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below). This is mandatory step for us to start verification of the vulnerability.
 
-  6. If the PR GHA checks are successful and we verified that the submission exploits the claimed vulnerability, you get half of the reward amount. After a manual PR review and the PR is merged, you get the other half of the reward amount.
+  6. If the PR GHA checks are successful and we verified that the submission exploits the claimed vulnerability, you get half of the reward amount (except the novelty bonus). After a manual PR review and the PR is merged, you get the other half of the reward amount (and the potential novelty bonus).
 
 ### Google Bughunter's website submission process
 
@@ -239,7 +237,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
 You have to publish your exploit within 90 days of submitting the patch commit via the Google Form to be eligible for a reward.
 
-We only process submissions after the exploit is public and we can only start issuing first half of the reward when the PR checks the automated checks and the initial submission review confirms the submission exploits the claimed vulnerability. The second half of the reward is issued after successful merge of the PR which includes a more depth review (including submission quality checks).
+We only process submissions after the exploit is public and we can only start issuing first half of the reward (except the novelty bonus) when the PR checks the automated checks and the initial submission review confirms the submission exploits the claimed vulnerability. The second half of the reward (and the novelty bonus) is issued after successful merge of the PR which includes a more depth review (including submission quality checks).
 
 If you want to delay the publication (within the 90 days window), you could do that, but you would get the money later (we want to encourage you to publish the exploit details sooner than later).
 
