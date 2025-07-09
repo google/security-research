@@ -382,7 +382,7 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce program changes through [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel. All major changes are going to be announced 1 month in advance before they take an effect. On the date changes taking effect, this document will be updated to reflect current set of kernelCTF rules.
+We announce program changes through [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel. All major changes are going to be announced 1 month in advance before they take an effect. This document will be updated to reflect current set of kernelCTF rules.
 
 ## Questions about program
 
