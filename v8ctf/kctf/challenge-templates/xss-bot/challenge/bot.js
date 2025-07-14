@@ -29,6 +29,7 @@ if (BLOCK_SUBORIGINS) {
     '--proxy-pac-url=data:application/x-ns-proxy-autoconfig;base64,'+PAC_B64,
   ];
 }
+puppeter_args.args.push('--incognito');
 
 (async function(){
   const browser = await puppeteer.launch(puppeter_args);
@@ -50,7 +51,7 @@ if (BLOCK_SUBORIGINS) {
     socket.state = 'LOADED';
     let cookie = JSON.parse(fs.readFileSync('/home/user/cookie'));
 
-    const context = await browser.createIncognitoBrowserContext();
+    const context = await browser.createBrowserContext();
     const page = await context.newPage();
     await page.setCookie(cookie);
     socket.write(`Loading page ${url}.\n`);
