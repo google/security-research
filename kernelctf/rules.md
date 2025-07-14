@@ -4,8 +4,6 @@ kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rule
 
 We are asking researchers to publish their submissions, helping the community to learn from each other's techniques.
 
-> ⚠️ This document describes the rules which apply from 2025-07-01. For older versions, check the [Github history of the rules page](https://github.com/google/security-research/commits/master/kernelctf/rules.md).
-
 # Reward structure and targets
 
 ## Targets
@@ -34,7 +32,7 @@ This instance uses the latest LTS with [COS kernel config](https://cos.googlesou
 
     * Note: The bonus applies to all the submissions since July 1st, 2025, as we temporary don't accept the LTS submissions with unpriviledged user namespaces.
 
-    * Note: We may change the bonus definition from time to time (for example adding additional restrictions), but we will announce any changes at least 1 month in advance (see the "Program change notifications and communication" section).
+    * Note: We may change the bonus definition from time to time (for example adding additional restrictions). Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
 
   * 0-day bonus (+$20,000)
 
@@ -70,7 +68,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
   * Currently, there are two instances (COS 105 and COS 109) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
-  * We may change the number of instances or their kernel versions, but will announce this at least 1 month in advance (via [#kernelctf-announcements](https://discord.gg/yXue2RwDEA)).
+  * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes. 
 
   * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
 
@@ -197,7 +195,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   5. Send us your exploit within 90 days of Step 1 with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below). This is mandatory step for us to start verification of the vulnerability.
 
-  6. If the PR GHA checks are successful and we verified that the submission exploits the claimed vulnerability, you get half of the reward amount. After a manual PR review and the PR is merged, you get the other half of the reward amount.
+  6. If the PR GHA checks are successful and we verified that the submission exploits the claimed vulnerability, you get half of the reward amount (except the novelty bonus). After a manual PR review and the PR is merged, you get the other half of the reward amount (and the potential novelty bonus).
 
 ### Google Bughunter's website submission process
 
@@ -239,7 +237,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
 You have to publish your exploit within 90 days of submitting the patch commit via the Google Form to be eligible for a reward.
 
-We only process submissions after the exploit is public and we can only start issuing first half of the reward when the PR checks the automated checks and the initial submission review confirms the submission exploits the claimed vulnerability. The second half of the reward is issued after successful merge of the PR which includes a more depth review (including submission quality checks).
+We only process submissions after the exploit is public and we can only start issuing first half of the reward (except the novelty bonus) when the PR checks the automated checks and the initial submission review confirms the submission exploits the claimed vulnerability. The second half of the reward (and the novelty bonus) is issued after successful merge of the PR which includes a more depth review (including submission quality checks).
 
 If you want to delay the publication (within the 90 days window), you could do that, but you would get the money later (we want to encourage you to publish the exploit details sooner than later).
 
@@ -384,7 +382,7 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the 
 
 ## Program change notifications and communication
 
-We announce major program changes on [Google's Security Blog](https://security.googleblog.com/), but we may change minor, mostly technical details (like steps in the submission process) by changing this page and announcing the change on our [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel.
+We announce program changes through [#kernelctf-announcements](https://discord.gg/yXue2RwDEA) Discord channel. All major changes are going to be announced 1 month in advance before they take an effect. This document will be updated to reflect current set of kernelCTF rules.
 
 ## Questions about program
 

@@ -18,11 +18,14 @@ elif [[ $(date +%Y-%m-%d) > "2025-02-28" ]]; then
 fi
 
 IO_URING="sysctl.kernel.io_uring_disabled=2"
+USERNS="sysctl.user.max_user_namespaces=1"
 
 if [[ -n "$CAPABILITIES" ]]; then
   for element in $(echo "$CAPABILITIES" | tr ',' '\n'); do
     if [[ "$element" == "io_uring"* ]]; then
       IO_URING=""
+    elif [[ "$element" == "userns"* ]]; then
+      USERNS=""
     fi
   done
 fi
@@ -35,4 +38,4 @@ exec qemu-system-x86_64 -m 3.5G -nographic -no-reboot \
   -nic user,model=virtio-net-pci \
   -drive file=rootfs_v3.img,if=virtio,cache=none,aio=native,format=raw,discard=on,readonly \
   -drive file=$FLAG_FN,if=virtio,format=raw,readonly \
-  -append "console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro $HARDENING $IO_URING init=$INIT hostname=$RELEASE"
+  -append "console=ttyS0 root=/dev/vda1 rootfstype=ext4 rootflags=discard ro $HARDENING $USERNS $IO_URING init=$INIT hostname=$RELEASE"
