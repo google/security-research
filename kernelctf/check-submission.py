@@ -121,7 +121,7 @@ for submissionId in submissionIds:
     if cve != publicData["CVE"]:
         error(f"The CVE on the public spreadsheet for submission `{submissionId}` is `{publicData['CVE']}` but the PR is for `{cve}`.")
 
-flagRegex = r"kernelCTF\{(?:v1:([^:]+)|[^:]*[:]?v2:([^:]+):([^:]*)):\d+\}"
+flagRegex = r"kernelCTF\{(?:[^:]*:)?(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
 def flagTarget(flag):
     match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
     if match.group(1):
