@@ -153,7 +153,7 @@ static int set_sequence_word(patch_t *patch, char const *options)
     return 0;
 }
 
-static int set_fastpath_hook(patch_t *patch, char const *options)
+static int set_fastpath_hook(patch_t *patch, char *options)
 {
 /*
 ./zentool --output=modified.bin edit --nop all --match all=0 --seq all=7 --insn q40i0="xor rax, rax, rax" --insn q40i1="add rax, rax, 0x1337" --fastpath 0xbb000000,0xff000000,0x00000005 --hdr-revlow 0x6 template.bin && ./zentool resign modified.bin && sudo ./zentool load --cpu=2 modified.bin && taskset -c 2 ./opcodes
@@ -375,6 +375,7 @@ int cmd_edit_main(int argc, char **argv)
         } else if (strcmp(opt, "insn-field") == 0) {
             set_insn_field(patch, optarg);
         } else if (strcmp(opt, "fastpath") == 0) {
+            // Careful! set_fastpath_hook() destroys `optarg` when splitting it.
             set_fastpath_hook(patch, optarg);
         } else {
             errx(EXIT_FAILURE, "BUG: option %s not handled", opt);
