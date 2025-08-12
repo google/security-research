@@ -12,7 +12,7 @@ A submission can contain any number of the following 4 parts:
 
 ### 1. Exploit for the latest LTS instance
 
-This instance uses the latest LTS with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig) and unpriviledged user namespaces turned off since July 1st, 2025 (this configuration considered temporary and could be revised in a new kernelCTF iteration). Besides that, `io_uring` and `nftables` are also [disabled](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/lts-6.6.config). Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
+This instance uses the latest LTS with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig) and unpriviledged user namespaces turned off since July 1st, 2025 (this configuration considered temporary and could be revised in a new kernelCTF iteration). Besides that, `io_uring` and `nftables` are also [disabled](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/lts-6.12.config). Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
 
 #### Rewards
 
