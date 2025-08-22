@@ -1,0 +1,22 @@
+{
+  "id": "CVE-2023-0461",
+  "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-0461",
+  "vulnerability": "A use-after-free vulnerability in the Linux kernel's netfilter: nf_tables component can be exploited to achieve local privilege escalation.",
+  "patch": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=997b021a23355a23b0644b8d29d649825e7b3477",
+  "impact": "Local privilege escalation",
+  "exploit": "This PoC demonstrates the vulnerability by triggering a kernel panic. It can be adapted for arbitrary code execution.",
+  "reporter": "Poc Reporter",
+  "references": [
+    "https://www.zerodayinitiative.com/advisories/ZDI-23-118/"
+  ],
+  "notes": "This exploit targets the mitigation-6.1 kernel version.",
+  "v2": {
+    "exploits": [
+      {
+        "version": "mitigation-6.1",
+        "cve": "CVE-2023-0461",
+        "configuration": "CONFIG_USER_NS"
+      }
+    ]
+  }
+}
