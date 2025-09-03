@@ -1,7 +1,7 @@
 apiVersion: kctf.dev/v1
 kind: Challenge
 metadata:
-  name: chrome-137
+  name: chrome-140
 spec:
   deployed: true
   powDifficultySeconds: 1
@@ -10,7 +10,6 @@ spec:
   healthcheck:
     # TIP: disable the healthcheck during development
     enabled: true
-    image: eu.gcr.io/gctf-vrp/chrome-137-healthcheck:35ae290bf50914e692e9cf4f97a1cc3f3eb2b89107d2a738c63c03522e9d1f1b
   podTemplate:
     template:
       spec:
@@ -26,4 +25,3 @@ spec:
               defaultMode: 0555
               secretName: v8ctf-flag
               optional: true
-  image: eu.gcr.io/gctf-vrp/chrome-137-challenge:5c3d17fd36a54a8d355b4127de1a1c31b08eabe9907180ef4748c0c8a6897fcd
