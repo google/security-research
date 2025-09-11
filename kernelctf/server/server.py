@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
-DEPRECATED_TARGETS = ["cos-97"]
+DEPRECATED_TARGETS = ["cos-97", "cos-105", "cos-109"]
 ALLOWED_CAPABILITIES = ["userns", "io_uring"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
@@ -210,11 +210,6 @@ def main():
                         continue
                 elif release['status'] == 'latest':
                     flagPrefix = ''
-
-                # if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
-                #     import pow
-                #     if not pow.ask(7337):
-                #         exit(1)
 
                 print('Executing target %s' % release_id)
 
