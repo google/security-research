@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
-DEPRECATED_TARGETS = ["cos-97"]
-ALLOWED_CAPABILITIES = ["io_uring"]
+DEPRECATED_TARGETS = ["cos-97", "cos-105", "cos-109"]
+ALLOWED_CAPABILITIES = ["userns", "io_uring"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
 from httplib2 import Http
@@ -149,7 +149,7 @@ def main():
             print()
 
             # long random generated secret, not bruteforcable
-            root = hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
+            root = '--root' in sys.argv or hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
 
             if action == 'back':
                 break
@@ -165,18 +165,6 @@ def main():
                 print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
                 print()
             elif root or action == 'run':
-                flagPrefix = 'invalid:'
-                if release['status'] == 'future':
-                    flagPrefix = 'future:'
-                    if not are_you_sure('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.'):
-                        continue
-                elif release['status'] == 'deprecated':
-                    flagPrefix = 'deprecated:'
-                    if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
-                        continue
-                elif release['status'] == 'latest':
-                    flagPrefix = ''
-
                 capabilities_done = False
                 while not capabilities_done:
                     print("Enter capabilities needed (comma-separated, or leave empty)")
@@ -192,10 +180,36 @@ def main():
                             print(f"{capability} not in the available capabilities.")
                             capabilities_done = False
 
-                if not (root or (isDevel and input('Skip pow? (y/n) ') == 'y')):
-                    import pow
-                    if not pow.ask(7337):
-                        exit(1)
+                flagPrefix = 'invalid:'
+                if release['status'] == 'future':
+                    print('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.')
+                    answer = input('Do you want to run anyway (y/n) or wait until the slot opening (w) ')
+                    if answer == 'y':
+                        flagPrefix = 'future:'
+                    elif answer == 'w':
+                        prev_notification = 0
+                        while True:
+                            time_left = int((release['release-date'] - datetime.now(timezone.utc)).total_seconds())
+                            if time_left <= 0:
+                                flagPrefix = ''
+                                break
+
+                            if prev_notification != time_left:
+                                print(f'Only {time_left} seconds left...')
+                                prev_notification = time_left
+
+                            time.sleep(0.05) # check 20 times per second, start as soon as possible
+                    else:
+                        continue
+                elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
+                    # you can target deprecated releases during the io_uring promotion
+                    flagPrefix = ''
+                elif release['status'] == 'deprecated':
+                    flagPrefix = 'deprecated:'
+                    if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
+                        continue
+                elif release['status'] == 'latest':
+                    flagPrefix = ''
 
                 print('Executing target %s' % release_id)
 

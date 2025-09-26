@@ -18,6 +18,7 @@ case $TARGET in
     REPO="https://github.com/gregkh/linux"
     DEFAULT_BRANCH="v${VERSION}"
     case $VERSION in
+        6.12.*) CONFIG_FN="lts-6.12.config" ;;
         6.6.*) CONFIG_FN="lts-6.6.config" ;;
         6.1.*) CONFIG_FN="lts-6.1.config" ;;
     esac
@@ -95,7 +96,11 @@ if [ "$TARGET" == "cos" ]; then
     make lakitu_defconfig
     cp .config lakitu_defconfig
 else
-    curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    if [[ $VERSION == "6.12"* ]]; then
+        curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    else
+        curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    fi
     cp lakitu_defconfig .config
 fi
 

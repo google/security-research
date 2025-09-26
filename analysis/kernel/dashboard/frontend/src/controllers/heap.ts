@@ -54,7 +54,11 @@ export class Heap {
             await Fields.getRootNode(),
             await btf.getFieldsByStructName(struct),
             struct,
-            kmalloc
+            kmalloc,
+            this.kmalloc_cache_name,
+            this.kmalloc_cgroup_name,
+            bits_offset,
+            bits_end
         );
 
         if (bits_offset && bits_end) {

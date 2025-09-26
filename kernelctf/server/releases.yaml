@@ -1,3 +1,126 @@
+lts-6.12.46:
+  release-date: 2025-09-19T12:00:00Z
+cos-121-18867.199.56:
+  release-date: 2025-09-19T12:00:00Z
+cos-113-18244.448.39:
+  release-date: 2025-09-19T12:00:00Z
+
+lts-6.12.44:
+  release-date: 2025-09-05T12:00:00Z
+cos-121-18867.199.43:
+  release-date: 2025-09-05T12:00:00Z
+cos-113-18244.448.33:
+  release-date: 2025-09-05T12:00:00Z
+
+lts-6.12.41:
+  release-date: 2025-08-22T12:00:00Z
+cos-121-18867.199.28:
+  release-date: 2025-08-22T12:00:00Z
+cos-113-18244.448.22:
+  release-date: 2025-08-22T12:00:00Z
+
+lts-6.12.40:
+  release-date: 2025-08-08T12:00:00Z
+cos-121-18867.90.97:
+  release-date: 2025-08-08T12:00:00Z
+cos-113-18244.382.65:
+  release-date: 2025-08-08T12:00:00Z
+
+lts-6.6.98:
+  release-date: 2025-07-25T12:00:00Z
+cos-109-17800.519.41:
+  release-date: 2025-07-25T12:00:00Z
+
+lts-6.6.95:
+  release-date: 2025-07-11T12:00:00Z
+cos-109-17800.519.40:
+  release-date: 2025-07-11T12:00:00Z
+
+lts-6.6.94:
+  release-date: 2025-06-27T12:00:00Z
+cos-109-17800.519.32:
+  release-date: 2025-06-27T12:00:00Z
+
+lts-6.6.93:
+  release-date: 2025-06-13T12:00:00Z
+cos-109-17800.519.18:
+  release-date: 2025-06-13T12:00:00Z
+
+lts-6.6.91:
+  release-date: 2025-05-30T12:00:00Z
+cos-109-17800.519.7:
+  release-date: 2025-05-30T12:00:00Z
+
+lts-6.6.90:
+  release-date: 2025-05-16T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-05-16T12:00:00Z
+cos-109-17800.519.1:
+  release-date: 2025-05-16T12:00:00Z
+
+lts-6.6.87:
+  release-date: 2025-05-02T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-05-02T12:00:00Z
+cos-109-17800.436.99:
+  release-date: 2025-05-02T12:00:00Z
+
+lts-6.6.86:
+  release-date: 2025-04-18T12:00:00Z
+cos-105-17412.535.98:
+  release-date: 2025-04-18T12:00:00Z
+cos-109-17800.436.91:
+  release-date: 2025-04-18T12:00:00Z
+
+lts-6.6.84:
+  release-date: 2025-04-04T12:00:00Z
+cos-105-17412.535.78:
+  release-date: 2025-04-04T12:00:00Z
+cos-109-17800.436.64:
+  release-date: 2025-04-04T12:00:00Z
+
+lts-6.6.83:
+  release-date: 2025-03-21T12:00:00Z
+cos-105-17412.535.63:
+  release-date: 2025-03-21T12:00:00Z
+cos-109-17800.436.60:
+  release-date: 2025-03-21T12:00:00Z
+
+lts-6.6.80:
+  release-date: 2025-03-07T12:00:00Z
+cos-105-17412.535.61:
+  release-date: 2025-03-07T12:00:00Z
+cos-109-17800.436.42:
+  release-date: 2025-03-07T12:00:00Z
+
+lts-6.6.77:
+  release-date: 2025-02-21T12:00:00Z
+cos-105-17412.535.55:
+  release-date: 2025-02-21T12:00:00Z
+cos-109-17800.436.33:
+  release-date: 2025-02-21T12:00:00Z
+
+lts-6.6.75:
+  release-date: 2025-02-07T12:00:00Z
+cos-105-17412.535.34:
+  release-date: 2025-02-07T12:00:00Z
+cos-109-17800.436.14:
+  release-date: 2025-02-07T12:00:00Z
+
+lts-6.6.71:
+  release-date: 2025-01-24T12:00:00Z
+cos-105-17412.535.6:
+  release-date: 2025-01-24T12:00:00Z
+cos-109-17800.372.99:
+  release-date: 2025-01-24T12:00:00Z
+
+lts-6.6.69:
+  release-date: 2025-01-10T12:00:00Z
+cos-105-17412.495.75:
+  release-date: 2025-01-10T12:00:00Z
+cos-109-17800.372.84:
+  release-date: 2025-01-10T12:00:00Z
+
 lts-6.6.66:
   release-date: 2024-12-27T12:00:00Z
 cos-105-17412.495.73:

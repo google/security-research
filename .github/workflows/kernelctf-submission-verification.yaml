@@ -3,6 +3,19 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
+  workflow_call:
+    inputs:
+      prNumber:
+        description: 'PR number'
+        type: number
+      shaHash:
+        description: 'SHA hash'
+        type: string
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       prNumber:
@@ -10,9 +23,14 @@ on:
         type: number
       shaHash:
         description: 'SHA hash'
+      skipRepro:
+        description: 'Skip reproduction'
+        type: boolean
+        required: false
+        default: false
 permissions: {}
 env:
-  PR_REF: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.shaHash || format('refs/pull/{0}/merge', github.event.inputs.prNumber)) || github.event.pull_request.head.sha }}
+  PR_REF: ${{ contains(github.event_name, 'workflow_') && (inputs.shaHash || format('refs/pull/{0}/merge', inputs.prNumber)) || github.event.pull_request.head.sha }}
 jobs:
   structure_check:
     # if labeling triggered the job then only run in case of the "recheck" label
@@ -84,7 +102,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit
           if-no-files-found: error
 
@@ -92,7 +110,7 @@ jobs:
         if: failure() && steps.build_exploit.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./exploit
           if-no-files-found: error
 
@@ -104,8 +122,52 @@ jobs:
         if: failure() && steps.build_exploit.outcome == 'failure'
         run: printf '❌ The exploit compilation failed.\n\nPlease fix it.\n\nYou can see the build logs by clicking on `...` here and then on "View job logs". Or by selecting `exploit_build (${{ env.RELEASE_ID }})` under Jobs in the left menubar.\n' >> $GITHUB_STEP_SUMMARY
 
+  exploit_build_debug:
+    runs-on: ubuntu-latest
+    needs: structure_check
+    permissions: {}
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
+      fail-fast: false # do not cancel other targets
+    env:
+      RELEASE_ID: ${{ matrix.target }}
+      EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
+    steps:
+      - name: Checkout PR content
+        uses: actions/checkout@v4
+        with:
+          path: pr
+          ref: ${{ env.PR_REF }}
+          fetch-depth: 0
+
+      - name: Convert exploit to debug build
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+          sed -i '/gcc -g/!s/gcc/gcc -g/g' Makefile
+          sed -i '/configure --enable-debug/!s/configure/configure --enable-debug/g' Makefile
+          sed -i 's/-o exploit /-o exploit_debug /g' Makefile
+          sed -i 's/ -s\b//g' Makefile
+          sed -i 's/exploit:/exploit_debug:/g' Makefile
+
+      - name: Build exploit
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+          if make -n prerequisites; then
+            make prerequisites
+          fi
+          make exploit_debug
+          file exploit_debug | grep debug_info
+
+      - name: Upload debug build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_debug_${{ env.RELEASE_ID }}
+          path: ${{ env.EXPLOIT_DIR }}/exploit_debug
+          if-no-files-found: error
+
   exploit_repro:
-    runs-on: ubuntu-22.04-4core
+    runs-on: ubuntu-latest
     timeout-minutes: 300
     permissions: {}
     needs: [structure_check, exploit_build]
@@ -113,7 +175,7 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
       fail-fast: false
-    if: always() && needs.structure_check.result == 'success'
+    if: always() && needs.structure_check.result == 'success' && !inputs.skipRepro
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
@@ -140,7 +202,7 @@ jobs:
       - name: Download exploit
         uses: actions/download-artifact@v4
         with:
-          name: exploit_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/exp/
 
       - name: Fetch rootfs
@@ -210,7 +272,7 @@ jobs:
       - name: Upload repro QEMU logs as an artifact
         uses: actions/upload-artifact@v4
         with:
-          name: repro_logs_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_logs_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_log_*.txt
 
       - name: Reproduction // Summary
@@ -223,13 +285,13 @@ jobs:
       - name: Upload repro summary as an artifact
         uses: actions/upload-artifact@v4
         with:
-          name: repro_summary_${{ env.RELEASE_ID }}
+          name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
 
   backup_artifacts:
     runs-on: ubuntu-latest
-    needs: [structure_check, exploit_build, exploit_repro]
-    if: always() && needs.structure_check.result == 'success'
+    needs: [structure_check, exploit_build, exploit_build_debug, exploit_repro]
+    if: always() && needs.structure_check.result == 'success' && github.event_name != 'workflow_call'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4

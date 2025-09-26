@@ -1,0 +1,13 @@
+*.sw?
+*.o
+data/*.bin.txt
+data/updates
+/*.bin
+mcas
+mcop
+zentool
+opcodes
+mtalk
+NOTES
+*_fields.h
+*.tar.gz
