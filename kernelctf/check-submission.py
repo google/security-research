@@ -94,6 +94,18 @@ for submissionId in set(submissionIds).difference(publicSheet.keys()):
 submissionIds = list(set(submissionIds).intersection(publicSheet.keys()))
 submissionIds.sort()
 
+# Regular expression to handle kernelCTF flag without signature
+flagRegex = r"kernelCTF\{(?:[^:]+:)?(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
+def flagTarget(flag):
+    match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
+    if match.group(1):
+        # v1 flag
+        return match.group(1)
+
+    # v2 flag
+    return match.group(2)
+
+targetFlagTimes = {}
 flags = []
 for submissionId in submissionIds:
     publicData = publicSheet[submissionId]
@@ -116,21 +128,12 @@ for submissionId in submissionIds:
             else:
                 print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
 
-    flags.extend(publicData["Flags"].strip().split('\n'))
+    for flag in publicData["Flags"].strip().split('\n'):
+        flags.append(flag)
+        targetFlagTimes[flagTarget(flag)] = publicData["Flag submission time"]
 
     if cve != publicData["CVE"]:
         error(f"The CVE on the public spreadsheet for submission `{submissionId}` is `{publicData['CVE']}` but the PR is for `{cve}`.")
-
-# Regular expression to handle kernelCTF flag without signature
-flagRegex = r"kernelCTF\{(?:[^:]+:)?(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
-def flagTarget(flag):
-    match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
-    if match.group(1):
-        # v1 flag
-        return match.group(1)
-
-    # v2 flag
-    return match.group(2)
 
 flagTargets = set([flagTarget(flag) for flag in flags])
 if "mitigation-6.1-v2" in flagTargets:
@@ -160,6 +163,7 @@ for target in flagTargets:
         exploit_info = metadata["exploits"].get(target)
         if not exploit_info: continue
         exploits_info[target] = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
+        exploits_info[target]["flag_time"] = targetFlagTimes[target]
 ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
 ghSet("OUTPUT", f"artifact_backup_dir={'_'.join(submissionIds)}")
 
