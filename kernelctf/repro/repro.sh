@@ -25,6 +25,8 @@ fi
 
 if [[ "$RELEASE_ID" == "mitigation-"* ]]; then
   CMDLINE="$CMDLINE sysctl.kernel.dmesg_restrict=1 sysctl.kernel.kptr_restrict=2 sysctl.kernel.unprivileged_bpf_disabled=2 sysctl.net.core.bpf_jit_harden=1 sysctl.kernel.yama.ptrace_scope=1 slab_virtual=1 slab_virtual_guards=1";
+elif [[ "$(echo $EXPLOIT_INFO | jq -re '.flag_time')" > "2025-02-28" ]]; then
+  CMDLINE="$CMDLINE sysctl.net.core.bpf_jit_harden=2"
 fi
 
 # Keep this as the last check as it contains "--", everything comes after this is not passed to the kernel
