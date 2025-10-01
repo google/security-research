@@ -1,7 +1,7 @@
 apiVersion: kctf.dev/v1
 kind: Challenge
 metadata:
-  name: chrome-138
+  name: chrome-141
 spec:
   deployed: true
   powDifficultySeconds: 1
