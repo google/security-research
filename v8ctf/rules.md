@@ -14,6 +14,7 @@ The following rules apply to the eligibility of exploits:
 * Only the first submission for a given bug that leads to the initial memory corruption is eligible.
 * Only the first submission per deployed V8 version in v8CTF is eligible based on the timestamp of the form submission.
   * 0-day submissions are exempt from this limit.
+* N-day submissions will only be accepted after the officially announced time, based on the timestamp embedded in the flag. Flags are updated automatically every hour on the hour.
 * Exploits need to be reasonably fast and stable. We accept submissions with an average runtime of less than 5 minutes and at least 80% success rate.
 * Valid submissions get a reward of $10,000.
 
@@ -22,6 +23,7 @@ The following rules apply to the eligibility of exploits:
 1. If your exploit targets a 0-day vulnerability, make sure to report it first to the [Chrome VRP](https://g.co/chrome/vrp).
 1. Check [this sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTWvO0tFNl8fJbOmTV1nwGJi4fAy5pDg-6DsHARRubj8I6c7_11RQ36Jv735zj9EQggz6AWjAOaebJh/pubhtml) if there’s already a submission for the currently deployed V8 version.
 1. Exploit the bug and capture the flag from our v8CTF environment.
+    1. The flag format is v8CTF{$unix_timestamp:$signature}. For n-day submissions, please verify that the timestamp is past the announced start time since the automation might introduce a short delay in flag updates.
 1. Create a .tar.gz archive of your exploit and calculate its sha256, e.g. with `sha256sum exploit.tar.gz`.
     1. Provide an archive that can be verified using our reproduction setup (see [repro-chrome/README.md](repro-chrome/README.md))
     1. Please double check that the exploit doesn’t have any external dependencies.
@@ -38,5 +40,5 @@ You can find a description of our v8CTF infrastructure in the [README](https://g
 
 We have two discord channels set up on the [Capture The Flag](https://discord.gg/hqcSdTk6vm) server:
 
-* #v8ctf-announcements: will be used for announcements such as changes to the rules.
+* #v8ctf-announcements: will be used for announcements such as changes to the rules and the start time for n-day submissions.
 * #v8ctf: is open to all. If you have any questions, please ask here.
