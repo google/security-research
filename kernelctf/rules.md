@@ -314,6 +314,10 @@ We ask you to compile our `libxdk` library into your exploit and if a feature wh
 
 To help understand the difference between a traditional exploit and a kernelXDK-based one, take a look at the [how-to guide](https://github.com/google/kernel-research/blob/main/docs/how_to_get_started.md) and [this guide](https://github.com/google/kernel-research/blob/main/docs/sample_exploit.md) on how sample, traditional exploit was ported to one which uses libxdk library. Other converted samples can be found in [the `libxdk`'s source code](https://github.com/google/kernel-research/tree/main/libxdk/samples).
 
+The reproduction environment on Github has the kernelXDK pre-installed, you just have to compile your exploit as C++ and with the library linked (`-lkernelXDK`).
+
+If you are exploiting multiple targets where the exploits are identical, feel free to just symlink the exploit folders (e.g. `ln -s exploit/lts-6.1.36 exploit/cos-97-16919.353.23`) instead of submitting the same files multiple times.
+
 If you have any questions regarding the usage of kernelXDK, use the [#kernelxdk Discord channel](https://discord.gg/8W8PJzA567). You can [report bugs on Github](https://github.com/google/kernel-research?tab=readme-ov-file#reporting-bugs).
 
 ## Documentation requirements
