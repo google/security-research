@@ -137,11 +137,19 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Install build dependencies (example)
+      - name: Install base dependencies
         run: |
           set -eux
           sudo apt-get update
           sudo apt-get install -y libelf-dev zip jq gh
+
+      - name: Prepare kernel source (mrproper + allmodconfig)
+        run: |
+          set -eux
+          # Clean tree (safe to ignore failures)
+          make mrproper || true
+          # Configure all modules built-in/configured
+          make allmodconfig
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -170,11 +178,10 @@ jobs:
           TOKEN: ${{ secrets.CODEQL_RELEASER }}
         run: |
           set -eux
-          if [ -z "$TOKEN" ]; then
+          if [ -z "${TOKEN:-}" ]; then
             echo "ERROR: secret CODEQL_RELEASER is not set in google/security-research" >&2
             exit 1
           fi
-          # Authenticate gh CLI using the provided PAT (reads token from stdin)
           echo "$TOKEN" | gh auth login --with-token
 
       - name: Create or update release in target repo using gh
