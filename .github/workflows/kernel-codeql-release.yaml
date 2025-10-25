@@ -67,11 +67,12 @@ jobs:
           fi
 
           # Get latest release createdAt from target repo (if any)
-          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json createdAt --jq '.[0].createdAt' 2>/dev/null || echo "")
+          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json createdAt --jq '.[0].createdAt' || echo "")
 
           if [ -z "$LATEST_RELEASE_ISO_DATE" ]; then
             LATEST_RELEASE_TS=$(date -d "1 week ago" +%s)
             echo "No releases found in $TARGET_REPO. Processing tags created since $(date -d @$LATEST_RELEASE_TS -u)."
+            gh release list --repo "$TARGET_REPO" --limit 1
           else
             LATEST_RELEASE_TS=$(date -d "$LATEST_RELEASE_ISO_DATE" +%s)
             echo "Latest release in $TARGET_REPO was created on $(date -d @$LATEST_RELEASE_TS -u)."
