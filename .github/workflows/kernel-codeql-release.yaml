@@ -45,6 +45,7 @@ jobs:
       - name: Find new tags
         id: find_new_tags
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ github.event.inputs.tag || '' }}
           TARGET_REPO: ${{ env.TARGET_REPO }}
         run: |
