@@ -1,8 +1,8 @@
 name: "Kernel CodeQL Release Creator"
 
 on:
-  # schedule:
-  #   - cron: '15 */2 * * *'
+  schedule:
+    - cron: '15 */7 * * *'
   workflow_dispatch:
     inputs:
       tag:
