@@ -89,6 +89,15 @@ jobs:
       - name: Backup original exploit
         run: mv $EXPLOIT_DIR/exploit ./
 
+      - name: Install kernelXDK
+        run: |
+            sudo apt install libkeyutils-dev
+            wget https://github.com/google/kernel-research/releases/download/libxdk%2Fv0.1/libxdk-v0.1.tar.gz
+            tar -xzvf libxdk-v0.1.tar.gz
+            chmod -R o+rx include lib
+            sudo cp -R include/* /usr/local/include/
+            sudo cp -R lib/* /usr/lib/
+
       - name: Build exploit
         id: build_exploit
         working-directory: ${{ env.EXPLOIT_DIR }}
@@ -140,6 +149,15 @@ jobs:
           path: pr
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
+
+      - name: Install kernelXDK
+        run: |
+            sudo apt install libkeyutils-dev
+            wget https://github.com/google/kernel-research/releases/download/libxdk%2Fv0.1/libxdk-v0.1.tar.gz
+            tar -xzvf libxdk-v0.1.tar.gz
+            chmod -R o+rx include lib
+            sudo cp -R include/* /usr/local/include/
+            sudo cp -R lib/* /usr/lib/
 
       - name: Convert exploit to debug build
         working-directory: ${{ env.EXPLOIT_DIR }}

@@ -294,6 +294,32 @@ The structure of this submission folder should be:
 
 You can add additional files (e.g. images for writeup or supporting libraries for the exploit). The exploit can be split into multiple files, although we prefer if it is kept as a single `.c` file.
 
+## kernelXDK integration
+
+kernelCTF submissions from 2025-10-23 have to use the kernelXDK (Kernel eXploit Development Kit, read more here: [xdk.dev](https://xdk.dev)) in the Github PR.
+
+This requirement only affects submissions whose "Flag submission time" column on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) contains a date newer than `2025-10-23T00:00:00Z`. Older submissions don't have to use the kernelXDK even if the PR is submitted after 2025-10-23.
+
+The exploit used on our server to capture the flag does not have to use the kernelXDK.
+
+### What is kernelXDK?
+
+kernelXDK is a toolset which aims to help in creating "universal" exploits that can be easily ported between various kernel versions. In its current form, it decouples target-specific information (symbol offsets, ROP gadgets, structure, field information) from the exploit itself, thereby can make (some) exploits target-independent. This approach allows us to easily introduce new targets for kernelCTF without the need to manually port existing exploits to new targets (e.g. from LTS to COS).
+
+### What does it mean to "use the kernelXDK"?
+
+We ask you to compile our `libxdk` library into your exploit and if a feature which you use in your exploit also exists in the [latest `libxdk` release](https://github.com/google/kernel-research/releases), then you have to use it.
+
+**For example:** if your exploit uses ROP, then use `libxdk` to generate the stack pivot and ROP chain (the libxdk will detect the kernelCTF target the exploit runs on and generate the right primitives for that). Similarly for example you should not hardcode symbol and structure offsets into your exploit but use the library's functions like [`GetSymbolOffset`](https://xdk.dev/libxdk/target_classes.html#_CPPv4N6Target15GetSymbolOffsetENSt6stringE) to get the right offset. If your exploit does not use ROP (e.g. it's data-only), then of course you don't have to rewrite your exploit to use ROP.
+
+To help understand the difference between a traditional exploit and a kernelXDK-based one, take a look at the [how-to guide](https://github.com/google/kernel-research/blob/main/docs/how_to_get_started.md) and [this guide](https://github.com/google/kernel-research/blob/main/docs/sample_exploit.md) on how sample, traditional exploit was ported to one which uses libxdk library. Other converted samples can be found in [the `libxdk`'s source code](https://github.com/google/kernel-research/tree/main/libxdk/samples).
+
+The reproduction environment on Github has the kernelXDK pre-installed, you just have to compile your exploit as C++ and with the library linked (`-lkernelXDK`).
+
+If you are exploiting multiple targets where the exploits are identical, feel free to just symlink the exploit folders (e.g. `ln -s exploit/lts-6.1.36 exploit/cos-97-16919.353.23`) instead of submitting the same files multiple times.
+
+If you have any questions regarding the usage of kernelXDK, use the [#kernelxdk Discord channel](https://discord.gg/8W8PJzA567). You can [report bugs on Github](https://github.com/google/kernel-research?tab=readme-ov-file#reporting-bugs).
+
 ## Documentation requirements
 
 ### Vulnerability
