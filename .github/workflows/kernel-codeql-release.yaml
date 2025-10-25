@@ -172,7 +172,7 @@ jobs:
       - name: Compress DB
         run: |
           set -eux
-          zip -s 2g -r codeql_db_${{ matrix.tag }}.zip /tmp/codeql_db_${{ matrix.tag }}
+          zip -s 1g -r codeql_db_${{ matrix.tag }}.zip /tmp/codeql_db_${{ matrix.tag }}
 
       - name: Authenticate gh CLI with PAT
         env:
