@@ -191,11 +191,12 @@ jobs:
           ZIP: codeql_db_${{ matrix.tag }}.zip
         run: |
           set -eux
+          split --bytes=2G "$ZIP" "$ZIP_split"
           # Check if release for tag already exists
           if gh release view "$TAG" --repo "$TARGET_REPO" >/dev/null 2>&1; then
             echo "Release for tag $TAG exists in $TARGET_REPO — uploading asset (will overwrite if exists)"
-            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$ZIP"
+            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$ZIP_split"*
           else
             echo "Creating new release for tag $TAG in $TARGET_REPO and attaching asset"
-            gh release create "$TAG" --repo "$TARGET_REPO" "$ZIP" --title "CodeQL DB for $TAG" --notes "Attached is the CodeQL database generated for tag $TAG."
+            gh release create "$TAG" --repo "$TARGET_REPO" "$ZIP_split"* --title "CodeQL DB for $TAG" --notes "Attached is the CodeQL database generated for tag $TAG."
           fi
