@@ -172,7 +172,7 @@ jobs:
       - name: Compress DB
         run: |
           set -eux
-          zip -r codeql_db_${{ matrix.tag }}.zip /tmp/codeql_db_${{ matrix.tag }}
+          zip -s 2g -r codeql_db_${{ matrix.tag }}.zip /tmp/codeql_db_${{ matrix.tag }}
 
       - name: Authenticate gh CLI with PAT
         env:
@@ -189,14 +189,13 @@ jobs:
         env:
           TARGET_REPO: ${{ env.TARGET_REPO }}
           TAG: ${{ matrix.tag }}
-          ZIP: codeql_db_${{ matrix.tag }}.zip
+          ZIP: codeql_db_${{ matrix.tag }}
         run: |
           set -eux
-          zip -s 2g "$ZIP" --out "$ZIP_split"
 
           # Check if release for tag already exists
           if gh release view "$TAG" --repo "$TARGET_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$ZIP_split"*
+            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$ZIP".*
           else
-            gh release create "$TAG" --repo "$TARGET_REPO" "$ZIP_split"* --title "CodeQL DB for $TAG" --notes "Stored as a multipart zip file."
+            gh release create "$TAG" --repo "$TARGET_REPO" "$ZIP".* --title "CodeQL DB for $TAG" --notes "Stored as a multipart zip file."
           fi
