@@ -152,7 +152,7 @@ jobs:
           # Clean tree (safe to ignore failures)
           make mrproper || true
           # Configure all modules built-in/configured
-          make allmodconfig
+          make allyesconfig
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
