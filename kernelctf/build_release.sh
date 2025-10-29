@@ -35,7 +35,7 @@ case $TARGET in
                 v4-6.6*) DEFAULT_BRANCH="slub-virtual-v6.6" ;;
                 v4-6.12*) DEFAULT_BRANCH="mitigations-next" ;;
             esac
-            CONFIG_FULL_FN="mitigation-v4.config"
+            CONFIG_FN="mitigation-v4.config"
             ;;
         v3-* | v3b-*)
             DEFAULT_BRANCH="mitigations-next"
