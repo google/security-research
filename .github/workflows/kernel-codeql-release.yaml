@@ -161,7 +161,7 @@ jobs:
           build-mode: manual
           db-location: /tmp/codeql_db_${{ matrix.tag }}
           config-file: advanced-security/config/disable-default-queries@true
-          queries: +linux-izu/codeql/queries/slab-call-sites.ql@main
+          # queries: +linux-izu/codeql/queries/slab-call-sites.ql@main
 
       - name: Build
         run: |
