@@ -67,8 +67,8 @@ jobs:
             fi
           fi
 
-          # Get latest release createdAt from target repo (if any)
-          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json createdAt --jq '.[0].createdAt' || echo "")
+          # Get latest release publishedAt from target repo (if any)
+          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json publishedAt --jq '.[0].publishedAt' || echo "")
 
           if [ -z "$LATEST_RELEASE_ISO_DATE" ]; then
             LATEST_RELEASE_TS=$(date -d "1 week ago" +%s)
@@ -146,7 +146,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libelf-dev zip jq gh
 
-      - name: Prepare kernel source (mrproper + allmodconfig)
+      - name: Prepare kernel source (mrproper + allyesconfig)
         run: |
           set -eux
           # Clean tree (safe to ignore failures)
