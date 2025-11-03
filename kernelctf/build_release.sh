@@ -18,6 +18,7 @@ case $TARGET in
     REPO="https://github.com/gregkh/linux"
     DEFAULT_BRANCH="v${VERSION}"
     case $VERSION in
+        6.12.*) CONFIG_FN="lts-6.12.config" ;;
         6.6.*) CONFIG_FN="lts-6.6.config" ;;
         6.1.*) CONFIG_FN="lts-6.1.config" ;;
     esac
@@ -29,6 +30,13 @@ case $TARGET in
   mitigation)
     REPO="https://github.com/thejh/linux"
     case $VERSION in
+        v4*)
+            case $VERSION in
+                v4-6.6*) DEFAULT_BRANCH="slub-virtual-v6.6" ;;
+                v4-6.12*) DEFAULT_BRANCH="mitigations-next" ;;
+            esac
+            CONFIG_FN="mitigation-v4.config"
+            ;;
         v3-* | v3b-*)
             DEFAULT_BRANCH="mitigations-next"
             case $VERSION in
@@ -91,7 +99,11 @@ if [ "$TARGET" == "cos" ]; then
     make lakitu_defconfig
     cp .config lakitu_defconfig
 else
-    curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    if [[ $VERSION == "6.12"* ]]; then
+        curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    else
+        curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.1/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
+    fi
     cp lakitu_defconfig .config
 fi
 

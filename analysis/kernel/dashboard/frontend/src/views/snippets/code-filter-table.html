@@ -1,0 +1,38 @@
+<div class="code-filter-table" data-filter-coverage data-filter-conditions>
+    <div class="code-filter-header code-filter-syscall-checkbox">
+      <label>
+        <input type=checkbox id>
+      </label>
+    </div>
+    <div class="code-filter-header code-filter-syscall-name">
+      <label for>
+        syscall
+      </label>
+    </div>
+    <div class="code-filter-header code-filter-syscall-coverage">
+      <label>coverage:<br/>
+        <select name="coverage">
+          <optgroup label="coverage">
+            <option>yes</option>
+            <option>no</option>
+            <option selected>any</option>
+          </optgroup>
+        </select>
+      </label>
+    </div>
+    <div class="code-filter-header code-filter-syscall-conditions">
+      <label>
+        conditions:<br/>
+        <select name="conditions">
+          <optgroup label="conditions">
+            <option value="c">[c]apable</option>
+            <option value="n">[n]s_capable</option>
+            <option value="m">[m]odule_param</option>
+            <option value="s">[s]ysctl</option>
+            <option value="none">none</option>
+            <option selected>any</option>
+          </optgroup>
+        </select>
+      </label>
+    </div>
+</div>

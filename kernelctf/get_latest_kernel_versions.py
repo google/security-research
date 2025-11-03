@@ -17,12 +17,12 @@ def add_release(release_id, branch=None):
     global releases
     releases.append({ "releaseId": release_id, "branch": branch })
 
-for lts_version in ["6.6"]:
+for lts_version in ["6.6", "6.12"]:
     latest_lts = run(f"git ls-remote --tags --sort='-v:refname' https://github.com/gregkh/linux 'v{lts_version}.*[0-9]'")[0].split("refs/tags/")[1]
     print(f"Latest LTS {lts_version}: {latest_lts}")
     add_release(f"lts-{latest_lts[1:]}")
 
-for cos_milestone in [105, 109]:
+for cos_milestone in [109, 113, 121]:
     release_notes = fetch(f"https://cloud.google.com/feeds/cos-{cos_milestone}-release-notes.xml")
     tree = etree.XML(release_notes.encode('utf-8'))
     entries = tree.xpath("//*[local-name() = 'content']/text()")

@@ -1,0 +1,206 @@
+name: "Kernel CodeQL Release Creator"
+
+on:
+  schedule:
+    - cron: '15 */7 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional. Specific tag to create a CodeQL DB for (e.g. v1.2.3). If provided, the workflow will process only this tag."
+        required: false
+        default: ""
+      source_repo:
+        description: "Repository to build tags from (owner/repo). Default: gregkh/linux"
+        required: false
+        default: "gregkh/linux"
+      target_repo:
+        description: "Repository to publish releases to (owner/repo). Default: linux-izu/codeql"
+        required: false
+        default: "linux-izu/codeql"
+
+jobs:
+  check-for-new-tags:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    outputs:
+      new_tags: ${{ steps.find_new_tags.outputs.tags }}
+      has_new_tags: ${{ steps.find_new_tags.outputs.has_tags }}
+
+    steps:
+      - name: Set repo env
+        run: |
+          echo "SOURCE_REPO=${{ github.event.inputs.source_repo || 'gregkh/linux' }}" >> $GITHUB_ENV
+          echo "TARGET_REPO=${{ github.event.inputs.target_repo || 'linux-izu/codeql' }}" >> $GITHUB_ENV
+
+      - name: Checkout source repository (to inspect tags)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          fetch-depth: 0
+          fetch-tags: true
+          filter: blob:none
+
+      - name: Find new tags
+        id: find_new_tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
+          TARGET_REPO: ${{ env.TARGET_REPO }}
+        run: |
+          set -euo pipefail
+
+          # If manual tag provided, validate and use it
+          if [ -n "$INPUT_TAG" ]; then
+            echo "Manual tag input provided: $INPUT_TAG"
+            if git rev-parse -q --verify "refs/tags/$INPUT_TAG" >/dev/null; then
+              JSON_TAGS=$(printf '%s\n' "$INPUT_TAG" | jq -R . | jq -s -c .)
+              echo "Using manual tag: $JSON_TAGS"
+              echo "tags=$JSON_TAGS" >> $GITHUB_OUTPUT
+              echo "has_tags=true" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "ERROR: Tag '$INPUT_TAG' not found in $SOURCE_REPO." >&2
+              echo "has_tags=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+
+          # Get latest release publishedAt from target repo (if any)
+          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json publishedAt --jq '.[0].publishedAt' || echo "")
+
+          if [ -z "$LATEST_RELEASE_ISO_DATE" ]; then
+            LATEST_RELEASE_TS=$(date -d "1 week ago" +%s)
+            echo "No releases found in $TARGET_REPO. Processing tags created since $(date -d @$LATEST_RELEASE_TS -u)."
+            gh release list --repo "$TARGET_REPO" --limit 1
+          else
+            LATEST_RELEASE_TS=$(date -d "$LATEST_RELEASE_ISO_DATE" +%s)
+            echo "Latest release in $TARGET_REPO was created on $(date -d @$LATEST_RELEASE_TS -u)."
+          fi
+
+          NEW_TAGS=()
+          # iterate tags sorted by tagger/creator date (falling back to commit date)
+          while read -r tag; do
+            # Resolve timestamp (prefer tagger/annotated tag date)
+            TAG_OBJ_DATE=$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/$tag" 2>/dev/null || echo "")
+            if [ -n "$TAG_OBJ_DATE" ] && [[ "$TAG_OBJ_DATE" =~ ^[0-9]+$ ]]; then
+              ts="$TAG_OBJ_DATE"
+            else
+              commit_sha=$(git rev-list -n 1 "refs/tags/$tag" 2>/dev/null || true)
+              if [ -n "$commit_sha" ]; then
+                ts=$(git show -s --format=%ct "$commit_sha")
+              else
+                echo "Skipping tag with no date: $tag" >&2
+                continue
+              fi
+            fi
+
+            if [ "$ts" -gt "$LATEST_RELEASE_TS" ]; then
+              echo "Found new tag: $tag (timestamp $(date -d @$ts -u))" >&2
+              NEW_TAGS+=("$tag")
+            else
+              continue
+            fi
+          done < <(git for-each-ref --sort='-creatordate' --format='%(refname:short)' refs/tags)
+
+          if [ ${#NEW_TAGS[@]} -eq 0 ]; then
+            echo "No new tags found."
+            echo "has_tags=false" >> $GITHUB_OUTPUT
+          else
+            JSON_TAGS=$(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s -c .)
+            echo "Found new tags: $JSON_TAGS"
+            echo "tags=$JSON_TAGS" >> $GITHUB_OUTPUT
+            echo "has_tags=true" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+    needs: check-for-new-tags
+    if: needs.check-for-new-tags.outputs.has_new_tags == 'true'
+    runs-on: ubuntu-24.04-64core
+    permissions:
+      contents: write
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJson(needs.check-for-new-tags.outputs.new_tags) }}
+
+    env:
+      SOURCE_REPO: ${{ github.event.inputs.source_repo || 'gregkh/linux' }}
+      TARGET_REPO: ${{ github.event.inputs.target_repo || 'linux-izu/codeql' }}
+
+    steps:
+      - name: Checkout source repository at tag
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ matrix.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install base dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y libelf-dev zip jq gh
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: none
+          db-location: /tmp/codeql_db_${{ matrix.tag }}
+          config-file: advanced-security/config/disable-default-queries@true
+          queries: +linux-izu/codeql/queries/slab-call-sites.ql@main
+
+
+      - name: Build kernel
+        if: false
+        run: |
+          set -eux
+          make mrproper
+          make allyesconfig
+          make -j$(nproc)
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          upload: false
+          upload-database: false
+          skip-queries: true
+          output: /tmp/codeql_results_${{ matrix.tag }}
+
+      - name: Compress Results
+        run: |
+          set -eux
+          cd /tmp
+          zip -s 1g -r codeql_db_${{ matrix.tag }}.zip codeql_db_${{ matrix.tag }}
+          zip -s 1g -r codeql_results_${{ matrix.tag }}.zip codeql_results_${{ matrix.tag }}
+
+      - name: Authenticate gh CLI with PAT
+        env:
+          TOKEN: ${{ secrets.CODEQL_RELEASER }}
+        run: |
+          set -eux
+          if [ -z "${TOKEN:-}" ]; then
+            echo "ERROR: secret CODEQL_RELEASER is not set in google/security-research" >&2
+            exit 1
+          fi
+          echo "$TOKEN" | gh auth login --with-token
+
+      - name: Create or update release in target repo using gh
+        env:
+          TARGET_REPO: ${{ env.TARGET_REPO }}
+          TAG: ${{ matrix.tag }}
+          DB: /tmp/codeql_db_${{ matrix.tag }}
+          RESULTS: /tmp/codeql_results_${{ matrix.tag }}
+        run: |
+          set -eux
+
+          # Check if release for tag already exists
+          if gh release view "$TAG" --repo "$TARGET_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$DB".* "$RESULTS".*
+          else
+            gh release create "$TAG" --repo "$TARGET_REPO" "$DB".* "$RESULTS".* --title "CodeQL DB and Results for $TAG" --notes "Stored as multipart zip files."
+          fi
