@@ -145,28 +145,23 @@ jobs:
           set -eux
           sudo apt-get update
           sudo apt-get install -y libelf-dev zip jq gh
-
-      - name: Prepare kernel source (mrproper + allyesconfig)
-        run: |
-          set -eux
-          # Clean tree (safe to ignore failures)
-          make mrproper || true
-          # Configure all modules built-in/configured
-          make allyesconfig
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
-          build-mode: manual
+          build-mode: none
           db-location: /tmp/codeql_db_${{ matrix.tag }}
           config-file: advanced-security/config/disable-default-queries@true
           queries: +linux-izu/codeql/queries/slab-call-sites.ql@main
 
-      - name: Build
+
+      - name: Build kernel
+        if: false
         run: |
           set -eux
-          make -j$(nproc) || true
+          make mrproper
+          make allyesconfig
+          make -j$(nproc)
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
