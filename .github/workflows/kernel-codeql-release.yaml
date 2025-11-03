@@ -168,7 +168,7 @@ jobs:
         with:
           upload: false
           upload-database: false
-          skip-queries: true
+          skip-queries: false
           output: /tmp/codeql_results_${{ matrix.tag }}
 
       - name: Compress Results
