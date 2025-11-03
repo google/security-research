@@ -1,3 +1,13 @@
+lts-6.12.56:
+  release-date: 2025-11-14T12:00:00Z
+cos-121-18867.294.2:
+  release-date: 2025-11-14T12:00:00Z
+cos-113-18244.521.7:
+  release-date: 2025-11-14T12:00:00Z
+
+mitigation-v4-6.12:
+  release-date: 2025-12-03T12:00:00Z
+
 lts-6.12.54:
   release-date: 2025-10-31T12:00:00Z
 cos-121-18867.199.98:
@@ -181,6 +191,7 @@ cos-109-17800.309.84:
 
 mitigation-v3b-6.1.55:
   release-date: 2024-10-14T12:00:00Z
+  available-until: 2025-12-03T12:00:00Z
 
 lts-6.6.52:
   release-date: 2024-09-27T12:00:00Z
