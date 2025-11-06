@@ -431,3 +431,12 @@ mitigation-6.1-broken:
   deprecated: true
   vmlinux: false
   available-until: 2023-07-08T17:20:00Z
+
+# https://ci.android.com/builds/submitted/12177620/aosp_cf_x86_64_phone-userdebug/latest
+# Android releases
+android-14-x64-13884121:
+  release-date: 2025-08-13T12:00:00Z
+android-13-x64-13962529:
+  release-date: 2025-08-12T12:00:00Z
+android-12-x64-13908281:
+  release-date: 2025-08-11T12:00:00Z
