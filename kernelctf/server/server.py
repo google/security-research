@@ -25,6 +25,8 @@ os.chdir(os.path.dirname(__file__))
 isDevel = os.path.basename(__file__) == 'server_devel.py' or '--devel' in sys.argv
 now = datetime.now(timezone.utc)
 release_dir = './releases_new' if isDevel else './releases'
+android_release_dir = './android_releases'
+apk_path = './android_shellserver/app/build/outputs/apk/release/app-release.apk'
 
 def chat_msg(msg, mention=False):
     if mention:
@@ -44,24 +46,38 @@ def get_releases():
     with open(RELEASES_YAML, 'r') as f: releases = yaml.safe_load(f)
 
     target_latest = {}
-    for release_id, release in list(releases.items()):
-        if not os.path.exists(f'{release_dir}/{release_id}'):
-            warning(f'release {release_id} not found in the {release_dir} folder')
+    for release_id in list(releases.keys()):
+        release = releases[release_id]
+        
+        # Check if release exists in either directory
+        release_path = os.path.join(release_dir, release_id)
+        android_release_path = os.path.join(android_release_dir, release_id)
+        
+        if not os.path.exists(release_path) and not os.path.exists(android_release_path):
+            print(f'Warning: release {release_id} not found in {release_dir} or {android_release_dir}')
             del releases[release_id]
             continue
-
-        m = re.match(r'(?P<target>lts|mitigation(-v3|-v3b|-v4)?|cos-\d+)-(?P<version>\d+(\.\d+)+)', release_id)
+        
+        # Determine which directory the release is in
+        if os.path.exists(android_release_path):
+            release['release_path'] = android_release_path
+        else:
+            release['release_path'] = release_path
+        
+        pattern = r'(?P<target>lts|mitigation(-v3|-v3b|-v4)?|cos-\d+|android-\d{2}-x64)-(?P<version>\d+(\.\d+)+|\d{8})'
+        m = re.match(pattern, release_id)
+        
         if m is None:
-            warning(f'release {release_id} does not match regex')
+            print(f'Warning: release {release_id} does not match expected format')
             del releases[release_id]
             continue
-
+        
+        target = m.group('target')
+        release['target'] = target
         released = release['release-date'] <= now
 
         if release.get('available-until', now) < now:
             release['deprecated'] = True
-
-        target = m.group('target')
 
         if released and not release.get('deprecated', False) and target not in DEPRECATED_TARGETS:
             if not target in target_latest or target_latest[target]['release-date'] < release['release-date']:
@@ -69,7 +85,6 @@ def get_releases():
 
         release['id'] = release_id
         release['released'] = released
-        release['target'] = target
 
     for release in releases.values():
         release['latest'] = target_latest.get(release['target']) == release
@@ -165,20 +180,22 @@ def main():
                 print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
                 print()
             elif root or action == 'run':
-                capabilities_done = False
-                while not capabilities_done:
-                    print("Enter capabilities needed (comma-separated, or leave empty)")
-                    print(f"options: {ALLOWED_CAPABILITIES}")
-                    capabilities = input(": ").strip()
-                    capabilities_done = True
+                capabilities = ''
+                if not release.get('target').startswith('android'):
+                    capabilities_done = False
+                    while not capabilities_done:
+                        print("Enter capabilities needed (comma-separated, or leave empty)")
+                        print(f"options: {ALLOWED_CAPABILITIES}")
+                        capabilities = input(": ").strip()
+                        capabilities_done = True
 
-                    capabilities = [capability.strip() for capability in capabilities.split(",")] if capabilities else []
-                    capabilities = list(set(capabilities))
+                        capabilities = [capability.strip() for capability in capabilities.split(",")] if capabilities else []
+                        capabilities = list(set(capabilities))
 
-                    for capability in capabilities:
-                        if capability not in ALLOWED_CAPABILITIES:
-                            print(f"{capability} not in the available capabilities.")
-                            capabilities_done = False
+                        for capability in capabilities:
+                            if capability not in ALLOWED_CAPABILITIES:
+                                print(f"{capability} not in the available capabilities.")
+                                capabilities_done = False
 
                 flagPrefix = 'invalid:'
                 if release['status'] == 'future':
@@ -223,8 +240,10 @@ def main():
                         signature = hmac.new(server_secrets.flag_key.encode('utf-8'), flag_content.encode('utf-8'), hashlib.sha1).hexdigest()
                         flag = f'kernelCTF{{{flag_content}:{signature}}}'
                         f.write(flag + '\n')
-
-                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])
+                    if release.get('target').startswith('android'):
+                        subprocess.check_call(['./cuttlefish.sh', f'--release_path={os.getcwd()}/android_releases/{release_id}', f'--flag_path={flag_fn}', f'--apk_path={apk_path}', '--interactive'])
+                    else:
+                        subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])
             else:
                 print('Invalid action. Expected one of the followings: run, info, back')
                 print()
