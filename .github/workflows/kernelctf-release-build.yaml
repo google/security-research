@@ -29,16 +29,96 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Check release does not exist yet
-        run: curl --fail -I https://storage.googleapis.com/kernelctf-build/releases/${{inputs.releaseId}}/bzImage && exit 1 || true
+      - name: Detect build type
+        id: detect
+        run: |
+          # Detect Android builds by prefix, assume Linux for everything else
+          if [[ "${{inputs.releaseId}}" =~ ^android- ]]; then
+            echo "type=android" >> $GITHUB_OUTPUT
+            echo "Detected Android build from releaseId prefix"
+          else
+            echo "type=linux" >> $GITHUB_OUTPUT
+            echo "Detected Linux build (default)"
+          fi
 
-      - name: Install prerequisites
+      - name: Check release does not exist yet
+        run: |
+          if curl --fail -I https://storage.googleapis.com/kernelctf-build/releases/${{inputs.releaseId}}/bzImage 2>/dev/null; then
+            echo "Error: Release ${{inputs.releaseId}} already exists"
+            exit 1
+          fi
+      
+      - name: Install Linux build prerequisites
+        if: steps.detect.outputs.type == 'linux'
         run: |
           sudo apt-get update
           sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole
+      
+      - name: Install Android build prerequisites
+        if: steps.detect.outputs.type == 'android'
+        run: sudo apt install -yq --no-install-recommends git
+      
+      - name: Setup Go
+        if: steps.detect.outputs.type == 'android'
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
 
-      - name: Build
+      - name: Build fetch_artifact tool
+        if: steps.detect.outputs.type == 'android'
+        run: |
+          git clone https://android.googlesource.com/tools/fetch_artifact
+          cd fetch_artifact
+          go build -o fetch_artifact .
+          sudo mv fetch_artifact /usr/local/bin/
+          fetch_artifact --version || fetch_artifact --help
+
+      - name: Build Linux kernel
+        if: steps.detect.outputs.type == 'linux'
         run: ./build_release.sh ${{inputs.releaseId}} ${{inputs.branch}}
+
+      - name: Build Android kernel
+        if: steps.detect.outputs.type == 'android'
+        run: |
+          RELEASE_ID="${{inputs.releaseId}}"
+          ARCH=$(echo $RELEASE_ID | cut -d'-' -f3)
+          BUILD_ID=$(echo $RELEASE_ID | cut -d'-' -f4)
+          
+          echo "Architecture: $ARCH"
+          echo "Build ID: $BUILD_ID"
+          
+          if [[ "$ARCH" == "x64" ]]; then
+            TARGET="aosp_cf_x86_64_only_phone-userdebug"
+            TARGET_BASE="aosp_cf_x86_64_only_phone"
+          elif [[ "$ARCH" == "arm64" ]]; then
+            TARGET="aosp_cf_arm64_only_phone-userdebug"
+            TARGET_BASE="aosp_cf_arm64_only_phone"
+          else
+            echo "Error: Unsupported architecture: $ARCH"
+            exit 1
+          fi
+          
+          RELEASE_DIR="releases/$RELEASE_ID"
+          mkdir -p "$RELEASE_DIR"
+          
+          echo "Fetching Android artifacts to $RELEASE_DIR..."
+          
+          echo "Fetching cvd-host_package.tar.gz..."
+          fetch_artifact \
+            -target=$TARGET \
+            -build_id=$BUILD_ID \
+            -artifact=cvd-host_package.tar.gz
+          mv cvd-host_package.tar.gz "$RELEASE_DIR/"
+          
+          IMG_ARTIFACT="${TARGET_BASE}-img-${BUILD_ID}.zip"
+          echo "Fetching ${IMG_ARTIFACT}..."
+          fetch_artifact \
+            -target=$TARGET \
+            -build_id=$BUILD_ID \
+            -artifact=$IMG_ARTIFACT
+          mv "$IMG_ARTIFACT" "$RELEASE_DIR/"
+          
+          echo "Android artifacts downloaded to $RELEASE_DIR"        
 
       - name: Show releases
         run: find releases -type f|xargs ls -al
@@ -55,7 +135,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     steps:
-      - name: Download exploit
+      - name: Download release
         uses: actions/download-artifact@v4
         with:
           name: ${{inputs.releaseId}}
