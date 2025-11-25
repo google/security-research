@@ -125,7 +125,7 @@ jobs:
           echo "$BUILD_ID" > last_build_id.txt
           
           # Output releases JSON with null branch (consistent with LTS releases)
-          RELEASES=$(jq -n \
+          RELEASES=$(jq -nc \
             --arg releaseId "$RELEASE_ID" \
             '[{releaseId: $releaseId, branch: null}]')
           
