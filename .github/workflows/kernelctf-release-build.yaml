@@ -95,18 +95,23 @@ jobs:
         run: |
           RELEASE_ID="${{inputs.releaseId}}"
           
-          # Parse release ID format: android16-6.12.23-x86_64-14421689
-          # Field 1: android16
-          # Field 2-4: 6.12.23 (kernel version split by dots)
-          # Field 5: x86_64 (architecture)
-          # Field 6: 14421689 (build ID)
-          
-          ARCH=$(echo $RELEASE_ID | cut -d'-' -f5)
-          BUILD_ID=$(echo $RELEASE_ID | cut -d'-' -f6)
-          
           echo "Release ID: $RELEASE_ID"
+          
+          # Parse release ID format: android16-6.12.23-x86_64-14421689
+          # Split by '-' and handle dots in kernel version
+          IFS='-' read -ra PARTS <<< "$RELEASE_ID"
+          
+          ARCH="${PARTS[4]}"
+          BUILD_ID="${PARTS[5]}"
+          
           echo "Architecture: $ARCH"
           echo "Build ID: $BUILD_ID"
+          
+          if [[ -z "$ARCH" || -z "$BUILD_ID" ]]; then
+            echo "Error: Failed to parse release ID"
+            echo "Expected format: androidXX-X.XX.XX-ARCH-BUILDID"
+            exit 1
+          fi
           
           if [[ "$ARCH" == "x86_64" ]]; then
             TARGET="aosp_cf_x86_64_only_phone-userdebug"
@@ -139,7 +144,7 @@ jobs:
             -artifact=$IMG_ARTIFACT
           mv "$IMG_ARTIFACT" "$RELEASE_DIR/"
           
-          echo "Android artifacts downloaded to $RELEASE_DIR"        
+          echo "Android artifacts downloaded to $RELEASE_DIR"
 
       - name: Show releases
         run: find releases -type f|xargs ls -al
