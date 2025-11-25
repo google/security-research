@@ -146,7 +146,7 @@ jobs:
           ANDROID_RELEASES='${{ steps.check_android.outputs.releases }}'
           
           # Merge both release arrays
-          MERGED=$(jq -s 'add' <(echo "$LINUX_RELEASES") <(echo "$ANDROID_RELEASES"))
+          MERGED=$(jq -sc 'add' <(echo "$LINUX_RELEASES") <(echo "$ANDROID_RELEASES"))
           
           echo "releases=$MERGED" >> $GITHUB_OUTPUT
           echo "Merged releases: $MERGED"
