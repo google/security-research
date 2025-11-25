@@ -2,8 +2,9 @@ name: kernelCTF auto releaser
 on:
   workflow_dispatch:
   schedule:
-    - cron:  '0 12 * * *' # every day at 12:00 UTC
-permissions: {}
+    - cron: '0 12 * * *' # every day at 12:00 UTC
+permissions:
+  contents: read
 defaults:
   run:
     shell: bash
@@ -11,25 +12,148 @@ defaults:
 jobs:
   get_new_builds:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Test GCS SA key to fail quick before trying to make a build
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
-          create_credentials_file: false
-
       - name: Checkout repo
         uses: actions/checkout@v4
-
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      
       - name: Install prerequisites
-        run: sudo apt install -yq --no-install-recommends python3-lxml
-
-      - id: check
-        name: Check latest kernel versions
+        run: sudo apt-get install -yq --no-install-recommends jq python3-lxml
+      
+      - name: Build fetch_artifact tool
+        run: |
+          git clone https://android.googlesource.com/tools/fetch_artifact
+          cd fetch_artifact
+          go build -o fetch_artifact .
+          sudo mv fetch_artifact /usr/local/bin/
+          cd ..
+          rm -rf fetch_artifact
+      
+      - name: Restore last build ID cache
+        uses: actions/cache/restore@v3
+        with:
+          path: kernelctf/last_build_id.txt
+          key: android-build-id
+      
+      - name: Check latest Linux kernel versions
+        id: check_linux
         run: ./get_latest_kernel_versions.py
+      
+      - name: Check for new Android builds
+        id: check_android
+        run: |
+          API_URL="https://androidbuildinternal.googleapis.com/android/internal/build/v3/builds"
+          TARGET="aosp_cf_x86_64_only_phone-userdebug"
+          BRANCH="aosp-android-latest-release"
+          
+          # Fetch latest build (anonymous GET request)
+          echo "Fetching latest build from Android Build API..."
+          RESPONSE=$(curl -s "${API_URL}?branches=${BRANCH}&buildAttemptStatus=complete&buildType=submitted&maxResults=1&successful=true&target=${TARGET}")
+          
+          # Parse buildId
+          BUILD_ID=$(echo "$RESPONSE" | jq -r '.builds[0].buildId // empty')
+          
+          if [[ -z "$BUILD_ID" ]]; then
+            echo "Error: No builds found or failed to parse buildId"
+            echo "releases=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Latest build ID: $BUILD_ID"
+          
+          # Check if build already processed
+          LAST_BUILD_ID=""
+          if [[ -f "last_build_id.txt" ]]; then
+            LAST_BUILD_ID=$(cat last_build_id.txt)
+            echo "Last processed build ID: $LAST_BUILD_ID"
+          fi
+          
+          if [[ "$LAST_BUILD_ID" == "$BUILD_ID" ]]; then
+            echo "No new builds available"
+            echo "releases=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "New build detected: $BUILD_ID"
+          
+          # Download kernel_version.txt using fetch_artifact
+          echo "Fetching kernel_version.txt..."
+          fetch_artifact \
+            -target="$TARGET" \
+            -build_id="$BUILD_ID" \
+            -artifact=kernel_version.txt
+          
+          if [[ ! -f "kernel_version.txt" ]]; then
+            echo "Error: kernel_version.txt not found"
+            echo "releases=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Read and parse kernel version
+          KERNEL_VERSION_STRING=$(cat kernel_version.txt)
+          echo "Kernel version string: $KERNEL_VERSION_STRING"
+          
+          # Extract kernel version (e.g., "6.12.23" from "6.12.23-android16-5-g2cc84bbe1269-ab13603476")
+          KERNEL_VERSION=$(echo "$KERNEL_VERSION_STRING" | cut -d'-' -f1)
+          
+          # Extract android version (e.g., "android16" from "6.12.23-android16-5-g2cc84bbe1269-ab13603476")
+          ANDROID_VERSION=$(echo "$KERNEL_VERSION_STRING" | cut -d'-' -f2)
+          
+          echo "Kernel version: $KERNEL_VERSION"
+          echo "Android version: $ANDROID_VERSION"
+          
+          # Build release ID: android16-6.12.23-x86_64-14421689
+          RELEASE_ID="${ANDROID_VERSION}-${KERNEL_VERSION}-x86_64-${BUILD_ID}"
+          echo "Release ID: $RELEASE_ID"
+          
+          # Check if release already exists in GCS
+          echo "Checking if release already exists in Google Cloud Storage..."
+          if curl --fail -I "https://storage.googleapis.com/kernelctf-build/releases/${RELEASE_ID}/cvd-host_package.tar.gz" 2>/dev/null; then
+            echo "Release ${RELEASE_ID} already exists in GCS, skipping"
+            echo "releases=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Release ${RELEASE_ID} does not exist in GCS, will proceed with build"
+          
+          # Save current build ID
+          echo "$BUILD_ID" > last_build_id.txt
+          
+          # Output releases JSON with null branch (consistent with LTS releases)
+          RELEASES=$(jq -n \
+            --arg releaseId "$RELEASE_ID" \
+            '[{releaseId: $releaseId, branch: null}]')
+          
+          echo "releases=$RELEASES" >> $GITHUB_OUTPUT
+          echo "Generated releases output: $RELEASES"
+      
+      - name: Save last build ID cache
+        if: steps.check_android.outputs.releases != '[]'
+        uses: actions/cache/save@v3
+        with:
+          path: kernelctf/last_build_id.txt
+          key: android-build-id
+      
+      - name: Merge all releases
+        id: merge
+        run: |
+          LINUX_RELEASES='${{ steps.check_linux.outputs.releases }}'
+          ANDROID_RELEASES='${{ steps.check_android.outputs.releases }}'
+          
+          # Merge both release arrays
+          MERGED=$(jq -s 'add' <(echo "$LINUX_RELEASES") <(echo "$ANDROID_RELEASES"))
+          
+          echo "releases=$MERGED" >> $GITHUB_OUTPUT
+          echo "Merged releases: $MERGED"
+    
     outputs:
-      releases: ${{ steps.check.outputs.releases }}
-
+      releases: ${{ steps.merge.outputs.releases }}
+  
   build_release:
     needs: get_new_builds
     if: fromJSON(needs.get_new_builds.outputs.releases)[0] != null
