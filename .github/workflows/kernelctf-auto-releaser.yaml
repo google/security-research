@@ -36,11 +36,11 @@ jobs:
             
       - name: Check latest Linux kernel versions
         id: check_linux
-        run: ./get_latest_kernel_versions.py
-      
+        run: python3 get_latest_kernel_versions.py
+
       - name: Check for new Android builds
         id: check_android
-        run: ./get_latest_android_versions.py
+        run: python3 get_latest_android_versions.py
             
       - name: Merge all releases
         id: merge
