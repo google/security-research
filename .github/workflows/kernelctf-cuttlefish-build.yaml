@@ -47,12 +47,16 @@ jobs:
           echo "Disk space after cleanup:"
           df -h
 
-      - name: Install Bazelisk
+      - name: Install Bazel from apt repository
         run: |
-          wget https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-          chmod +x bazelisk-linux-amd64
-          sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
-          bazel version
+          # Add Bazel distribution URI as a package source
+          curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/bazel-archive-keyring.gpg > /dev/null
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+          
+          sudo apt-get update
+          sudo apt-get install -y bazel
+          
+          bazel --version
 
       - name: Configure Bazel for limited disk space
         run: |
@@ -76,7 +80,6 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
           sudo apt-get install -y \
             devscripts \
             equivs \
@@ -134,7 +137,7 @@ jobs:
           Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           Cuttlefish Commit: ${{ env.CUTTLEFISH_COMMIT }}
           Ubuntu Version: $(lsb_release -ds)
-          Bazel Version: $(bazel version | head -n1)
+          Bazel Version: $(bazel --version)
           Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           
           Packages:
