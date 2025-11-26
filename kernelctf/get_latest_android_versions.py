@@ -15,10 +15,6 @@ def validate_version_component(component, name):
         fail(f"Invalid {name} format: {component}")
     return component
 
-def sanitize_for_github_output(value):
-    sanitized = re.sub(r'[\r\n\x00-\x1f\x7f]', '', value)
-    return sanitized
-
 def release_exists(release_id):
     url = f"https://storage.googleapis.com/kernelctf-build/releases/{release_id}/cvd-host_package.tar.gz"
     status_code = requests.head(url).status_code
@@ -126,9 +122,6 @@ def get_latest_android_release():
     
     # Example build release ID: android16-6.12.23-x86_64-14421689
     release_id = f"{version_info['android_version']}-{version_info['kernel_version']}-x86_64-{build_info['build_id']}"
-    
-    # Sanitize for GitHub Actions output (prevent injection)
-    release_id = sanitize_for_github_output(release_id)
     
     print(f"Release ID: {release_id}")
     
