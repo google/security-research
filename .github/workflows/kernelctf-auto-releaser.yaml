@@ -3,8 +3,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 12 * * *' # every day at 12:00 UTC
-permissions:
-  contents: read
+permissions: {}
 defaults:
   run:
     shell: bash
