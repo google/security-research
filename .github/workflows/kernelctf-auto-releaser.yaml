@@ -41,7 +41,7 @@ jobs:
             
       - name: Check latest Linux kernel versions
         id: check_linux
-        run: python3 get_latest_kernel_versions.py
+        run: python3 get_latest_lts_cos_versions.py
 
       - name: Check for new Android builds
         id: check_android
