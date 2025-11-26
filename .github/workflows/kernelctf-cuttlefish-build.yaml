@@ -25,22 +25,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Bazel
+        run: |
+          # Add Bazel distribution URI as a package source
+          curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg
+          sudo mv bazel-archive-keyring.gpg /usr/share/keyrings/bazel-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+          
+          sudo apt-get update
+          sudo apt-get install -y bazel
+
       - name: Install build dependencies
         run: |
-          sudo apt-get update
           sudo apt-get install -y \
             devscripts \
             equivs \
             config-package-dev \
             debhelper-compat \
             golang-go \
+            build-essential \
             git
 
       - name: Clone Cuttlefish repository
         run: |
           git clone https://github.com/google/android-cuttlefish
           cd android-cuttlefish
-          echo "CUTTLEFISH_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          echo "CUTTLEFISH_COMMIT=${COMMIT_HASH}" >> $GITHUB_ENV
+          echo "BUILD_TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
 
       - name: Build Cuttlefish packages
         run: |
@@ -51,6 +63,7 @@ jobs:
         run: |
           mkdir -p ./packages
           find android-cuttlefish -name "*.deb" -exec cp {} ./packages/ \;
+          echo "Found $(ls -1 ./packages/*.deb | wc -l) packages"
           ls -lh ./packages/
 
       - name: Generate package manifest
@@ -61,20 +74,35 @@ jobs:
           ==================
           Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           Cuttlefish Commit: ${{ env.CUTTLEFISH_COMMIT }}
+          Ubuntu Version: $(lsb_release -ds)
+          Bazel Version: $(bazel version | head -n1)
           Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           
           Packages:
           =========
           EOF
-          ls -1 *.deb >> manifest.txt
+          ls -1 *.deb | while read pkg; do
+            echo "$pkg ($(du -h "$pkg" | cut -f1))" >> manifest.txt
+          done
+          echo "" >> manifest.txt
           cat manifest.txt
 
       - name: Upload packages as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cuttlefish-packages-${{ env.CUTTLEFISH_COMMIT }}
+          name: cuttlefish-packages-${{ env.CUTTLEFISH_COMMIT }}-${{ env.BUILD_TIMESTAMP }}
           path: ./packages
           retention-days: 30
+          if-no-files-found: error
+
+      - name: Set output for upload job
+        id: build-output
+        run: |
+          echo "artifact_name=cuttlefish-packages-${{ env.CUTTLEFISH_COMMIT }}-${{ env.BUILD_TIMESTAMP }}" >> $GITHUB_OUTPUT
+
+    outputs:
+      artifact_name: ${{ steps.build-output.outputs.artifact_name }}
+      cuttlefish_commit: ${{ env.CUTTLEFISH_COMMIT }}
 
   upload:
     runs-on: ubuntu-24.04
@@ -84,8 +112,14 @@ jobs:
       - name: Download packages
         uses: actions/download-artifact@v4
         with:
-          name: cuttlefish-packages-${{ needs.build.outputs.CUTTLEFISH_COMMIT || github.sha }}
+          name: ${{ needs.build.outputs.artifact_name }}
           path: ./packages
+
+      - name: List downloaded packages
+        run: |
+          echo "Packages to upload:"
+          ls -lh ./packages/
+          cat ./packages/manifest.txt
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -96,12 +130,20 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: packages
-          destination: ${{ inputs.bucket_destination || 'cuttlefish-packages' }}
+          destination: ${{ inputs.bucket_destination || 'cuttlefish-packages' }}/${{ needs.build.outputs.cuttlefish_commit }}
           parent: false
-          predefinedAcl: ${{ inputs.make_public && 'publicRead' || 'private' }}
+          predefinedAcl: ${{ (inputs.make_public == true || inputs.make_public == null) && 'publicRead' || 'private' }}
           gzip: false
           process_gcloudignore: false
 
-      - name: Output GCS paths
+      - name: Summary
         run: |
-          echo "Packages uploaded to: gs://${{ inputs.bucket_destination || 'cuttlefish-packages' }}"
+          echo "## Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Destination:** gs://${{ inputs.bucket_destination || 'cuttlefish-packages' }}/${{ needs.build.outputs.cuttlefish_commit }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ needs.build.outputs.cuttlefish_commit }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Packages:" >> $GITHUB_STEP_SUMMARY
+          ls -1 ./packages/*.deb | xargs -n1 basename | while read pkg; do
+            echo "- $pkg" >> $GITHUB_STEP_SUMMARY
+          done
