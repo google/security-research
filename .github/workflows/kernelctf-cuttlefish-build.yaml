@@ -119,13 +119,13 @@ jobs:
           ls -lh ./packages/ || echo "No packages found"
 
       - name: Clean up build artifacts to save space
+        continue-on-error: true
         run: |
-          # Remove Bazel cache and build directories
-          rm -rf ~/.cache/bazel
-          rm -rf android-cuttlefish/.bazel
-          cd android-cuttlefish && bazel clean --expunge || true
+          echo "Attempting cleanup (non-critical)..."
+          sudo rm -rf ~/.cache/bazel 2>/dev/null || true
+          sudo rm -rf android-cuttlefish/.bazel 2>/dev/null || true
           
-          echo "Disk space after cleanup:"
+          echo "Disk space after cleanup attempt:"
           df -h
 
       - name: Generate package manifest
