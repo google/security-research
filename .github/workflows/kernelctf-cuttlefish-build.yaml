@@ -1,11 +1,7 @@
 name: Build and Upload Cuttlefish Packages
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/build-cuttlefish.yml'
+  workflow_dispatch:
 
 permissions: {}
 
@@ -158,7 +154,7 @@ jobs:
       cuttlefish_commit: ${{ env.CUTTLEFISH_COMMIT }}
 
   upload:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build
     steps:
       - name: Download packages
