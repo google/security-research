@@ -25,18 +25,56 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Bazel
+      - name: Free up disk space
         run: |
-          # Add Bazel distribution URI as a package source
-          curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg
-          sudo mv bazel-archive-keyring.gpg /usr/share/keyrings/bazel-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+          echo "Disk space before cleanup:"
+          df -h
           
-          sudo apt-get update
-          sudo apt-get install -y bazel
+          # Remove unnecessary packages and files
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          
+          # Clean apt cache
+          sudo apt-get clean
+          
+          # Remove Docker images
+          docker rmi $(docker image ls -aq) || true
+          
+          echo "Disk space after cleanup:"
+          df -h
+
+      - name: Install Bazelisk
+        run: |
+          wget https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x bazelisk-linux-amd64
+          sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
+          bazel version
+
+      - name: Configure Bazel for limited disk space
+        run: |
+          mkdir -p ~/.bazelrc
+          cat >> ~/.bazelrc <<EOF
+          # Limit disk usage
+          build --disk_cache=
+          build --repository_cache=~/.cache/bazel/repository_cache
+          build --jobs=2
+          build --local_ram_resources=4096
+          build --local_cpu_resources=2
+          
+          # Disable sandboxing to save space
+          build --spawn_strategy=local
+          
+          # Don't keep intermediate outputs
+          build --nokeep_state_after_build
+          EOF
 
       - name: Install build dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install -y \
             devscripts \
             equivs \
@@ -57,14 +95,33 @@ jobs:
       - name: Build Cuttlefish packages
         run: |
           cd android-cuttlefish
+          
+          echo "Disk space before build:"
+          df -h
+          
+          # Build packages
           tools/buildutils/build_packages.sh
+          
+          echo "Disk space after build:"
+          df -h
 
       - name: Collect built packages
         run: |
           mkdir -p ./packages
           find android-cuttlefish -name "*.deb" -exec cp {} ./packages/ \;
-          echo "Found $(ls -1 ./packages/*.deb | wc -l) packages"
-          ls -lh ./packages/
+          
+          echo "Found $(ls -1 ./packages/*.deb 2>/dev/null | wc -l) packages"
+          ls -lh ./packages/ || echo "No packages found"
+
+      - name: Clean up build artifacts to save space
+        run: |
+          # Remove Bazel cache and build directories
+          rm -rf ~/.cache/bazel
+          rm -rf android-cuttlefish/.bazel
+          cd android-cuttlefish && bazel clean --expunge || true
+          
+          echo "Disk space after cleanup:"
+          df -h
 
       - name: Generate package manifest
         run: |
@@ -81,9 +138,9 @@ jobs:
           Packages:
           =========
           EOF
-          ls -1 *.deb | while read pkg; do
+          ls -1 *.deb 2>/dev/null | while read pkg; do
             echo "$pkg ($(du -h "$pkg" | cut -f1))" >> manifest.txt
-          done
+          done || echo "No .deb packages found" >> manifest.txt
           echo "" >> manifest.txt
           cat manifest.txt
 
