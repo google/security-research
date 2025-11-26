@@ -1,22 +1,12 @@
 name: Build and Upload Cuttlefish Packages
 
 on:
-  workflow_dispatch:
-    inputs:
-      bucket_destination:
-        description: 'GCS bucket destination path'
-        required: false
-        default: 'cuttlefish-packages'
-      make_public:
-        description: 'Make packages publicly readable'
-        required: false
-        type: boolean
-        default: true
   push:
     branches:
       - main
     paths:
       - '.github/workflows/build-cuttlefish.yml'
+
 permissions: {}
 
 jobs:
@@ -170,7 +160,6 @@ jobs:
   upload:
     runs-on: ubuntu-24.04
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - name: Download packages
         uses: actions/download-artifact@v4
@@ -193,9 +182,9 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: packages
-          destination: ${{ inputs.bucket_destination || 'cuttlefish-packages' }}/${{ needs.build.outputs.cuttlefish_commit }}
+          destination: cuttlefish-packages/${{ needs.build.outputs.cuttlefish_commit }}
           parent: false
-          predefinedAcl: ${{ (inputs.make_public == true || inputs.make_public == null) && 'publicRead' || 'private' }}
+          predefinedAcl: publicRead
           gzip: false
           process_gcloudignore: false
 
@@ -203,7 +192,7 @@ jobs:
         run: |
           echo "## Upload Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Destination:** gs://${{ inputs.bucket_destination || 'cuttlefish-packages' }}/${{ needs.build.outputs.cuttlefish_commit }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Destination:** gs://cuttlefish-packages/${{ needs.build.outputs.cuttlefish_commit }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ needs.build.outputs.cuttlefish_commit }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages:" >> $GITHUB_STEP_SUMMARY
