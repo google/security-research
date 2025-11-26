@@ -1,0 +1,107 @@
+name: Build and Upload Cuttlefish Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      bucket_destination:
+        description: 'GCS bucket destination path'
+        required: false
+        default: 'cuttlefish-packages'
+      make_public:
+        description: 'Make packages publicly readable'
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-cuttlefish.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            devscripts \
+            equivs \
+            config-package-dev \
+            debhelper-compat \
+            golang-go \
+            git
+
+      - name: Clone Cuttlefish repository
+        run: |
+          git clone https://github.com/google/android-cuttlefish
+          cd android-cuttlefish
+          echo "CUTTLEFISH_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build Cuttlefish packages
+        run: |
+          cd android-cuttlefish
+          tools/buildutils/build_packages.sh
+
+      - name: Collect built packages
+        run: |
+          mkdir -p ./packages
+          find android-cuttlefish -name "*.deb" -exec cp {} ./packages/ \;
+          ls -lh ./packages/
+
+      - name: Generate package manifest
+        run: |
+          cd ./packages
+          cat > manifest.txt <<EOF
+          Build Information:
+          ==================
+          Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Cuttlefish Commit: ${{ env.CUTTLEFISH_COMMIT }}
+          Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          Packages:
+          =========
+          EOF
+          ls -1 *.deb >> manifest.txt
+          cat manifest.txt
+
+      - name: Upload packages as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuttlefish-packages-${{ env.CUTTLEFISH_COMMIT }}
+          path: ./packages
+          retention-days: 30
+
+  upload:
+    runs-on: ubuntu-24.04
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: cuttlefish-packages-${{ needs.build.outputs.CUTTLEFISH_COMMIT || github.sha }}
+          path: ./packages
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.CUTTLEFISH_GCS_SA_KEY }}'
+
+      - name: Upload packages to GCS
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: packages
+          destination: ${{ inputs.bucket_destination || 'cuttlefish-packages' }}
+          parent: false
+          predefinedAcl: ${{ inputs.make_public && 'publicRead' || 'private' }}
+          gzip: false
+          process_gcloudignore: false
+
+      - name: Output GCS paths
+        run: |
+          echo "Packages uploaded to: gs://${{ inputs.bucket_destination || 'cuttlefish-packages' }}"
