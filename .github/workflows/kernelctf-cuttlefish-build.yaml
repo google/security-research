@@ -56,8 +56,7 @@ jobs:
 
       - name: Configure Bazel for limited disk space
         run: |
-          mkdir -p ~/.bazelrc
-          cat >> ~/.bazelrc <<EOF
+          cat > ~/.bazelrc <<EOF
           # Limit disk usage
           build --disk_cache=
           build --repository_cache=~/.cache/bazel/repository_cache
@@ -71,6 +70,9 @@ jobs:
           # Don't keep intermediate outputs
           build --nokeep_state_after_build
           EOF
+          
+          echo "Bazel configuration:"
+          cat ~/.bazelrc
 
       - name: Install build dependencies
         run: |
