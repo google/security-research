@@ -2,7 +2,7 @@ name: kernelCTF auto releaser
 on:
   workflow_dispatch:
   schedule:
-    - cron:  '0 12 * * *' # every day at 12:00 UTC
+    - cron: '0 12 * * *' # every day at 12:00 UTC
 permissions: {}
 defaults:
   run:
@@ -11,25 +11,57 @@ defaults:
 jobs:
   get_new_builds:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Test GCS SA key to fail quick before trying to make a build
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
+          credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
           create_credentials_file: false
-
+      
       - name: Checkout repo
         uses: actions/checkout@v4
-
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      
       - name: Install prerequisites
-        run: sudo apt install -yq --no-install-recommends python3-lxml
+        run: sudo apt-get install -yq --no-install-recommends jq python3-lxml
+      
+      - name: Build fetch_artifact tool
+        run: |
+          git clone https://android.googlesource.com/tools/fetch_artifact
+          cd fetch_artifact
+          go build -o fetch_artifact .
+          sudo mv fetch_artifact /usr/local/bin/
+          cd ..
+          rm -rf fetch_artifact
+            
+      - name: Check latest Linux kernel versions
+        id: check_linux
+        run: python3 get_latest_lts_cos_versions.py
 
-      - id: check
-        name: Check latest kernel versions
-        run: ./get_latest_kernel_versions.py
+      - name: Check for new Android builds
+        id: check_android
+        run: python3 get_latest_android_versions.py
+            
+      - name: Merge all releases
+        id: merge
+        run: |
+          LINUX_RELEASES='${{ steps.check_linux.outputs.releases }}'
+          ANDROID_RELEASES='${{ steps.check_android.outputs.releases }}'
+          
+          # Merge both release arrays
+          MERGED=$(jq -sc 'add' <(echo "$LINUX_RELEASES") <(echo "$ANDROID_RELEASES"))
+          
+          echo "releases=$MERGED" >> $GITHUB_OUTPUT
+          echo "Merged releases: $MERGED"
+    
     outputs:
-      releases: ${{ steps.check.outputs.releases }}
-
+      releases: ${{ steps.merge.outputs.releases }}
+  
   build_release:
     needs: get_new_builds
     if: fromJSON(needs.get_new_builds.outputs.releases)[0] != null
