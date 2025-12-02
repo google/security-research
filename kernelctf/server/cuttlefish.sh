@@ -2,59 +2,118 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APK_PATH="$SCRIPT_DIR/android_shellserver/app/build/outputs/apk/release/app-release.apk"
 RELEASE_PATH=""
+TEST_MODE=0
+CLEANUP_RUNNING=false
 
 cleanup_function() {
+    # Prevent recursive calls
+    if [ "$CLEANUP_RUNNING" = true ]; then
+        return 0
+    fi
+    CLEANUP_RUNNING=true
+    
+    # Disable exit-on-error for cleanup
     set +e
+    
     echo "[CLEANUP] Shutting down instance $instance_num" 1>&2
     
-    # Kill background processes
+    # Kill background processes (multiple attempts if needed)
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
+        kill "$pid" 2>/dev/null || true
+        sleep 0.5
+        # Force kill if still alive
+        kill -9 "$pid" 2>/dev/null || true
     fi
     
-    # Remove named pipe
+    # Remove named pipe (always safe)
     if [ -n "$pipe_name" ] && [ -p "$pipe_name" ]; then
-        rm -f "$pipe_name"
+        rm -f "$pipe_name" 2>/dev/null || true
     fi
     
-    # Stop cuttlefish
+    # Stop cuttlefish (protect against failures)
     if [ -n "$RELEASE_PATH" ] && [ -d "$RELEASE_PATH" ]; then
         CUTTLEFISH_RUNTIME_LINK=$RELEASE_PATH/cuttlefish_runtime
         CUTTLEFISH_CURRENT_INSTANCE=$RELEASE_PATH/cuttlefish/instances/cvd-$instance_num
         
         if [ -d "$CUTTLEFISH_CURRENT_INSTANCE" ]; then
-            ln -sf $CUTTLEFISH_CURRENT_INSTANCE $CUTTLEFISH_RUNTIME_LINK 2>/dev/null
-            HOME=$RELEASE_PATH $RELEASE_PATH/bin/stop_cvd 2>/dev/null || true
+            # Try graceful stop
+            (
+                ln -sf $CUTTLEFISH_CURRENT_INSTANCE $CUTTLEFISH_RUNTIME_LINK 2>/dev/null
+                HOME=$RELEASE_PATH timeout 10s $RELEASE_PATH/bin/stop_cvd 2>/dev/null
+            ) || true
+            
+            # Give it time
+            sleep 1
+            
+            # Force kill any remaining processes for this instance
+            pgrep -f "cvd-$instance_num" | xargs -r kill -9 2>/dev/null || true
         fi
         
-        # Clean up instance data
-        rm -rf "$RELEASE_PATH/cuttlefish_runtime.$instance_num" 2>/dev/null
-        rm -rf "$CUTTLEFISH_CURRENT_INSTANCE" 2>/dev/null
+        # Clean up instance-specific data (multiple attempts)
+        for i in {1..3}; do
+            rm -rf "$RELEASE_PATH/cuttlefish_runtime.$instance_num" 2>/dev/null && break
+            sleep 0.5
+        done
+        
+        for i in {1..3}; do
+            rm -rf "$CUTTLEFISH_CURRENT_INSTANCE" 2>/dev/null && break
+            sleep 0.5
+        done
+        
+        # Clean overlays for this instance only
+        find "$RELEASE_PATH/cuttlefish/instances/cvd-$instance_num" -name "*overlay*.img" -delete 2>/dev/null || true
+        find "$RELEASE_PATH/cuttlefish/instances/cvd-$instance_num" -name "*composite*.img" -delete 2>/dev/null || true
+        
+        # Clean up converted raw images if last instance
+        local active_instances=$(find "$RELEASE_PATH/../locks" -name "lock-inst-*" -type d ! -name "lock-inst-$instance_num" 2>/dev/null | wc -l)
+        if [ "$active_instances" -eq 0 ]; then
+            echo "[CLEANUP] Last instance, cleaning up shared .raw images" 1>&2
+            rm -f "$RELEASE_PATH"/*.img.raw 2>/dev/null || true
+        fi
+        
+        # Clean up temp files
+        rm -rf /tmp/cf_avd_${instance_num}* 2>/dev/null || true
+        rm -rf /tmp/cf_env_${instance_num}* 2>/dev/null || true
+        rm -rf /tmp/cvd-${instance_num}* 2>/dev/null || true
+        rm -rf /tmp/launch_cvd_${instance_num}* 2>/dev/null || true
     fi
     
-    # Release instance lock
+    # Release instance lock (critical - try multiple times)
     if [ -n "$folder" ] && [ -d "$folder" ]; then
-        rm -rf "$folder" 2>/dev/null
+        for i in {1..5}; do
+            rm -rf "$folder" 2>/dev/null && break
+            sleep 0.2
+        done
     fi
     
     if [ -n "$instance_num" ]; then
-        rm -rf "$RELEASE_PATH/../locks/lock-inst-$instance_num" 2>/dev/null
+        for i in {1..5}; do
+            rm -rf "$RELEASE_PATH/../locks/lock-inst-$instance_num" 2>/dev/null && break
+            sleep 0.2
+        done
     fi
     
+    # Force sync (ignore errors)
+    sync 2>/dev/null || true
+    
     echo "[CLEANUP] Cleanup done" 1>&2
-    exit 0
+    
+    # Don't call exit here to avoid recursion
+    return 0
 }
 
 cleanup_wrapper() {
     cleanup_function 1>&2
 }
 
+# Trap multiple signals to ensure cleanup always runs
 trap 'cleanup_wrapper' EXIT
+trap 'cleanup_wrapper; exit 130' INT   # Ctrl+C
+trap 'cleanup_wrapper; exit 143' TERM  # kill
 
 usage() {
-    echo "Usage: $0 --release_path=<release_path> --flag_path=<flag_fn> [--bin_path=<bin_path>]"
+    echo "Usage: $0 --release_path=<release_path> --flag_path=<flag_fn> [--bin_path=<bin_path>] [--apk_path=<apk_path>] [--test-mode]"
     exit 1;
 }
 
@@ -204,6 +263,8 @@ while [[ $# -gt 0 ]]; do
     --release_path=*) RELEASE_PATH="${1#*=}"; shift;;
     --bin_path=*) BIN_PATH="${1#*=}"; shift;;
     --flag_path=*) FLAG_FN="${1#*=}"; shift;;
+    --apk_path=*) APK_PATH="${1#*=}"; shift;;
+    --test-mode) TEST_MODE=1; shift;;
     --skip-checks) SKIP_CHECKS=1; shift;;
     --) # stop processing special arguments after "--"
         shift
@@ -225,6 +286,23 @@ fi
 if [ -z "$FLAG_FN" ]; then
     echo "[ERROR] --flag_path is required"
     usage
+fi
+
+# Set default APK path if not provided
+if [ -z "$APK_PATH" ]; then
+    APK_PATH="$SCRIPT_DIR/android_shellserver/app/build/outputs/apk/release/app-release.apk"
+fi
+
+# Validate that APK file exists
+if [ ! -f "$APK_PATH" ]; then
+    echo "[ERROR] APK file not found at $APK_PATH"
+    exit 1
+fi
+
+echo "[OK] APK file found: $APK_PATH"
+
+if [ "$TEST_MODE" -eq 1 ]; then
+    echo "[TEST MODE] Running in test mode - flag will be readable by exploit user"
 fi
 
 # Run pre-flight checks (unless --skip-checks is specified)
@@ -289,24 +367,31 @@ echo "[STARTING] Starting Cuttlefish instance..."
 # Build base launch flags
 LAUNCH_FLAGS="--daemon --console=true --resume=false --verbosity=ERROR --system_image_dir=\"$RELEASE_PATH\" --base_instance_num=$instance_num -report_anonymous_usage_stats=n"
 
-# Check if enable_tap_devices flag is supported (Android 16+)
-# Android 16+ defaults to TAP networking which requires CAP_NET_ADMIN capability
-# Disabling tap devices allows running without sudo and provides same functionality as Android 14
-if $RELEASE_PATH/bin/launch_cvd --help 2>&1 | grep -q "enable_tap_devices"; then
-    # Detected Android 16+, disabling tap devices (avoids sudo requirement)
-    LAUNCH_FLAGS="$LAUNCH_FLAGS --enable_tap_devices=false"
+# Auto-detect if we need --enable_tap_devices=false (Android 16+)
+# Check kernel version string in boot.img
+if [ -f "$RELEASE_PATH/boot.img" ]; then
+    # Extract kernel version string and check for android16 or kernel 6.12+
+    kernel_version=$(strings "$RELEASE_PATH/boot.img" 2>/dev/null | grep -m1 "android" | head -1)
+    
+    if echo "$kernel_version" | grep -q "android16\|android1[7-9]\|android[2-9]"; then
+        LAUNCH_FLAGS="$LAUNCH_FLAGS --enable_tap_devices=false"
+    elif echo "$kernel_version" | grep -Eq "^6\.1[2-9]\.|^6\.[2-9][0-9]\.|^[7-9]\."; then
+        LAUNCH_FLAGS="$LAUNCH_FLAGS --enable_tap_devices=false"
+    fi
 fi
 
-bash -c "HOME=$RELEASE_PATH $RELEASE_PATH/bin/launch_cvd $LAUNCH_FLAGS" 2>/dev/null | sed '/^===/,/^===/d'
+echo "[DEBUG] Launching with flags: $LAUNCH_FLAGS"
+bash -c "HOME=$RELEASE_PATH $RELEASE_PATH/bin/launch_cvd $LAUNCH_FLAGS" 2>&1 | sed '/^===/,/^===/d'
+LAUNCH_EXIT=${PIPESTATUS[0]}
 
-if [ $? -ne 0 ]; then
-    echo "[ERROR] Failed to launch Cuttlefish instance"
+if [ $LAUNCH_EXIT -ne 0 ]; then
+    echo "[ERROR] Failed to launch Cuttlefish instance (exit code: $LAUNCH_EXIT)"
     exit 1
 fi
 
 # Wait for the instance to fully start and become ready
 echo -n "[WAITING] Waiting for instance to start"
-max_wait=30
+max_wait=120
 waited=0
 while [ $waited -lt $max_wait ]; do
     if [ -f "$RELEASE_PATH/cuttlefish_runtime.$instance_num/cuttlefish_config.json" ]; then
@@ -402,9 +487,18 @@ echo "[OK] Root access verified"
 
 # Setup flag file
 FLAG=$(<$FLAG_FN)
-$on_guest push $FLAG_FN /data/local/tmp
-$as_root "chmod 0000 /data/local/tmp/flag"
-$as_root "chown root:root /data/local/tmp/flag"
+$on_guest push $FLAG_FN /data/local/tmp/flag
+
+if [ "$TEST_MODE" -eq 1 ]; then
+    # Test mode: make flag readable by the exploit user
+    $as_root "chmod 0644 /data/local/tmp/flag"
+    $as_root "chown 10108:10108 /data/local/tmp/flag"
+    echo "[TEST MODE] Flag is readable by exploit user"
+else
+    # Production mode: flag requires root
+    $as_root "chmod 0000 /data/local/tmp/flag"
+    $as_root "chown root:root /data/local/tmp/flag"
+fi
 
 PORT_TO_USE=$(expr $instance_num + 7000)
 
@@ -419,11 +513,6 @@ pipe_name=$(mktemp -u)
 mkfifo "$pipe_name"
 
 # Install APK
-if [ ! -f "$APK_PATH" ]; then
-    echo "[ERROR] APK file not found at $APK_PATH"
-    exit 1
-fi
-
 echo "[INSTALLING] Installing APK..."
 if ! $on_guest install -g $APK_PATH 2>&1 | tee /tmp/apk_install_$instance_num.log; then
     echo "[ERROR] APK installation failed"
@@ -471,12 +560,38 @@ else
 fi
 kill $pid
 
+# After "VM ready for connection" and before spawning shell
+echo "[DEBUG] Testing if port $PORT_TO_USE is listening..."
+if nc -z 127.0.0.1 $PORT_TO_USE 2>/dev/null; then
+    echo "[DEBUG] Port $PORT_TO_USE is listening"
+else
+    echo "[ERROR] Port $PORT_TO_USE is not listening!"
+    exit 1
+fi
+
+echo "[DEBUG] Checking what's listening on port $PORT_TO_USE..."
+lsof -i :$PORT_TO_USE 2>/dev/null || echo "[DEBUG] lsof found nothing"
+
 echo "[INFO] Spawning interactive shell (Type \"exit\" to exit)"
 set +e
-socat - tcp:127.0.0.1:$PORT_TO_USE
-socat_exit=$?
-set -e
 
-if [ $socat_exit -ne 0 ]; then
-    echo "[INFO] Connection closed" 1>&2
+# In CI environments, we need to handle non-interactive connections
+if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+    # Non-interactive mode for CI: 
+    # Keep stdin open briefly, capture output, then send exit command
+    echo "[DEBUG] Connecting to port $PORT_TO_USE in non-interactive mode..."
+    (sleep 30; echo "exit") | timeout 60s socat - tcp:127.0.0.1:$PORT_TO_USE
+    socat_exit=$?
+    echo "[DEBUG] socat exited with code: $socat_exit"
+else
+    # Interactive mode for local testing
+    socat - tcp:127.0.0.1:$PORT_TO_USE
+    socat_exit=$?
+fi
+
+set -e
+if [ $socat_exit -eq 124 ]; then
+    echo "[INFO] Connection timeout after 60s" 1>&2
+elif [ $socat_exit -ne 0 ]; then
+    echo "[INFO] Connection closed with exit code: $socat_exit" 1>&2
 fi
