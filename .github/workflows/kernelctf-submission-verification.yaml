@@ -48,7 +48,7 @@ jobs:
       - name: Checkout repo content (sparse - only check-submission.py)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ github.ref }}
           sparse-checkout: |
             kernelctf/check-submission.py
             kernelctf/utils.py
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: scripts-from-master
-          ref: master
+          ref: ${{ github.ref }}
           sparse-checkout: |
             kernelctf/server/get_android_dependencies.sh
             kernelctf/server/android_shellserver
@@ -174,7 +174,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: scripts-from-master
-          ref: master
+          ref: ${{ github.ref }}
           sparse-checkout: |
             kernelctf/server/get_android_dependencies.sh
             kernelctf/server/android_shellserver
@@ -243,7 +243,7 @@ jobs:
       - name: Checkout repo content (sparse - repro and server only)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ github.ref }}
           sparse-checkout: |
             kernelctf/repro
             kernelctf/server
