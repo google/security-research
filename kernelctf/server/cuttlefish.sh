@@ -552,7 +552,7 @@ READY_TIMEOUT=30
 READY_ELAPSED=0
 VM_READY=0
 while [ $READY_ELAPSED -lt $READY_TIMEOUT ]; do
-    if grep -q "timeout 1800s socat -u tcp:127.0.0.1:$PORT_TO_USE - 2>&1 | tee "$OUTPUT_FILE" &" "$LOGCAT_FILE" 2>/dev/null; then
+    if grep -q "kernelCTF_READY" "$LOGCAT_FILE" 2>/dev/null; then
         VM_READY=1
         echo " done"
         echo "[OK] VM ready for connection"
@@ -664,7 +664,7 @@ if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
     
     # Analyze exit code
     echo "[DEBUG] socat exited with code: $socat_exit"
-    
+       
     # Check if VM died (connection lost)
     if [ $socat_exit -ne 0 ] && [ $socat_exit -ne 124 ] && [ $socat_exit -ne 143 ] && [ $socat_exit -ne 137 ]; then
         if ! timeout 5s $on_guest shell "echo test" >/dev/null 2>&1; then
