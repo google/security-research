@@ -100,7 +100,6 @@ jobs:
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          chmod +x master/kernelctf/server/get_android_dependencies.sh
           bash master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
@@ -176,7 +175,6 @@ jobs:
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          chmod +x master/kernelctf/server/get_android_dependencies.sh
           bash master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
@@ -255,11 +253,6 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Disable AppArmor Namespace Restrictions
-        run: |
-          echo "Disabling AppArmor unprivileged userns restriction..."
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
       - name: Install tools (QEMU, inotify, expect) - Linux only
         if: startsWith(matrix.target, 'android') == false
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 inotify-tools expect
@@ -279,8 +272,8 @@ jobs:
       - name: Load optional kernel modules for Cuttlefish - Android only
         if: startsWith(matrix.target, 'android')
         run: |
-          sudo modprobe vhost_net || true
-          sudo modprobe vhost_vsock || true
+          sudo modprobe vhost_net
+          sudo modprobe vhost_vsock
           
       - name: Checkout master for Android scripts
         if: startsWith(matrix.target, 'android')
@@ -294,7 +287,6 @@ jobs:
         run: |
           # Start Android dependencies installation in background
           (
-            chmod +x ../../android_deps/kernelctf/server/get_android_dependencies.sh
             bash ../../android_deps/kernelctf/server/get_android_dependencies.sh > android_deps_install.log 2>&1
             DEPS_EXIT=$?
             

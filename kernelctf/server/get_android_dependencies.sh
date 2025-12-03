@@ -464,7 +464,9 @@ if [ "$EXPLOIT_BUILD_ONLY" = false ] && [ "$NEEDS_RELOAD" = true ]; then
     echo ""
     if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
         warn "Running in CI environment - group changes detected"
-        warn "Groups will be activated using 'sg' command when running Cuttlefish"
+        warn "Groups will be activated using 'sudo --user \"$USER\"" 
+	warn "--preserve-env --preserve-env=PATH -- env --' command" 
+	warn "when running Cuttlefish"
     else
         warn "Spawning new shell with updated group permissions..."
         exec sudo su - $USER
