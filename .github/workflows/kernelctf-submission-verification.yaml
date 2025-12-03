@@ -45,21 +45,24 @@ jobs:
     steps:
       - run: pip install -U jsonschema
 
-      - name: Checkout repo content
+      - name: Checkout repo content (sparse - only check-submission.py)
         uses: actions/checkout@v4
         with:
           ref: master
+          sparse-checkout: |
+            kernelctf/check-submission.py
+          sparse-checkout-cone-mode: false
 
-      - name: Checkout PR content
+      - name: Checkout PR content (full)
         uses: actions/checkout@v4
         with:
-          path: pr
+          path: pr-content
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
 
       - id: check_submission
         name: Check submission
-        working-directory: pr
+        working-directory: pr-content
         run: |
           echo "::stop-commands::$(uuidgen)"
           ../kernelctf/check-submission.py ${{ github.event.pull_request.base.sha }}
@@ -74,33 +77,35 @@ jobs:
       fail-fast: false # do not cancel other targets
     env:
       RELEASE_ID: ${{ matrix.target }}
-      EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
-      - name: Checkout PR content
+      - name: Checkout PR content (full)
         uses: actions/checkout@v4
         with:
-          path: pr
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
 
-      - name: Checkout master for dependencies script
+      - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
         uses: actions/checkout@v4
         with:
-          path: master
+          path: scripts-from-master
           ref: master
+          sparse-checkout: |
+            kernelctf/server/get_android_dependencies.sh
+            kernelctf/server/android_shellserver
+          sparse-checkout-cone-mode: false
 
       - name: List files
         run: find .
 
       - name: Backup original exploit
-        run: mv $EXPLOIT_DIR/exploit ./
+        run: mv pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}/exploit ./
 
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          bash master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
+          bash scripts-from-master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
         if: startsWith(matrix.target, 'android') == false
@@ -114,7 +119,7 @@ jobs:
 
       - name: Build exploit
         id: build_exploit
-        working-directory: ${{ env.EXPLOIT_DIR }}
+        working-directory: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ env.RELEASE_ID }}
         run: |
           if make -n prerequisites; then
             make prerequisites
@@ -126,7 +131,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
-          path: ${{ env.EXPLOIT_DIR }}/exploit
+          path: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ env.RELEASE_ID }}/exploit
           if-no-files-found: error
 
       - name: Upload exploit (original, build failed)
@@ -155,27 +160,29 @@ jobs:
       fail-fast: false # do not cancel other targets
     env:
       RELEASE_ID: ${{ matrix.target }}
-      EXPLOIT_DIR: pr/pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
-      - name: Checkout PR content
+      - name: Checkout PR content (full)
         uses: actions/checkout@v4
         with:
-          path: pr
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
 
-      - name: Checkout master for dependencies script
+      - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
         uses: actions/checkout@v4
         with:
-          path: master
+          path: scripts-from-master
           ref: master
+          sparse-checkout: |
+            kernelctf/server/get_android_dependencies.sh
+            kernelctf/server/android_shellserver
+          sparse-checkout-cone-mode: false
 
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          bash master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
+          bash scripts-from-master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
         if: startsWith(matrix.target, 'android') == false
@@ -188,7 +195,7 @@ jobs:
           sudo cp -R lib/* /usr/lib/
 
       - name: Convert exploit to debug build
-        working-directory: ${{ env.EXPLOIT_DIR }}
+        working-directory: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ env.RELEASE_ID }}
         run: |
           # Add -g flag to any gcc or clang variant (including x86_64-linux-android21-clang)
           sed -i -E 's/([a-zA-Z0-9_-]*)(gcc|clang)(\s)/\1\2 -g\3/g' Makefile
@@ -199,7 +206,7 @@ jobs:
           sed -i 's/all: exploit$/all: exploit_debug/g' Makefile
 
       - name: Build exploit
-        working-directory: ${{ env.EXPLOIT_DIR }}
+        working-directory: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ env.RELEASE_ID }}
         run: |
           if make -n prerequisites; then
             make prerequisites
@@ -211,7 +218,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_debug_${{ env.RELEASE_ID }}
-          path: ${{ env.EXPLOIT_DIR }}/exploit_debug
+          path: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ env.RELEASE_ID }}/exploit_debug
           if-no-files-found: error
 
   exploit_repro:
@@ -231,12 +238,15 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ./kernelctf/repro/
     steps:
-      - name: Checkout repo content
+      - name: Checkout repo content (sparse - repro and server only)
         uses: actions/checkout@v4
         with:
           ref: master
+          sparse-checkout: |
+            kernelctf/repro
+            kernelctf/server
+          sparse-checkout-cone-mode: true
 
       - name: Download exploit
         uses: actions/download-artifact@v4
@@ -245,6 +255,7 @@ jobs:
           path: ./kernelctf/repro/exp/
 
       - name: Make exploit executable
+        working-directory: ./kernelctf/repro
         run: chmod +x ./exp/exploit
 
       - name: Enable KVM group perms
@@ -259,12 +270,14 @@ jobs:
 
       - name: Fetch rootfs - Linux only
         if: startsWith(matrix.target, 'android') == false
+        working-directory: ./kernelctf/repro
         run: |
           wget -O rootfs.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v2.img.gz
           gzip -d rootfs.img.gz
 
       - name: Download bzImage - Linux only
         if: startsWith(matrix.target, 'android') == false
+        working-directory: ./kernelctf/repro
         run: |
           if [ "$RELEASE_ID" == "mitigation-6.1" ]; then RELEASE_ID="mitigation-6.1-v2"; fi
           wget https://storage.googleapis.com/kernelctf-build/releases/$RELEASE_ID/bzImage
@@ -275,19 +288,13 @@ jobs:
           sudo modprobe vhost_net
           sudo modprobe vhost_vsock
           
-      - name: Checkout master for Android scripts
-        if: startsWith(matrix.target, 'android')
-        uses: actions/checkout@v4
-        with:
-          path: android_deps
-          ref: master
-
       - name: Install Android dependencies and download system images (parallel) - Android only
         if: startsWith(matrix.target, 'android')
+        working-directory: ./kernelctf/repro
         run: |
           # Start Android dependencies installation in background
           (
-            bash ../../android_deps/kernelctf/server/get_android_dependencies.sh > android_deps_install.log 2>&1
+            bash ../../kernelctf/server/get_android_dependencies.sh > android_deps_install.log 2>&1
             DEPS_EXIT=$?
             
             if [ $DEPS_EXIT -eq 0 ]; then
@@ -340,131 +347,136 @@ jobs:
           
           # Check if either failed
           if [ $DEPS_EXIT -ne 0 ]; then
-            echo "❌ Error: Dependencies installation failed with exit code $DEPS_EXIT"
+            echo "ERROR: Dependencies installation failed with exit code $DEPS_EXIT"
             echo "Last 50 lines of android_deps_install.log:"
             tail -n 50 android_deps_install.log || true
             exit $DEPS_EXIT
           fi
           
           if [ $DOWNLOAD_EXIT -ne 0 ]; then
-            echo "❌ Error: Image download failed with exit code $DOWNLOAD_EXIT"
+            echo "ERROR: Image download failed with exit code $DOWNLOAD_EXIT"
             exit $DOWNLOAD_EXIT
           fi
           
-          echo "✓ Both tasks completed successfully"
+          echo "Both tasks completed successfully"
           
-          # Final cleanup
-          echo "Final cleanup: removing installation log..."
-          rm -f android_deps_install.log 2>/dev/null || true
+          # =========================================================================
+          # Space optimization - cleanup build artifacts, keep only APK
+          # =========================================================================
+          echo ""
+          echo "=========================================="
+          echo "Optimizing disk space..."
+          echo "=========================================="
+          
+          APK_SOURCE="../../kernelctf/server/android_shellserver/app/build/outputs/apk/release/app-release.apk"
+          
+          if [ -f "$APK_SOURCE" ]; then
+            # Show space before cleanup
+            echo "Disk space before cleanup:"
+            df -h / | grep -E "Filesystem|/$"
+            
+            # Copy APK to a known location
+            mkdir -p ./apk
+            cp "$APK_SOURCE" ./apk/app-release.apk
+            echo "APK saved to: $(pwd)/apk/app-release.apk"
+            
+            # Remove android_shellserver directory (source + build artifacts ~200MB)
+            echo "Removing android_shellserver directory..."
+            rm -rf ../../kernelctf/server/android_shellserver
+            
+            # Clean Gradle cache (~500MB)
+            if [ -d "$HOME/.gradle" ]; then
+              echo "Cleaning Gradle cache..."
+              rm -rf $HOME/.gradle/caches
+              rm -rf $HOME/.gradle/wrapper/dists
+              rm -rf $HOME/.gradle/daemon
+            fi
+            
+            # Remove installation log
+            rm -f android_deps_install.log 2>/dev/null || true
+            
+            # Show space after cleanup
+            echo "Disk space after cleanup:"
+            df -h / | grep -E "Filesystem|/$"
+            
+            echo ""
+            echo "Cleanup complete - build artifacts removed, APK preserved"
+            echo "=========================================="
+          else
+            echo "ERROR: APK not found at $APK_SOURCE"
+            exit 1
+          fi
 
       - name: Set paths - Android only
         if: startsWith(matrix.target, 'android')
+        working-directory: ./kernelctf/repro
         run: |
-          APK_PATH="../../android_deps/kernelctf/server/android_shellserver/app/build/outputs/apk/release/app-release.apk"
-          echo "APK_PATH=$(realpath $APK_PATH)" >> $GITHUB_ENV
-          echo "[INFO] APK path set to: $(realpath $APK_PATH)"
+          # Use the APK we saved during cleanup
+          APK_PATH="$(realpath ./apk/app-release.apk)"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "[INFO] APK path set to: $APK_PATH"
           
           echo "ANDROID_RELEASE_PATH=$(realpath android_release)" >> $GITHUB_ENV
 
       - id: repro1
         name: Reproduction (1 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 1 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 1
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 1
 
       - id: repro2
         name: Reproduction (2 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 2 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 2
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 2
 
       - id: repro3
         name: Reproduction (3 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 3 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 3
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 3
 
       - id: repro4
         name: Reproduction (4 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 4 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 4
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 4
 
       - id: repro5
         name: Reproduction (5 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 5 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 5
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 5
 
       - id: repro6
         name: Reproduction (6 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 6 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 6
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 6
 
       - id: repro7
         name: Reproduction (7 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 7 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 7
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 7
 
       - id: repro8
         name: Reproduction (8 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 8 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 8
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 8
 
       - id: repro9
         name: Reproduction (9 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 9 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 9
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 9
 
       - id: repro10
         name: Reproduction (10 / 10)
         continue-on-error: true
-        run: |
-          if [[ "$RELEASE_ID" == android* ]]; then
-            ./android_repro.sh 10 "$ANDROID_RELEASE_PATH" "$(realpath ./exp/exploit)" "$APK_PATH"
-          else
-            ./repro.sh 10
-          fi
+        working-directory: ./kernelctf/repro
+        run: ./repro.sh 10
 
       - name: Upload repro logs as an artifact
         uses: actions/upload-artifact@v4
@@ -473,6 +485,7 @@ jobs:
           path: ./kernelctf/repro/repro_log_*.txt
 
       - name: Reproduction // Summary
+        working-directory: ./kernelctf/repro
         env:
           STEPS: ${{ toJSON(steps) }}
         run: |

@@ -47,8 +47,7 @@ class ShellServer {
             } else {
                 // Custom program with fallback to interactive shell
                 finalCommand = new String[]{
-                    "/system/bin/sh", "-c",
-                    binaryPath + "; exec /system/bin/sh -i"
+                    "/system/bin/sh", "-c", binaryPath
                 };
                 Log.println(Log.INFO, TAG, "Starting program: " + binaryPath + " (with shell fallback)");
             }

@@ -18,17 +18,16 @@ cleanup_function() {
     
     echo "[CLEANUP] Shutting down instance $instance_num" 1>&2
     
-    # Kill background processes (multiple attempts if needed)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        sleep 0.5
-        # Force kill if still alive
-        kill -9 "$pid" 2>/dev/null || true
+    # Kill logcat monitoring if running
+    if [ -n "$LOGCAT_PID" ] && kill -0 "$LOGCAT_PID" 2>/dev/null; then
+        kill "$LOGCAT_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "$LOGCAT_PID" 2>/dev/null || true
     fi
     
-    # Remove named pipe (always safe)
-    if [ -n "$pipe_name" ] && [ -p "$pipe_name" ]; then
-        rm -f "$pipe_name" 2>/dev/null || true
+    # Remove logcat temp file
+    if [ -n "$LOGCAT_FILE" ] && [ -f "$LOGCAT_FILE" ]; then
+        rm -f "$LOGCAT_FILE" 2>/dev/null || true
     fi
     
     # Stop cuttlefish (protect against failures)
@@ -508,10 +507,6 @@ if lsof -Pi :$PORT_TO_USE -sTCP:LISTEN -t >/dev/null 2>&1; then
     exit 1
 fi
 
-# Create a named pipe
-pipe_name=$(mktemp -u)
-mkfifo "$pipe_name"
-
 # Install APK
 echo "[INSTALLING] Installing APK..."
 if ! $on_guest install -g $APK_PATH 2>&1 | tee /tmp/apk_install_$instance_num.log; then
@@ -546,19 +541,33 @@ fi
 $as_root "am start -n com.google.android.kernelctf.shellserver/.MainActivity --es server_port $PORT_TO_USE $BINARY_PATH"
 $on_guest forward tcp:$PORT_TO_USE tcp:$PORT_TO_USE
 
-# background process to redirect VM's logcat output to a named pipe
-(($on_guest logcat -s ShellServer:I *:S) 2>/dev/null > "$pipe_name") &
-pid=$!
+# Start single logcat monitor for both startup detection and crash monitoring
+LOGCAT_FILE=$(mktemp)
+($on_guest logcat 2>/dev/null > "$LOGCAT_FILE") &
+LOGCAT_PID=$!
 
-# Wait for android device to be ready
-if timeout 5s grep -q kernelCTF_READY $pipe_name; then
-    echo "[OK] VM ready for connection"
-else
-    echo "[ERROR] VM setup failed. Exiting"
-    kill "$pid"
-    exit
+# Wait for android device to be ready by monitoring logcat
+echo -n "[WAITING] Waiting for VM to be ready"
+READY_TIMEOUT=30
+READY_ELAPSED=0
+VM_READY=0
+while [ $READY_ELAPSED -lt $READY_TIMEOUT ]; do
+    if grep -q "kernelCTF_READY" "$LOGCAT_FILE" 2>/dev/null; then
+        VM_READY=1
+        echo " done"
+        echo "[OK] VM ready for connection"
+        break
+    fi
+    echo -n "."
+    sleep 1
+    READY_ELAPSED=$((READY_ELAPSED + 1))
+done
+
+if [ $VM_READY -eq 0 ]; then
+    echo " timeout"
+    echo "[ERROR] VM setup failed - kernelCTF_READY not detected within ${READY_TIMEOUT}s"
+    exit 1
 fi
-kill $pid
 
 # After "VM ready for connection" and before spawning shell
 echo "[DEBUG] Testing if port $PORT_TO_USE is listening..."
@@ -572,26 +581,153 @@ fi
 echo "[DEBUG] Checking what's listening on port $PORT_TO_USE..."
 lsof -i :$PORT_TO_USE 2>/dev/null || echo "[DEBUG] lsof found nothing"
 
-echo "[INFO] Spawning interactive shell (Type \"exit\" to exit)"
+echo "[INFO] Connecting to exploit"
+if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+    echo "[DEBUG] CI mode: 30 min hard timeout, 60s no-output timeout, flag detection enabled"
+fi
 set +e
 
 # In CI environments, we need to handle non-interactive connections
 if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
-    # Non-interactive mode for CI: 
-    # Keep stdin open briefly, capture output, then send exit command
-    echo "[DEBUG] Connecting to port $PORT_TO_USE in non-interactive mode..."
-    (sleep 30; echo "exit") | timeout 60s socat - tcp:127.0.0.1:$PORT_TO_USE
+    echo "[DEBUG] Connecting to port $PORT_TO_USE in CI mode..."
+    
+    # Create temporary file for output monitoring (CI only)
+    OUTPUT_FILE=$(mktemp)
+    CRASH_DETECTED=0
+    
+    # Run socat with 30-minute timeout and capture output
+    timeout 1800s socat - tcp:127.0.0.1:$PORT_TO_USE 2>&1 | tee "$OUTPUT_FILE" &
+    SOCAT_PID=$!
+    
+    # Monitor for flag in real-time (background process)
+    (
+        # Read the flag we're looking for
+        FLAG_CONTENT=$(cat "$FLAG_FN" 2>/dev/null || echo "")
+        if [ -z "$FLAG_CONTENT" ]; then
+            echo "[WARNING] Could not read flag file, won't detect early completion" 1>&2
+            exit 0
+        fi
+        
+        # Watch the output file for the flag
+        tail -f "$OUTPUT_FILE" 2>/dev/null | while read -r line; do
+            if echo "$line" | grep -q "$FLAG_CONTENT"; then
+                echo "[SUCCESS] Flag detected! Exploit completed successfully." 1>&2
+                # Kill the socat process to exit early
+                kill $SOCAT_PID 2>/dev/null || true
+                break
+            fi
+        done
+    ) &
+    MONITOR_PID=$!
+    
+    # Activity monitor - kill if no output for 60 seconds (background process)
+    (
+        NO_OUTPUT_TIMEOUT=60
+        LAST_SIZE=0
+        STALE_COUNT=0
+        
+        # Wait for connection to establish
+        sleep 5
+        
+        while kill -0 $SOCAT_PID 2>/dev/null; do
+            if [ -f "$OUTPUT_FILE" ]; then
+                CURRENT_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "0")
+                
+                if [ "$CURRENT_SIZE" -eq "$LAST_SIZE" ]; then
+                    STALE_COUNT=$((STALE_COUNT + 1))
+                    
+                    if [ $STALE_COUNT -ge 60 ]; then
+                        echo "[TIMEOUT] No output for ${NO_OUTPUT_TIMEOUT}s, killing exploit" 1>&2
+                        kill $SOCAT_PID 2>/dev/null || true
+                        break
+                    fi
+                else
+                    STALE_COUNT=0
+                    LAST_SIZE=$CURRENT_SIZE
+                fi
+            fi
+            
+            sleep 1
+        done
+    ) &
+    ACTIVITY_MONITOR_PID=$!
+    
+    # Wait for socat to complete (either naturally, timeout, killed by monitor, or crashed)
+    wait $SOCAT_PID
     socat_exit=$?
+    
+    # Clean up monitor processes
+    kill $MONITOR_PID 2>/dev/null || true
+    wait $MONITOR_PID 2>/dev/null || true
+    kill $ACTIVITY_MONITOR_PID 2>/dev/null || true
+    wait $ACTIVITY_MONITOR_PID 2>/dev/null || true
+    
+    # Analyze exit code
     echo "[DEBUG] socat exited with code: $socat_exit"
+    
+    # Post-mortem: Check for crash indicators for diagnostics
+    if grep -qi "kernel panic\|segmentation fault\|bus error\|illegal instruction" "$OUTPUT_FILE" 2>/dev/null; then
+        echo "[CRASH] Kernel panic or crash detected in output"
+        CRASH_DETECTED=1
+    fi
+    
+    # Post-mortem: Check logcat for kernel panic (for diagnostics)
+    if [ -f "$LOGCAT_FILE" ] && grep -qi "kernel panic\|oops\|BUG:\|unable to handle kernel" "$LOGCAT_FILE" 2>/dev/null; then
+        echo "[CRASH] Kernel panic detected in logcat"
+        CRASH_DETECTED=1
+        # Show relevant logcat lines for debugging
+        echo "[DEBUG] Kernel panic context from logcat:" 1>&2
+        grep -i "kernel panic\|oops\|BUG:\|unable to handle kernel" "$LOGCAT_FILE" 2>/dev/null | tail -20 1>&2
+    fi
+    
+    # Check if VM died (connection lost)
+    if [ $socat_exit -ne 0 ] && [ $socat_exit -ne 124 ] && [ $socat_exit -ne 143 ] && [ $socat_exit -ne 137 ]; then
+        if ! timeout 5s $on_guest shell "echo test" >/dev/null 2>&1; then
+            echo "[CRASH] VM appears to be unresponsive or crashed"
+            CRASH_DETECTED=1
+        fi
+    fi
+    
+    # Save output for inspection
+    if [ -f "$OUTPUT_FILE" ]; then
+        echo "[DEBUG] Last 50 lines of exploit output:" 1>&2
+        tail -50 "$OUTPUT_FILE" 1>&2
+    fi
+    
+    # Clean up logcat monitoring
+    if [ -n "$LOGCAT_PID" ]; then
+        kill $LOGCAT_PID 2>/dev/null || true
+        wait $LOGCAT_PID 2>/dev/null || true
+    fi
+    rm -f "$LOGCAT_FILE"
+    
+    # Clean up output file
+    rm -f "$OUTPUT_FILE"
 else
     # Interactive mode for local testing
+    # Researcher can see crash output directly in terminal
+    # No timeout - researcher controls with Ctrl+C
+    echo "[DEBUG] Connecting to port $PORT_TO_USE in interactive mode (Ctrl+C to exit)..."
     socat - tcp:127.0.0.1:$PORT_TO_USE
     socat_exit=$?
+    
+    # Clean up logcat monitor
+    if [ -n "$LOGCAT_PID" ]; then
+        kill $LOGCAT_PID 2>/dev/null || true
+        wait $LOGCAT_PID 2>/dev/null || true
+    fi
+    rm -f "$LOGCAT_FILE"
 fi
 
 set -e
 if [ $socat_exit -eq 124 ]; then
-    echo "[INFO] Connection timeout after 60s" 1>&2
+    echo "[INFO] Connection timeout after 30 minutes (hard limit)" 1>&2
+elif [ $socat_exit -eq 143 ] || [ $socat_exit -eq 137 ]; then
+    echo "[INFO] Connection terminated (likely flag detected or activity timeout)" 1>&2
+elif [ "${CRASH_DETECTED:-0}" -eq 1 ]; then
+    echo "[INFO] Exploit execution ended - crash detected (post-mortem analysis)" 1>&2
 elif [ $socat_exit -ne 0 ]; then
     echo "[INFO] Connection closed with exit code: $socat_exit" 1>&2
+else
+    echo "[INFO] Connection closed cleanly" 1>&2
 fi
