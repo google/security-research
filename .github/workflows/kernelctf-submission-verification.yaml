@@ -51,6 +51,7 @@ jobs:
           ref: master
           sparse-checkout: |
             kernelctf/check-submission.py
+            kernelctf/utils.py
           sparse-checkout-cone-mode: false
 
       - name: Checkout PR content (full)
