@@ -359,15 +359,7 @@ jobs:
           fi
           
           echo "Both tasks completed successfully"
-          
-          # =========================================================================
-          # Space optimization - cleanup build artifacts, keep only APK
-          # =========================================================================
-          echo ""
-          echo "=========================================="
-          echo "Optimizing disk space..."
-          echo "=========================================="
-          
+                    
           APK_SOURCE="../../kernelctf/server/android_shellserver/app/build/outputs/apk/release/app-release.apk"
           
           if [ -f "$APK_SOURCE" ]; then
@@ -391,17 +383,6 @@ jobs:
               rm -rf $HOME/.gradle/wrapper/dists
               rm -rf $HOME/.gradle/daemon
             fi
-            
-            # Remove installation log
-            rm -f android_deps_install.log 2>/dev/null || true
-            
-            # Show space after cleanup
-            echo "Disk space after cleanup:"
-            df -h / | grep -E "Filesystem|/$"
-            
-            echo ""
-            echo "Cleanup complete - build artifacts removed, APK preserved"
-            echo "=========================================="
           else
             echo "ERROR: APK not found at $APK_SOURCE"
             exit 1
