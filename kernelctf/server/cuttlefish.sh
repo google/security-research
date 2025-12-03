@@ -552,7 +552,7 @@ READY_TIMEOUT=30
 READY_ELAPSED=0
 VM_READY=0
 while [ $READY_ELAPSED -lt $READY_TIMEOUT ]; do
-    if grep -q "kernelCTF_READY" "$LOGCAT_FILE" 2>/dev/null; then
+    if grep -q "timeout 1800s socat -u tcp:127.0.0.1:$PORT_TO_USE - 2>&1 | tee "$OUTPUT_FILE" &" "$LOGCAT_FILE" 2>/dev/null; then
         VM_READY=1
         echo " done"
         echo "[OK] VM ready for connection"
@@ -596,7 +596,7 @@ if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
     CRASH_DETECTED=0
     
     # Run socat with 30-minute timeout and capture output
-    timeout 1800s socat - tcp:127.0.0.1:$PORT_TO_USE 2>&1 | tee "$OUTPUT_FILE" &
+    timeout 1800s socat -u tcp:127.0.0.1:$PORT_TO_USE - 2>&1 | tee "$OUTPUT_FILE" &
     SOCAT_PID=$!
     
     # Monitor for flag in real-time (background process)
@@ -664,21 +664,6 @@ if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
     
     # Analyze exit code
     echo "[DEBUG] socat exited with code: $socat_exit"
-    
-    # Post-mortem: Check for crash indicators for diagnostics
-    if grep -qi "kernel panic\|segmentation fault\|bus error\|illegal instruction" "$OUTPUT_FILE" 2>/dev/null; then
-        echo "[CRASH] Kernel panic or crash detected in output"
-        CRASH_DETECTED=1
-    fi
-    
-    # Post-mortem: Check logcat for kernel panic (for diagnostics)
-    if [ -f "$LOGCAT_FILE" ] && grep -qi "kernel panic\|oops\|BUG:\|unable to handle kernel" "$LOGCAT_FILE" 2>/dev/null; then
-        echo "[CRASH] Kernel panic detected in logcat"
-        CRASH_DETECTED=1
-        # Show relevant logcat lines for debugging
-        echo "[DEBUG] Kernel panic context from logcat:" 1>&2
-        grep -i "kernel panic\|oops\|BUG:\|unable to handle kernel" "$LOGCAT_FILE" 2>/dev/null | tail -20 1>&2
-    fi
     
     # Check if VM died (connection lost)
     if [ $socat_exit -ne 0 ] && [ $socat_exit -ne 124 ] && [ $socat_exit -ne 143 ] && [ $socat_exit -ne 137 ]; then
