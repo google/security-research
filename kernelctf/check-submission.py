@@ -98,12 +98,8 @@ submissionIds.sort()
 flagRegex = r"kernelCTF\{(?:[^:]+:)?(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
 def flagTarget(flag):
     match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
-    if match.group(1):
-        # v1 flag
-        return match.group(1)
-
-    # v2 flag
-    return match.group(2)
+    target = match.group(1) or match.group(2)  # v1 or v2 flag
+    return "mitigation-6.1" if target == "mitigation-6.1-v2" else target
 
 targetFlagTimes = {}
 flags = []
@@ -136,8 +132,6 @@ for submissionId in submissionIds:
         error(f"The CVE on the public spreadsheet for submission `{submissionId}` is `{publicData['CVE']}` but the PR is for `{cve}`.")
 
 flagTargets = set([flagTarget(flag) for flag in flags])
-if "mitigation-6.1-v2" in flagTargets:
-    flagTargets = flagTargets - {"mitigation-6.1-v2"} | {"mitigation-6.1"}
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
 checkList(flagTargets, lambda t: t in exploitFolders, f"Missing exploit for target(s)")
 checkList(exploitFolders, lambda t: t in flagTargets, f"Found extra exploit(s) without flag submission", True)
