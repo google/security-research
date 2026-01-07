@@ -68,7 +68,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
   * Currently, there are two instances (COS 105 and COS 109) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
-  * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes. 
+  * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
 
   * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
 
@@ -114,6 +114,8 @@ This means: if a vulnerability is exploited on the latest LTS by Researcher A (b
 If a patch commit fixes multiple vulnerabilities (e.g. by backporting a new version of a component to the stable tree), we assume the root cause is the same and we consider further submissions (for the same target) as duplicates.
 
 If the same vulnerability is fixed in multiple patch commits (e.g. in commit A in the mainline tree and separately in commit B in the stable tree), then we still consider it as the same vulnerability, thus making further submissions (for the same target) duplicates.
+
+Minimum 10% stability (if not specified otherwise) is required for all targets. Stability is measured by the [exploit_repro Github Action](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) which should report `Reliability: 10%` or better in the `Reproduction summary` (after a sane amount of re-runs if needed).
 
 The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
 
