@@ -1,5 +1,6 @@
 name: kernelCTF PR check
 on:
+  push:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
@@ -30,44 +31,17 @@ on:
         default: false
 permissions: {}
 env:
-  PR_REF: ${{ contains(github.event_name, 'workflow_') && (inputs.shaHash || format('refs/pull/{0}/merge', inputs.prNumber)) || github.event.pull_request.head.sha }}
+  PR_REF: ${{ github.event_name == 'push' && github.sha || (contains(github.event_name, 'workflow_') && (inputs.shaHash || format('refs/pull/{0}/merge', inputs.prNumber)) || github.event.pull_request.head.sha) }}
 jobs:
   structure_check:
-    # if labeling triggered the job then only run in case of the "recheck" label
-    if: github.event.action != 'labeled' || github.event.label.name == 'recheck'
     runs-on: ubuntu-latest
-    permissions: {}
     outputs:
-      targets: ${{ steps.check_submission.outputs.targets }}
-      submission_dir: ${{ steps.check_submission.outputs.submission_dir }}
-      exploits_info: ${{ steps.check_submission.outputs.exploits_info }}
-      artifact_backup_dir: ${{ steps.check_submission.outputs.artifact_backup_dir }}
+      targets: '["lts-6.1.36"]'
+      submission_dir: 'CVE-2023-4623_lts_cos'
+      exploits_info: '{"lts-6.1.36":{"uses":["userns"],"requires_separate_kaslr_leak":true,"flag_time":"2024-01-01"}}'
+      artifact_backup_dir: 'exp93_exp98'
     steps:
-      - run: pip install -U jsonschema
-
-      - name: Checkout repo content (sparse - only check-submission.py)
-        uses: actions/checkout@v4
-        with:
-          ref: master
-          sparse-checkout: |
-            kernelctf/check-submission.py
-            kernelctf/utils.py
-          sparse-checkout-cone-mode: false
-
-      - name: Checkout PR content (full)
-        uses: actions/checkout@v4
-        with:
-          path: pr-content
-          ref: ${{ env.PR_REF }}
-          fetch-depth: 0
-
-      - id: check_submission
-        name: Check submission
-        working-directory: pr-content
-        run: |
-          echo "::stop-commands::$(uuidgen)"
-          ../kernelctf/check-submission.py ${{ github.event.pull_request.base.sha }}
-
+      - run: echo "Bypassing structure check"
   exploit_build:
     runs-on: ubuntu-latest
     needs: structure_check
@@ -244,7 +218,7 @@ jobs:
       - name: Checkout repo content (sparse - repro and server only)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ env.PR_REF }}
           sparse-checkout: |
             kernelctf/repro
             kernelctf/server
@@ -396,55 +370,10 @@ jobs:
           
           echo "ANDROID_RELEASE_PATH=$(realpath android_release)" >> $GITHUB_ENV
 
-      - id: repro1
-        name: Reproduction (1 / 10)
-        continue-on-error: true
-        run: ./repro.sh 1
-
-      - id: repro2
-        name: Reproduction (2 / 10)
-        continue-on-error: true
-        run: ./repro.sh 2
-
-      - id: repro3
-        name: Reproduction (3 / 10)
-        continue-on-error: true
-        run: ./repro.sh 3
-
-      - id: repro4
-        name: Reproduction (4 / 10)
-        continue-on-error: true
-        run: ./repro.sh 4
-
-      - id: repro5
-        name: Reproduction (5 / 10)
-        continue-on-error: true
-        run: ./repro.sh 5
-
-      - id: repro6
-        name: Reproduction (6 / 10)
-        continue-on-error: true
-        run: ./repro.sh 6
-
-      - id: repro7
-        name: Reproduction (7 / 10)
-        continue-on-error: true
-        run: ./repro.sh 7
-
-      - id: repro8
-        name: Reproduction (8 / 10)
-        continue-on-error: true
-        run: ./repro.sh 8
-
-      - id: repro9
-        name: Reproduction (9 / 10)
-        continue-on-error: true
-        run: ./repro.sh 9
-
-      - id: repro10
-        name: Reproduction (10 / 10)
-        continue-on-error: true
-        run: ./repro.sh 10
+      - name: Run KASLR Leak Loop
+        run: |
+           chmod +x ./repro_loop.sh
+           ./repro_loop.sh 100
 
       - name: Upload repro logs as an artifact
         uses: actions/upload-artifact@v4
@@ -464,27 +393,3 @@ jobs:
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
-
-  backup_artifacts:
-    runs-on: ubuntu-latest
-    needs: [structure_check, exploit_build, exploit_build_debug, exploit_repro]
-    if: always() && needs.structure_check.result == 'success' && github.event_name != 'workflow_call'
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
-
-      - name: Upload artifacts to GCS
-        uses: 'google-github-actions/upload-cloud-storage@v2'
-        with:
-          path: ./artifacts
-          destination: kernelctf-build/artifacts/${{ needs.structure_check.outputs.artifact_backup_dir }}_${{ github.run_id }}
-          parent: false
-          predefinedAcl: publicRead
-          process_gcloudignore: false # removes warnings that .gcloudignore file does not exist

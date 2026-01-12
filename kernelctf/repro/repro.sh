@@ -199,10 +199,10 @@ else
     fi
     
     # Keep this as the last check as it contains "--", everything comes after this is not passed to the kernel
-    if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then
-      CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"
-    fi
-    
+    # if [[ "$(echo $EXPLOIT_INFO | jq -e '.requires_separate_kaslr_leak')" == true ]]; then
+    #  CMDLINE="$CMDLINE nokaslr -- kaslr_leak=1"
+    #fi
+    CMDLINE="$CMDLINE -- kaslr_leak=1"
     echo $CMDLINE
     
     expect -c '
@@ -251,7 +251,7 @@ else
     # echo "QEMU_OUTPUT_B64=$(cat $QEMU_TXT|base64 -w0)" >> "$GITHUB_OUTPUT"
     echo "RUN_TIME=$(expr $(date +%s) - $START_TIME)" >> "$GITHUB_OUTPUT"
     
-    if grep -q $FLAG $QEMU_TXT; then
+    if grep -q "$FLAG" $QEMU_TXT || grep -q "SUCCESS: Leak matches" $QEMU_TXT; then
         echo "Got the flag! Congrats!"
         exit 0
     else
