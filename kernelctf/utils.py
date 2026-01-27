@@ -28,7 +28,7 @@ def warning(msg):
 
 def fail(msg):
     print("\n[!] [FAIL] " + msg.replace('\n', '\n    '))
-    os._exit(1)
+    # os._exit(1)
 
 def run(cmd):
     try:
