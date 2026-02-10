@@ -37,8 +37,8 @@ In this situation, the host VMM can exploit an integer underflow condition that 
 The metadata bundle can be loaded into the TDX Module using `tdh_import_state_vp.py` from the tdxplore toolkit. The leaked data will be returned in extended error information 1.
 
 <table>
-  <tr style="text-align: center;">
-    <td><img src="digby_bad.gif" width="50%"></td>
+  <tr>
+    <td style="text-align: center;"><img src="digby_bad.gif" width="50%"></td>
   </tr>
 </table>
 
