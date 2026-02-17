@@ -50,6 +50,6 @@ A host VMM creates a template TD to import migration bundles into. The host VMM 
 
 Metadata bundles are comprised of a `md_list_header_t` and an array of `md_sequence_t` structures. Each sequence can specify, via the `write_mask_valid` flag in the `sequence_header`, whether `element[0]` holds a `wr_mask`. If the `wr_mask` is `0` the entries in the sequence are skipped when `skip_non_writable` is set to `true` when `md_write_sequence` is called (which is the case for import activities). This effectively allows *any* required entry to be skipped.
 
-`eddie.py` sets `write_mask_valid` to `1` and `element[0]` to `0` for the EPTP in a metadata bundle and proceed to perform the import activity. In this situation the `tdcs_ptr->execution_ctl_fields.eptp` is never initialized and results in a SEAM shutdown as the TDX Module will dereference when calling `secure_ept_walk`.
+`eddie.py` sets `write_mask_valid` to `1` and `element[0]` to `0` for the EPTP in a metadata bundle and proceed to perform the import activity. In this situation the `tdcs_ptr->execution_ctl_fields.eptp` is never initialized and results in a SEAM shutdown as the TDX Module will dereference an invalid address in `secure_ept_walk`.
 
 **Credits: Kirk Swidowski, Daniel Moghimi, Josh Eads, and Erdem Aktas.**
