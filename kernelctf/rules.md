@@ -165,7 +165,9 @@ In this stage:
 
      * Note: A submission will be considered ineligible if it turns out that this requirement was not respected.
 
-  5. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+  5. If you are not the author the patch that fixes the bug make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+
+     * Do not include the `Reported-By` tag if you both discovered the flaw and authored the patch.
 
      * Use the same email address in the `Reported-By` tag as you use for the form submission or in the "Email address used in Reported-By tag" field of the form.
 
