@@ -165,7 +165,7 @@ In this stage:
 
      * Note: A submission will be considered ineligible if it turns out that this requirement was not respected.
 
-  5. If you are not the author the patch that fixes the bug make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+  5. If you are not the author of the patch that fixes the bug make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
 
      * Do not include the `Reported-By` tag if you both discovered the flaw and authored the patch.
 
