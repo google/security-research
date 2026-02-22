@@ -35,7 +35,7 @@ jobs:
           echo "TARGET_REPO=${{ github.event.inputs.target_repo || 'linux-izu/codeql' }}" >> $GITHUB_ENV
 
       - name: Checkout source repository (to inspect tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SOURCE_REPO }}
           fetch-depth: 0
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Checkout source repository at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ matrix.tag }}
