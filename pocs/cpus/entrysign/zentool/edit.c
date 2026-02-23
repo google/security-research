@@ -153,13 +153,16 @@ static int set_sequence_word(patch_t *patch, char const *options)
     return 0;
 }
 
-static int set_fastpath_hook(patch_t *patch, char const *options)
+static void set_fastpath_hook(patch_t *patch, const char *options)
 {
 /*
 ./zentool --output=modified.bin edit --nop all --match all=0 --seq all=7 --insn q40i0="xor rax, rax, rax" --insn q40i1="add rax, rax, 0x1337" --fastpath 0xbb000000,0xff000000,0x00000005 --hdr-revlow 0x6 template.bin && ./zentool resign modified.bin && sudo ./zentool load --cpu=2 modified.bin && taskset -c 2 ./opcodes
 */
     // --fastpath=0x1234,0x1234,0x1234
-    char **values = str_split(options, ',');
+    char *options_copy = strdup(options);
+    if (options_copy == NULL)
+        errx(EXIT_FAILURE, "Out of memory");
+    char **values = str_split(options_copy, ',');  // str_split() splits the argument in-place.
     srand(time(NULL) ^ getpid());
     // 77 vzeroupper
     // BB BTC
@@ -185,7 +188,7 @@ static int set_fastpath_hook(patch_t *patch, char const *options)
         patch->matchregs[10].value,
         patch->matchregs[14].value,
         patch->matchregs[18].value);
-    return 0;
+    free(options_copy);
 }
 
 // usage:
