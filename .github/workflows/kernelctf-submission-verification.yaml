@@ -198,8 +198,8 @@ jobs:
       - name: Convert exploit to debug build
         working-directory: ${{ env.EXPLOIT_DIR }}
         run: |
-          # Add -g flag to any gcc or clang variant (including x86_64-linux-android21-clang)
-          sed -i -E 's/([a-zA-Z0-9_-]*)(gcc|clang)(\s)/\1\2 -g\3/g' Makefile
+          # Add -g flag to any gcc, g++ or clang variant (including x86_64-linux-android21-clang)
+          sed -i -E 's/([a-zA-Z0-9_-]*)(gcc|g++|clang)(\s)/\1\2 -g\3/g' Makefile
           sed -i '/configure --enable-debug/!s/configure/configure --enable-debug/g' Makefile
           sed -i 's/-o exploit\b/-o exploit_debug/g' Makefile
           sed -i 's/ -s\b//g' Makefile
