@@ -67,8 +67,8 @@ jobs:
             fi
           fi
 
-          # Get latest release createdAt from target repo (if any)
-          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json createdAt --jq '.[0].createdAt' || echo "")
+          # Get latest release publishedAt from target repo (if any)
+          LATEST_RELEASE_ISO_DATE=$(gh release list --repo "$TARGET_REPO" --limit 1 --json publishedAt --jq '.[0].publishedAt' || echo "")
 
           if [ -z "$LATEST_RELEASE_ISO_DATE" ]; then
             LATEST_RELEASE_TS=$(date -d "1 week ago" +%s)
@@ -145,40 +145,37 @@ jobs:
           set -eux
           sudo apt-get update
           sudo apt-get install -y libelf-dev zip jq gh
-
-      - name: Prepare kernel source (mrproper + allmodconfig)
-        run: |
-          set -eux
-          # Clean tree (safe to ignore failures)
-          make mrproper || true
-          # Configure all modules built-in/configured
-          make allmodconfig
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
-          build-mode: manual
+          build-mode: none
           db-location: /tmp/codeql_db_${{ matrix.tag }}
           config-file: advanced-security/config/disable-default-queries@true
           queries: +linux-izu/codeql/queries/slab-call-sites.ql@main
 
-      - name: Build
+
+      - name: Build kernel
+        if: false
         run: |
           set -eux
-          make -j$(nproc) || true
+          make mrproper
+          make allyesconfig
+          make -j$(nproc)
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
           upload: false
           upload-database: false
+          skip-queries: true
           output: /tmp/codeql_results_${{ matrix.tag }}
 
       - name: Compress Results
         run: |
           set -eux
           cd /tmp
+          zip -s 1g -r codeql_db_${{ matrix.tag }}.zip codeql_db_${{ matrix.tag }}
           zip -s 1g -r codeql_results_${{ matrix.tag }}.zip codeql_results_${{ matrix.tag }}
 
       - name: Authenticate gh CLI with PAT
@@ -196,13 +193,14 @@ jobs:
         env:
           TARGET_REPO: ${{ env.TARGET_REPO }}
           TAG: ${{ matrix.tag }}
+          DB: /tmp/codeql_db_${{ matrix.tag }}
           RESULTS: /tmp/codeql_results_${{ matrix.tag }}
         run: |
           set -eux
 
           # Check if release for tag already exists
           if gh release view "$TAG" --repo "$TARGET_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$RESULTS".*
+            gh release upload "$TAG" --repo "$TARGET_REPO" --clobber "$DB".* "$RESULTS".*
           else
-            gh release create "$TAG" --repo "$TARGET_REPO" "$RESULTS".* --title "CodeQL Results for $TAG" --notes "Stored as multipart zip files."
+            gh release create "$TAG" --repo "$TARGET_REPO" "$DB".* "$RESULTS".* --title "CodeQL DB and Results for $TAG" --notes "Stored as multipart zip files."
           fi
