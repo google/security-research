@@ -67,6 +67,8 @@ if [ "$EXPLOIT_BUILD_ONLY" = false ]; then
     install_if_missing "python3-gmpy2" "python3-gmpy2" 
     install_if_missing "python-gmpy2-common" "python-gmpy2-common" 
     install_if_missing "python3-ecdsa" "python3-ecdsa" 
+
+    install_if_missing "libguestfs-tools" "libguestfs-tools"
 fi
 
 # Cuttlefish Installation - skip in exploit-build-only mode

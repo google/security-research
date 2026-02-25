@@ -116,40 +116,78 @@ usage() {
     exit 1;
 }
 
-# Function to check required groups
-check_groups() {
+check_groups_and_devices() {
+    local permission_errors=()
+    local group_warnings=()
+    
+    if [ ! -e /dev/kvm ]; then
+        permission_errors+=("/dev/kvm does not exist - install kvm kernel module")
+    elif ! timeout 1s dd if=/dev/kvm of=/dev/null bs=1 count=0 2>/dev/null; then
+        permission_errors+=("/dev/kvm exists but is not accessible")
+    fi
+    
+    if [ -e /dev/vhost-net ] && ! timeout 1s dd if=/dev/vhost-net of=/dev/null bs=1 count=0 2>/dev/null; then
+        group_warnings+=("/dev/vhost-net exists but is not accessible (optional)")
+    fi
+    
+    if [ -e /dev/vhost-vsock ] && ! timeout 1s dd if=/dev/vhost-vsock of=/dev/null bs=1 count=0 2>/dev/null; then
+        group_warnings+=("/dev/vhost-vsock exists but is not accessible (optional)")
+    fi
+    
+    # Show warnings (non-fatal)
+    if [ ${#group_warnings[@]} -gt 0 ]; then
+        echo "[WARNING] Optional device access issues:"
+        for warning in "${group_warnings[@]}"; do
+            echo "  - $warning"
+        done
+        echo ""
+    fi
+    
+    # If devices are accessible, we're good regardless of group membership display
+    if [ ${#permission_errors[@]} -eq 0 ]; then
+        return 0
+    fi
+    
+    # If devices aren't accessible, check traditional group membership for better error message
     local current_groups=$(groups)
     local missing_groups=()
     
-    # Check for required groups
     for group in kvm cvdnetwork render; do
         if ! echo "$current_groups" | grep -qw "$group"; then
             missing_groups+=("$group")
         fi
     done
     
+    # Report the error with helpful context
+    echo "=========================================="
+    echo "ERROR: Device access failed"
+    echo "=========================================="
+    echo ""
+    for error in "${permission_errors[@]}"; do
+        echo "  - $error"
+    done
+    echo ""
+    echo "Current groups: $current_groups"
     if [ ${#missing_groups[@]} -gt 0 ]; then
-        echo "=========================================="
-        echo "ERROR: Missing required group memberships"
-        echo "=========================================="
-        echo ""
-        echo "Current groups: $current_groups"
         echo "Missing groups: ${missing_groups[*]}"
         echo ""
         echo "To fix this issue:"
         echo "  1. Run: sudo usermod -aG kvm,cvdnetwork,render \$USER"
         echo "  2. Logout and login again (or reboot)"
+        echo "  3. Ensure kernel modules loaded: sudo modprobe kvm vhost_net vhost_vsock"
+    else
         echo ""
-        echo "Alternatively, if you just ran install_dependencies.sh,"
-        echo "run this script with: sudo su - \$USER -c \"cd \$PWD && ./cuttlefish.sh ...\""
-        echo ""
-        return 1
+        echo "Groups appear correct, but device access still failed."
+        echo "Check:"
+        echo "  1. Kernel modules: sudo modprobe kvm vhost_net vhost_vsock"
+        echo "  2. Device permissions: ls -la /dev/kvm"
+        echo "  3. If in container: ensure devices are mounted"
     fi
+    echo ""
     
-    return 0
+    return 1
 }
 
-# Function to check kernel modules
 check_kernel_modules() {
     local missing_modules=()
     local optional_modules=()
@@ -192,56 +230,11 @@ check_kernel_modules() {
     return 0
 }
 
-# Function to check device permissions
-check_device_permissions() {
-    local permission_errors=()
-    
-    # Check /dev/kvm
-    if [ ! -e /dev/kvm ]; then
-        permission_errors+=("/dev/kvm does not exist")
-    elif [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
-        permission_errors+=("/dev/kvm is not readable/writable")
-    fi
-    
-    # Check /dev/net/tun
-    if [ ! -e /dev/net/tun ]; then
-        permission_errors+=("/dev/net/tun does not exist")
-    elif [ ! -r /dev/net/tun ] || [ ! -w /dev/net/tun ]; then
-        permission_errors+=("/dev/net/tun is not readable/writable")
-    fi
-    
-    if [ ${#permission_errors[@]} -gt 0 ]; then
-        echo "=========================================="
-        echo "ERROR: Device permission issues"
-        echo "=========================================="
-        echo ""
-        for error in "${permission_errors[@]}"; do
-            echo "  - $error"
-        done
-        echo ""
-        echo "Current permissions:"
-        [ -e /dev/kvm ] && ls -la /dev/kvm || echo "  /dev/kvm: Not found"
-        [ -e /dev/net/tun ] && ls -la /dev/net/tun || echo "  /dev/net/tun: Not found"
-        echo ""
-        echo "These issues are usually resolved by:"
-        echo "  1. Being in the kvm and cvdnetwork groups"
-        echo "  2. Logging out and back in"
-        echo "  3. Running: sudo udevadm control --reload-rules && sudo udevadm trigger"
-        echo ""
-        return 1
-    fi
-    
-    return 0
-}
-
-# Function to run all pre-flight checks
 run_preflight_checks() {
     local checks_failed=0
     
-    # Run all checks silently, only show errors
-    check_groups || checks_failed=1
+    check_groups_and_devices || checks_failed=1
     check_kernel_modules || checks_failed=1
-    check_device_permissions || checks_failed=1
     
     if [ $checks_failed -ne 0 ]; then
         echo "=========================================="
@@ -276,7 +269,6 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${ARGS[@]}"
 
-# Validate required parameters
 if [ -z "$RELEASE_PATH" ]; then
     echo "[ERROR] --release_path is required"
     usage
@@ -287,18 +279,14 @@ if [ -z "$FLAG_FN" ]; then
     usage
 fi
 
-# Set default APK path if not provided
 if [ -z "$APK_PATH" ]; then
     APK_PATH="$SCRIPT_DIR/android_shellserver/app/build/outputs/apk/release/app-release.apk"
 fi
 
-# Validate that APK file exists
 if [ ! -f "$APK_PATH" ]; then
-    echo "[ERROR] APK file not found at $APK_PATH"
+    echo "[ERROR] APK file not found"
     exit 1
 fi
-
-echo "[OK] APK file found: $APK_PATH"
 
 if [ "$TEST_MODE" -eq 1 ]; then
     echo "[TEST MODE] Running in test mode - flag will be readable by exploit user"
@@ -314,14 +302,13 @@ fi
 
 # Validate that RELEASE_PATH exists and is a directory
 if [ ! -d "$RELEASE_PATH" ]; then
-    echo "[ERROR] Release path '$RELEASE_PATH' does not exist or is not a directory"
+    echo "[ERROR] Release path does not exist or is not a directory"
     exit 1
 fi
 
 # Check that RELEASE_PATH contains required Cuttlefish files
 if [ ! -f "$RELEASE_PATH/bin/launch_cvd" ]; then
-    echo "[ERROR] '$RELEASE_PATH' does not appear to be a valid Cuttlefish release"
-    echo "[ERROR] Missing: $RELEASE_PATH/bin/launch_cvd"
+    echo "[ERROR] Does not appear to be a valid Cuttlefish release"
     exit 1
 fi
 
@@ -341,6 +328,23 @@ fi
 # Check for the first free instance
 for i in $(seq 1 32); do
     folder="$RELEASE_PATH/../locks/lock-inst-${i}"
+
+    if [ -d "$folder" ]; then
+        # Check if the PID stored in the lock file still exists
+        if [ -f "$folder/pid" ]; then
+            LOCK_PID=$(cat "$folder/pid")
+            # If the process is not running, the lock is stale.
+            if ! kill -0 "$LOCK_PID" 2>/dev/null; then
+                echo "[INFO] Found stale lock for instance $i (PID $LOCK_PID dead). Cleaning up..."
+                rm -rf "$folder"
+            fi
+        else
+            # If there is a folder but no PID file, it's corrupt/stale.
+            echo "[INFO] Found empty/corrupt lock for instance $i. Cleaning up..."
+            rm -rf "$folder"
+        fi
+    fi
+
     if mkdir "$folder" 2>/dev/null; then
         instance_num=$i
         # Record ownership
@@ -365,6 +369,7 @@ echo "[STARTING] Starting Cuttlefish instance..."
 
 # Build base launch flags
 LAUNCH_FLAGS="--daemon --console=true --resume=false --verbosity=ERROR --system_image_dir=\"$RELEASE_PATH\" --base_instance_num=$instance_num -report_anonymous_usage_stats=n"
+#LAUNCH_FLAGS="--console=true --resume=false --verbosity=DEBUG --system_image_dir=\"$RELEASE_PATH\" --base_instance_num=$instance_num -report_anonymous_usage_stats=n"
 
 # Auto-detect if we need --enable_tap_devices=false (Android 16+)
 # Check kernel version string in boot.img
@@ -379,8 +384,7 @@ if [ -f "$RELEASE_PATH/boot.img" ]; then
     fi
 fi
 
-echo "[DEBUG] Launching with flags: $LAUNCH_FLAGS"
-bash -c "HOME=$RELEASE_PATH $RELEASE_PATH/bin/launch_cvd $LAUNCH_FLAGS" 2>&1 | sed '/^===/,/^===/d'
+bash -c "HOME=$RELEASE_PATH $RELEASE_PATH/bin/launch_cvd $LAUNCH_FLAGS" 2>&1 | sed '/^===/,/^===/d; /Using system_image_dir of/d'
 LAUNCH_EXIT=${PIPESTATUS[0]}
 
 if [ $LAUNCH_EXIT -ne 0 ]; then
@@ -438,8 +442,6 @@ done
 if [ $device_found -eq 0 ]; then
     echo " timeout"
     echo "[ERROR] ADB connection timeout after ${timeout}s"
-    echo "[DEBUG] Current ADB devices:"
-    $RELEASE_PATH/bin/adb devices
     exit 1
 fi
 
@@ -454,31 +456,15 @@ echo " done"
 sleep 5
 
 if [ ! -f "$FLAG_FN" ]; then
-    echo "[ERROR] Flag file not found at $FLAG_FN"
+    echo "[ERROR] Flag file not found"
     exit 1
 fi
 
 # Verify root access
 echo "[CHECK] Verifying root access..."
 
-# FIX: Use proper timeout and error handling for root check
 if ! timeout 10 bash -c "$as_root id" 2>/dev/null | grep -q "uid=0"; then
-    echo "[ERROR] Cannot execute commands as root"
-    echo "[DEBUG] Attempting to diagnose root access issue..."
-    
-    # Try to get more information
-    echo "[DEBUG] Testing basic shell access:"
-    $on_guest shell id 2>&1 | head -3
-    
-    echo "[DEBUG] Testing su availability:"
-    $on_guest shell "which su" 2>&1
-    
-    echo "[DEBUG] Build type:"
-    $on_guest shell getprop ro.build.type 2>&1
-    
-    echo "[DEBUG] Debuggable:"
-    $on_guest shell getprop ro.debuggable 2>&1
-    
+    echo "[ERROR] Cannot execute commands as root"   
     exit 1
 fi
 
@@ -486,7 +472,12 @@ echo "[OK] Root access verified"
 
 # Setup flag file
 FLAG=$(<$FLAG_FN)
-$on_guest push $FLAG_FN /data/local/tmp/flag
+if $on_guest push $FLAG_FN /data/local/tmp/flag >/dev/null 2>&1; then
+    echo "[OK] FLAG file upload to /data/local/tmp/flag is successful"
+else
+    echo "[ERROR] Flag file upload to Android VM failed"
+    exit 1
+fi
 
 if [ "$TEST_MODE" -eq 1 ]; then
     # Test mode: make flag readable by the exploit user
@@ -570,16 +561,13 @@ if [ $VM_READY -eq 0 ]; then
 fi
 
 # After "VM ready for connection" and before spawning shell
-echo "[DEBUG] Testing if port $PORT_TO_USE is listening..."
-if nc -z 127.0.0.1 $PORT_TO_USE 2>/dev/null; then
-    echo "[DEBUG] Port $PORT_TO_USE is listening"
+echo "[INFO] Testing if port $PORT_TO_USE is listening..."
+if socat /dev/null TCP:127.0.0.1:$PORT_TO_USE,retry=0 2>/dev/null; then
+    echo "[INFO] Port $PORT_TO_USE is listening"
 else
     echo "[ERROR] Port $PORT_TO_USE is not listening!"
     exit 1
 fi
-
-echo "[DEBUG] Checking what's listening on port $PORT_TO_USE..."
-lsof -i :$PORT_TO_USE 2>/dev/null || echo "[DEBUG] lsof found nothing"
 
 echo "[INFO] Connecting to exploit"
 if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
