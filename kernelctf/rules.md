@@ -40,13 +40,13 @@ This instance uses the latest LTS with [COS kernel config](https://cos.googlesou
 
 ### 2. Mitigation bypass (on the mitigation instance)
 
-The mitigation instance is upgraded far less frequently than the LTS instance, thus more 1-day vulnerabilities can be exploited. At the same time the unpriviledged namespaces are turned off on this target, similar to LTS, starting from July 1st, 2025. This way you have more opportunity to present your mitigation bypass techniques.
+The mitigation instance is upgraded far less frequently than the LTS instance, thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques. At the same time the unpriviledged namespaces are turned off on this target, similar to LTS, starting from July 1st, 2025. Besides that, `io_uring` and `nftables` are also disabled for this target. 
 
 Only exploits which clearly bypass [our mitigations](https://github.com/thejh/linux/blob/slub-virtual/MITIGATION_README) are eligible (e.g. if a mitigation protects against UAF, but not against BoF, then an exploit using a BoF vulnerability is not eligible).
 
 As the current instance uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
 
-See the [source code](https://github.com/thejh/linux/tree/c64d47f3a86262fb0e4e43108daf785d875b0f7e) and the [extra kernel hardenings](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/mitigation-v3-full.config) turned on.
+See the [source code](https://github.com/thejh/linux/tree/4c5b4a60a8f52798223807f76442e96d9eb15046) and the [extra kernel hardenings](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/mitigation-v4.config) turned on.
 
 #### Reward
 
@@ -66,7 +66,7 @@ Only the first submission is eligible per COS version unless it is part of a val
 
     * This reward is based on whether the exploit works on GKE AutoPilot or not. AutoPilot currently does not enable unprivileged user namespaces and they are also considering disabling io\_uring.
 
-  * Currently, there are two instances (COS 105 and COS 109) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
+  * Currently, there are two instances (COS 121 and COS 113) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
 
   * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
 
@@ -165,7 +165,9 @@ In this stage:
 
      * Note: A submission will be considered ineligible if it turns out that this requirement was not respected.
 
-  5. Make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+  5. If you are not the author of the patch that fixes the bug make sure that you are credited in the `Reported-By` tag of the patch that fixes the bug.
+
+     * Do not include the `Reported-By` tag if you both discovered the flaw and authored the patch.
 
      * Use the same email address in the `Reported-By` tag as you use for the form submission or in the "Email address used in Reported-By tag" field of the form.
 

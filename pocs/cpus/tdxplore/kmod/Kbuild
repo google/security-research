@@ -1,0 +1,3 @@
+obj-m = gateway.o
+# obj-y = gateway.o
+gateway-y += ioctl.o driver.o
