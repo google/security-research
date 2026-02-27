@@ -265,7 +265,7 @@ The structure of this submission folder should be:
 
   * `original.tar.gz`
 
-    * Required, contains the original exploit. Its hash must match the one submitted initially via the form (this hash cannot be modified later).
+    * Required, contains the original exploit (compiled binary and source code used to build it). Its hash must match the one submitted initially via the form (this hash cannot be modified later).
 
   * `metadata.json`
 
