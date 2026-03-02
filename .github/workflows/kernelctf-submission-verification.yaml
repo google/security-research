@@ -46,7 +46,7 @@ jobs:
       - run: pip install -U jsonschema
 
       - name: Checkout repo content (sparse - only check-submission.py)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: master
           sparse-checkout: |
@@ -55,7 +55,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Checkout PR content (full)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: pr-content
           ref: ${{ env.PR_REF }}
@@ -82,14 +82,14 @@ jobs:
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
       - name: Checkout PR content (full)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
 
       - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: scripts-from-master
           ref: master
@@ -129,7 +129,7 @@ jobs:
 
       - name: Upload exploit (newly compiled)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit
@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload exploit (original, build failed)
         if: failure() && steps.build_exploit.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./exploit
@@ -165,14 +165,14 @@ jobs:
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
       - name: Checkout PR content (full)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
 
       - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: scripts-from-master
           ref: master
@@ -216,7 +216,7 @@ jobs:
           file exploit_debug | grep debug_info
 
       - name: Upload debug build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_debug_${{ env.RELEASE_ID }}
           path: ${{ env.EXPLOIT_DIR }}/exploit_debug
@@ -242,7 +242,7 @@ jobs:
         working-directory: ./kernelctf/repro
     steps:
       - name: Checkout repo content (sparse - repro and server only)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: master
           sparse-checkout: |
@@ -251,7 +251,7 @@ jobs:
           sparse-checkout-cone-mode: true
 
       - name: Download exploit
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_exploit_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/exp/
@@ -447,7 +447,7 @@ jobs:
         run: ./repro.sh 10
 
       - name: Upload repro logs as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_logs_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_log_*.txt
@@ -460,7 +460,7 @@ jobs:
           ../repro_summary.py ${{ github.run_id }}
 
       - name: Upload repro summary as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
@@ -471,7 +471,7 @@ jobs:
     if: always() && needs.structure_check.result == 'success' && github.event_name != 'workflow_call'
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: ./artifacts
 
