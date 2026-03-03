@@ -114,6 +114,14 @@ bool crypt_signed_hash(uint8_t hash[16], const uint8_t *modulus, const uint8_t *
 
     // Extract the last few bytes, then read them back in.
     buf = mpz_export(NULL, NULL, -1, 16, 1, 0, h);
+
+    if (buf == NULL) {
+        // mpz_export returns NULL when the value is zero
+        memset(hash, 0, 16);
+        mpz_clears(s, n, h, NULL);
+        return false;
+    }
+
     mpz_import(h, 16, 1, 1, 0, 0, buf);
 
     if (options.debug) {
