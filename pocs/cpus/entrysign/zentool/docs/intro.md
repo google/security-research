@@ -245,9 +245,9 @@ Cpuid:      00008310 Rome, Castle Peak
 Biosrev:    08
 Flags:      00
 Reserved:   0000
-Signature:  7a... (use --verbose to see)
-Modulus:    c7... (use --verbose to see)
-Hash:       5a... (use --verbose to see)
+Signature:  7a... (use global --verbose to see)
+Modulus:    c7... (use global --verbose to see)
+Hash:       5a... (use global --verbose to see)
 Autorun:    01
 Encrypted:  00
 Revision:   0830107c (Signed)
