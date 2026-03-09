@@ -79,9 +79,10 @@ bool crypt_hash_bytes(uint8_t hash[16], const void *buffer, size_t nbytes)
 
     dbgmsg("hashing %u bytes of data", nbytes);
 
+    size_t hash_len;
     CMAC_Init(ctx, kCMACKey, sizeof kCMACKey, EVP_aes_128_cbc(), NULL);
     CMAC_Update(ctx, buffer, nbytes);
-    CMAC_Final(ctx, hash, NULL);
+    CMAC_Final(ctx, hash, &hash_len);
 
     if (options.debug) {
         dbgmsg("hashing complete, result:");
@@ -142,7 +143,8 @@ bool crypt_patch_hash(uint8_t hash[16], const patch_t *patch)
     CMAC_Update(ctx, &patch->hdr.options, sizeof(patch->hdr) - offsetof(struct ucodehdr, options));
     CMAC_Update(ctx, patch->matchregs, sizeof(*patch->matchregs) * patch->nmatch);
     CMAC_Update(ctx, patch->insns, sizeof(*patch->insns) * patch->nquad);
-    CMAC_Final(ctx, hash, NULL);
+    size_t hash_len;
+    CMAC_Final(ctx, hash, &hash_len);
     CMAC_CTX_free(ctx);
     return 0;
 }
