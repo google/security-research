@@ -1,4 +1,4 @@
-Wait for the patch to land in# kernelCTF rules
+# kernelCTF rules
 
 kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rules/6625378258649088/google-and-alphabet-vulnerability-reward-program-vrp-rules) and is focused on making exploiting Linux kernel vulnerabilities harder by inviting security researchers to demonstrate their exploitation techniques on 0-day and 1-day vulnerabilities in various kernel versions. This includes the kernel version with our experimental mitigations; we'd like to see if and how researchers can bypass these mitigations.
 
