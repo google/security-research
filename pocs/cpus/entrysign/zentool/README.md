@@ -42,9 +42,9 @@ Cpuid:       00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:       00
 Reserved:    0000
-Signature:   9c... (use --verbose to see) (GOOD)
-Modulus:     c7... (use --verbose to see)
-Check:       5a... (use --verbose to see) (GOOD)
+Signature:   9c... (use global --verbose to see) (GOOD)
+Modulus:     c7... (use global --verbose to see)
+Check:       5a... (use global --verbose to see) (GOOD)
 Autorun:     false
 Encrypted:   false
 Revision:    0860010f (Signed)
@@ -105,7 +105,7 @@ such as the match registers and instruction quads.
 ```
 $ zentool print --match-regs modified.bin
 ; Patch 0x8600141 Match Registers (22 total)
-; (use --verbose to see empty slots)
+; (use global --verbose to see empty slots)
 	[0 ] 07CE
 	[1 ] 092D
 	[2 ] 1129
@@ -146,7 +146,7 @@ You can also try to disassemble the instruction quads, like this:
 ```
 $ zentool print --disassemble modified.bin
 ; Patch 0x8600141 OpQuad Disassembly (64 total)
-; (use --verbose to see further details)
+; (use global --verbose to see further details)
 .quad  2, 0x04021ff3
 	shr     	reg12, reg12, reg11
 	mov.b   	reg10, reg10, reg17

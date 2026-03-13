@@ -46,6 +46,11 @@ is loaded from that address it will be redirected to patch RAM instead. If
 you're a software person like me, you might think of this as more like
 "hooking" than "patching".
 
+These hooks can't be placed freely in patch RAM though -- they are arranged in
+fixed slots (called quads), and match register N will (almost) always redirect 
+to quad 2N. The slots in between can still be used, but only by continuing into 
+them from adjacent code.
+
 ![Patch RAM](img/patchram.png)
 
 There's a big catch, these resources are super limited! Like, really really
@@ -245,9 +250,9 @@ Cpuid:      00008310 Rome, Castle Peak
 Biosrev:    08
 Flags:      00
 Reserved:   0000
-Signature:  7a... (use --verbose to see)
-Modulus:    c7... (use --verbose to see)
-Hash:       5a... (use --verbose to see)
+Signature:  7a... (use global --verbose to see)
+Modulus:    c7... (use global --verbose to see)
+Hash:       5a... (use global --verbose to see)
 Autorun:    01
 Encrypted:  00
 Revision:   0830107c (Signed)
@@ -295,10 +300,11 @@ to put a constant into `rax`. Let's pick a rarely used instruction for now that
 
 First, we need to set a match register, so set match register zero to `@fpatan`.
 The `@` symbol simply indicates you want to use a symbolic instruction name rather
-than a number.
+than a number. Recall that match register N redirects to quad 2N, so match
+register 0 redirects to quad 0, match register 1 to quad 2, and so on.
 
 ```
-$ zentool edit --match 0,1=@fpatan template.bin
+$ zentool edit --match 0=@fpatan template.bin
 ```
 
 > Note: This only works if the correct match register for this CPU is known,
