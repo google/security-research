@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 RELEASES_YAML = 'releases.yaml'
 SLOTS_JSON = 'slots.json'
 DEPRECATED_TARGETS = ["cos-97", "cos-105", "cos-109"]
-ALLOWED_CAPABILITIES = ["userns", "io_uring"]
+ALLOWED_CAPABILITIES_COS = ["userns", "io_uring"]
 
 sys.path.append('/usr/local/lib/python3.9/dist-packages')
 from httplib2 import Http
@@ -103,13 +103,118 @@ def print_releases(releases, slots, deprecated_only):
         print_filtered('Deprecated targets', 'deprecated')
     else:
         print_filtered('Current targets', 'latest')
-        print_filtered('Future targets', 'future')    
+        print_filtered('Future targets', 'future')
 
 def are_you_sure(prompt):
     print(prompt)
     res = input("Are you sure you want to continue? (y/n) ") == "y"
     print()
     return res
+
+def get_capabilities(release):
+    if not release['target'].startswith('cos-'):
+        return []
+
+    allowlist = ALLOWED_CAPABILITIES_COS
+    print(f"The following capabilities are available for this target: {', '.join(allowlist)}")
+
+    while True:
+        caps = input("Enter capabilities needed (comma-separated, or leave empty): ").strip()
+        caps = [capability.strip() for capability in caps.split(",")] if caps else []
+        notAllowed = [cap for cap in caps if cap not in allowlist]
+        if notAllowed:
+            print(f"The following capabilities are not allowed: {', '.join(notAllowed)}\n")
+            continue
+        return caps
+
+def handle_future_release(release):
+    print('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.')
+    answer = input('Do you want to run anyway (y/n) or wait until the slot opening (w) ')
+    if answer == 'y':
+        return 'future:'
+    elif answer == 'w':
+        prev_notification = 0
+        while True:
+            time_left = int((release['release-date'] - datetime.now(timezone.utc)).total_seconds())
+            if time_left <= 0:
+                return ''
+                break
+
+            if prev_notification != time_left:
+                print(f'Only {time_left} seconds left...')
+                prev_notification = time_left
+
+            time.sleep(0.05) # check 20 times per second, start as soon as possible
+    else:
+        return False
+
+def run_release(release, root):
+    release_id = release['id']
+    capabilities = get_capabilities(release)
+
+    flagPrefix = 'invalid:'
+    if release['status'] == 'future':
+        flagPrefix = handle_future_release(release)
+        if flagPrefix is False:
+            return False
+    elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
+        # you can target deprecated releases during the io_uring promotion
+        flagPrefix = ''
+    elif release['status'] == 'deprecated':
+        flagPrefix = 'deprecated:'
+        if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
+            return False
+    elif release['status'] == 'latest':
+        flagPrefix = ''
+
+    print('Executing target %s' % release_id)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        flag_fn = f'{temp_dir}/flag'
+        with open(flag_fn, 'wt') as f:
+            if len(capabilities) == 0:
+                flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
+            else:
+                flag_content = f'{flagPrefix}v2:{release_id}:{",".join(capabilities)}:{int(time.time())}'
+            signature = hmac.new(server_secrets.flag_key.encode('utf-8'), flag_content.encode('utf-8'), hashlib.sha1).hexdigest()
+            flag = f'kernelCTF{{{flag_content}:{signature}}}'
+            f.write(flag + '\n')
+
+        subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])    
+
+def release_menu(release):
+    release_id = release['id']
+    while True:
+        print('Actions:')
+        print('  run) run target')
+        print('  info) get information about the target')
+        print('  back) back to the target list')
+        print()
+        action = input().strip()
+        print()
+
+        # long random generated secret, not bruteforcable
+        root = '--root' in sys.argv or hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
+
+        if action == 'back':
+            break
+        elif action == 'exit' or action == "q" or action == "quit":
+            return
+        elif action == 'info':
+            baseUrl = 'https://storage.googleapis.com/kernelctf-build/releases'
+            print(f'Kernel image (bzImage): {baseUrl}/{release_id}/bzImage')
+            if release.get('vmlinux', True):
+                print(f'Kernel image (vmlinux): {baseUrl}/{release_id}/vmlinux.gz')
+            print(f'Kernel config: {baseUrl}/{release_id}/.config')
+            print(f'  -> derived from COS config: {baseUrl}/{release_id}/lakitu_defconfig')
+            print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
+            print()
+        elif root or action == 'run':
+            if not run_release(release, root):
+                continue
+        else:
+            print('Invalid action. Expected one of the followings: run, info, back')
+            print()
 
 def main():
     releases = get_releases()
@@ -138,96 +243,8 @@ def main():
             print('Invalid target. Expected one of the followings: %s' % ', '.join(releases))
             print()
             continue
-
-        while True:
-            print('Actions:')
-            print('  run) run target')
-            print('  info) get information about the target')
-            print('  back) back to the target list')
-            print()
-            action = input().strip()
-            print()
-
-            # long random generated secret, not bruteforcable
-            root = '--root' in sys.argv or hashlib.sha1(action.encode('utf-8')).hexdigest() == server_secrets.root_mode_hash
-
-            if action == 'back':
-                break
-            elif action == 'exit' or action == "q" or action == "quit":
-                return
-            elif action == 'info':
-                baseUrl = 'https://storage.googleapis.com/kernelctf-build/releases'
-                print(f'Kernel image (bzImage): {baseUrl}/{release_id}/bzImage')
-                if release.get('vmlinux', True):
-                    print(f'Kernel image (vmlinux): {baseUrl}/{release_id}/vmlinux.gz')
-                print(f'Kernel config: {baseUrl}/{release_id}/.config')
-                print(f'  -> derived from COS config: {baseUrl}/{release_id}/lakitu_defconfig')
-                print(f'Source code info: {baseUrl}/{release_id}/COMMIT_INFO')
-                print()
-            elif root or action == 'run':
-                capabilities_done = False
-                while not capabilities_done:
-                    print("Enter capabilities needed (comma-separated, or leave empty)")
-                    print(f"options: {ALLOWED_CAPABILITIES}")
-                    capabilities = input(": ").strip()
-                    capabilities_done = True
-
-                    capabilities = [capability.strip() for capability in capabilities.split(",")] if capabilities else []
-                    capabilities = list(set(capabilities))
-
-                    for capability in capabilities:
-                        if capability not in ALLOWED_CAPABILITIES:
-                            print(f"{capability} not in the available capabilities.")
-                            capabilities_done = False
-
-                flagPrefix = 'invalid:'
-                if release['status'] == 'future':
-                    print('[!] Warning: this target is not released yet and not eligible! Use only for pre-testing.')
-                    answer = input('Do you want to run anyway (y/n) or wait until the slot opening (w) ')
-                    if answer == 'y':
-                        flagPrefix = 'future:'
-                    elif answer == 'w':
-                        prev_notification = 0
-                        while True:
-                            time_left = int((release['release-date'] - datetime.now(timezone.utc)).total_seconds())
-                            if time_left <= 0:
-                                flagPrefix = ''
-                                break
-
-                            if prev_notification != time_left:
-                                print(f'Only {time_left} seconds left...')
-                                prev_notification = time_left
-
-                            time.sleep(0.05) # check 20 times per second, start as soon as possible
-                    else:
-                        continue
-                elif release['status'] == 'deprecated' and "io_uring" in capabilities and now >= datetime(2025, 1, 23, 12, 00, 00, tzinfo=timezone.utc):
-                    # you can target deprecated releases during the io_uring promotion
-                    flagPrefix = ''
-                elif release['status'] == 'deprecated':
-                    flagPrefix = 'deprecated:'
-                    if not are_you_sure('[!] Warning: this target is already deprecated and not eligible! Use only for reproduction.'):
-                        continue
-                elif release['status'] == 'latest':
-                    flagPrefix = ''
-
-                print('Executing target %s' % release_id)
-
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    flag_fn = f'{temp_dir}/flag'
-                    with open(flag_fn, 'wt') as f:
-                        if len(capabilities) == 0:
-                            flag_content = f'{flagPrefix}v1:{release_id}:{int(time.time())}'
-                        else:
-                            flag_content = f'{flagPrefix}v2:{release_id}:{",".join(capabilities)}:{int(time.time())}'
-                        signature = hmac.new(server_secrets.flag_key.encode('utf-8'), flag_content.encode('utf-8'), hashlib.sha1).hexdigest()
-                        flag = f'kernelCTF{{{flag_content}:{signature}}}'
-                        f.write(flag + '\n')
-
-                    subprocess.check_call(['./qemu.sh', f'{release_dir}/{release_id}', flag_fn, '/bin/bash' if root else '/home/user/run.sh', ",".join(capabilities)])
-            else:
-                print('Invalid action. Expected one of the followings: run, info, back')
-                print()
+        
+        release_menu(release)
 
 try:
     main()

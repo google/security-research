@@ -37,11 +37,10 @@ In this situation, the host VMM can exploit an integer underflow condition that 
 The metadata bundle can be loaded into the TDX Module using `tdh_import_state_vp.py` from the tdxplore toolkit. The leaked data will be returned in extended error information 1.
 
 <div align="center">
-  <img src="digby_bad.gif" width="50%">
+  <img src="melllvar_bad.gif" width="50%">
 </div>
 
-`melllvar_bad_host_vmm.sh` and `digby_bad_mig_td.sh` were used to create the proof-of-concept GIF.
-`melllvar_bad.sh` and `digby_bad.sh` were used to create the proof-of-concept GIFs above.
+`melllvar_bad_host_vmm.sh` and `melllvar_bad_mig_td.sh` were used to create the proof-of-concept GIF.
 
 ## eddie (No CVE Assigned)
 **Bug 2: Required Metadata Entries are Skippable**
