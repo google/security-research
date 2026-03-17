@@ -1,11 +1,16 @@
-name: kernelctf-vuln-verify
+name: kernelCTF vuln verify
 on:
   pull_request_target:
     types: [labeled]
 
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to verify'
+        required: true
 jobs:
-  verify:
-    if: github.event.label.name == 'vuln-verify'
+  vuln-verify:
+    if: github.event.label.name == 'vuln-verify' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,6 +23,16 @@ jobs:
         with:
           credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
 
+      - name: Fetch PR metadata
+        id: pr_metadata
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json headRepository,headRefName,headRepositoryOwner --jq '.headRepository.name, .headRefName, .headRepositoryOwner.login')
+          readarray -t DATA <<< "$PR_DATA"
+          echo "repo_full_name=${DATA[2]}/${DATA[0]}" >> $GITHUB_OUTPUT
+          echo "head_ref=${DATA[1]}" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
       - name: Checkout master
         uses: actions/checkout@v4
         with:
@@ -27,8 +42,8 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ steps.pr_metadata.outputs.repo_full_name }}
+          ref: ${{ steps.pr_metadata.outputs.head_ref }}
           path: pr
           sparse-checkout: pocs/linux/kernelctf
 
@@ -51,20 +66,17 @@ jobs:
       - name: Determine submission folder
         id: determine_folder
         run: |
-          # Get added files in the PR
-          ADDED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[] | select(.status == "added") | .path')
-          echo $ADDED_FILES
+          FILES=$(gh pr view ${{ steps.pr_metadata.outputs.pr_number }} --json files --jq '.files[] | .path')
+          POC_FOLDER=$(echo "$FILES" | grep '^pocs/linux/kernelctf/' | cut -d/ -f1-4 | sort -u | head -n 1)
+          echo $FILES
           
-          # Filter for pocs/linux/kernelctf/ and get the unique directory
-          ADDED_FOLDER=$(echo "$ADDED_FILES" | grep '^pocs/linux/kernelctf/' | cut -d/ -f1-4 | sort -u | head -n 1)
-          
-          if [ -z "$ADDED_FOLDER" ]; then
+          if [ -z "$POC_FOLDER" ]; then
             echo "No added folders found in pocs/linux/kernelctf/"
-            exit 0
+            exit 1
           fi
 
-          echo "folder=$ADDED_FOLDER" >> $GITHUB_OUTPUT
-          echo "Found added folder: $ADDED_FOLDER"
+          echo "folder=$POC_FOLDER" >> $GITHUB_OUTPUT
+          echo "Found PoC folder: $POC_FOLDER"
 
       - name: Run vuln-verify
         if: steps.determine_folder.outputs.folder != ''
