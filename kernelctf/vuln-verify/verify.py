@@ -19,7 +19,7 @@ def log(*args, **kwargs):
     # Convert ANSI colors to Markdown colors (bolding + status words/emojis)
     colors = {31: "🔴", 32: "🟢", 33: "🟡"}
     for code, emoji in colors.items():
-        s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} **\1**', s)
+        s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} **\\1**', s)
     # Strip other ANSI colors
     s = re.sub(r'\033\[[0-9;]*m', '', s)
     summary_lines.append(s)
@@ -165,7 +165,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             ups_commit = get_upstream_commit(commit_hash)
             ups_parent_commit = get_parent_commit(ups_commit)
         log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
-              f"{kernel_ver}, commit: {commit_hash}, stable: {stable_commit}, parent: {parent_commit}")
+              f"{kernel_ver}, commit: {commit_hash[:10]}, stable: {stable_commit[:10]}, parent: {parent_commit[:10]}")
 
         config_fn = f"builds/{target}.config"
         def build_release_(name, repo_url, commit_hash, patch_commit_fn=""):

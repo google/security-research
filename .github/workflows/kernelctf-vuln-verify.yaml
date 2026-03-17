@@ -93,7 +93,7 @@ jobs:
         run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
 
       - name: Upload verify_results
-        if: steps.vuln_verify.conclusion != 'skipped'
+        if: always() && steps.vuln_verify.conclusion != 'skipped'
         uses: actions/upload-artifact@v6
         with:
           name: verify_results
