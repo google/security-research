@@ -285,7 +285,7 @@ jobs:
         run: |
           sudo modprobe vhost_net
           sudo modprobe vhost_vsock
-          
+
       - name: Install Android dependencies and download system images (parallel) - Android only
         if: startsWith(matrix.target, 'android')
         run: bash ../.github/scripts/install_android_deps.sh
@@ -297,7 +297,6 @@ jobs:
           APK_PATH="$(realpath ./apk/app-release.apk)"
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "[INFO] APK path set to: $APK_PATH"
-          
           echo "ANDROID_RELEASE_PATH=$(realpath android_release)" >> $GITHUB_ENV
 
       - id: repro1
@@ -368,6 +367,12 @@ jobs:
         with:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
+
+  verify:
+    uses: ./.github/workflows/kernelctf-vuln-verify.yaml
+    secrets: inherit
+    with:
+      prNumber: ${{ contains(github.event_name, 'workflow_') && inputs.prNumber || github.event.pull_request.number }}
 
   backup_artifacts:
     runs-on: ubuntu-latest

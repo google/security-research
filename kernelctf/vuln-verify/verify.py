@@ -133,6 +133,9 @@ def get_parent_commit(commit_hash):
     return json.loads(fetch(f"https://api.github.com/repos/gregkh/linux/commits/{commit_hash}", f".cache/{commit_hash}.json",
                 GH_HEADERS))["parents"][0]["sha"]
 
+def success_color(success):
+    return green('SUCCESS') if success else red('FAIL') if not success else yellow('UNKNOWN')
+
 builds = []
 all_success = True
 for i_exp, exp_dir in enumerate(args.exploit_paths):
@@ -286,19 +289,20 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         exp_fail = exp_fail or fail
         if args.stable:
             if args.target_patching:
-                log(f"  Target patching test: {success_target_patching} (before: {res[name_base]}, after: {res[name_base_patched]})")
-            log(f"  Patch commit test: {success_patch_commit} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
+                log(f"  Target patching test: {success_color(success_target_patching)} (before: {res[name_base]}, after: {res[name_base_patched]})")
+            log(f"  Stable patch commit test: {success_color(success_patch_commit)} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
         if args.upstream:
-            log(f"  Upstream patch commit test: {success_upstream_patch} (before: {res[ups_name_before_patch]}, after: {res[ups_name_after_patch]})")
+            log(f"  Upstream patch commit test: {success_color(success_upstream_patch)} (before: {res[ups_name_before_patch]}, after: {res[ups_name_after_patch]})")
 
-        if success_target_patching and not success_patch_commit:
+        if args.target_patching and success_target_patching and not success_patch_commit:
             log("  [STAT] Only target patching worked.")
-        if not success_target_patching and success_patch_commit:
+        if args.target_patching and not success_target_patching and success_patch_commit:
             log("  [STAT] Only patch commit testing worked.")
-        if success_upstream_patch and not success_patch_commit:
-            log("  [STAT] Only upstream patch worked.")
-        if not success_upstream_patch and success_patch_commit:
-            log("  [STAT] Only stable patch worked.")
+        if args.stable and args.upstream:
+            if success_upstream_patch and not success_patch_commit:
+                log("  [STAT] Only upstream patch worked.")
+            if not success_upstream_patch and success_patch_commit:
+                log("  [STAT] Only stable patch worked.")
 
         log(f"  Verification of {exp_ids} on {target}: {red('FAIL') if fail else green('SUCCESS') if success else yellow('UNKNOWN')}")
         log()

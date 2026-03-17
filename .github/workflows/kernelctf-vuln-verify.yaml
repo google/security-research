@@ -2,19 +2,21 @@ name: kernelCTF vuln verify
 on:
   pull_request_target:
     types: [labeled]
-
   workflow_dispatch:
     inputs:
       prNumber:
         description: 'PR number to verify'
         required: true
+  workflow_call:
+    inputs:
+      prNumber:
+        type: number
+permissions: {}
 jobs:
   vuln-verify:
+    permissions: {}
     if: github.event.label.name == 'vuln-verify' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_REF: ${{ contains(github.event_name, 'workflow_') && format('refs/pull/{0}/merge', inputs.prNumber) || github.event.pull_request.head.sha }}
