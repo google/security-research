@@ -6,6 +6,7 @@ import os
 import sys
 import sqlite3
 import shutil
+import subprocess
 import argparse
 from utils import parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
 
@@ -157,16 +158,14 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                 return False
 
             cmd = f"./build_release.sh {repo_url} {commit_hash} {config_fn} kasan.config {patch_commit_fn}"
+            print(f"Running '{cmd}'")
+
             if args.verbose_build:
                 print(f"::group::Building {name}")
-                cmd += f" 2>&1 | tee {log_fn}.tmp"
-            else:
-                cmd += f" >{log_fn}.tmp 2>&1"
-
-            print(f"Running '{cmd}'")
-            success = run(cmd) is not None
-            if args.verbose_build:
+                success = subprocess.run(f"{cmd} 2>&1 | tee {log_fn}.tmp", shell=True).returncode == 0
                 print("::endgroup::")
+            else:
+                success = run(f"{cmd} >{log_fn}.tmp 2>&1") is not None
 
             os.rename(f"{log_fn}.tmp", log_fn)  # move in case of error too, so we won't run it again
             if success:
