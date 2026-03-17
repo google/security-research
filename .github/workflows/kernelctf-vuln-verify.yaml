@@ -5,7 +5,7 @@ on:
 
   workflow_dispatch:
     inputs:
-      pr_number:
+      prNumber:
         description: 'PR number to verify'
         required: true
 jobs:
@@ -17,21 +17,12 @@ jobs:
       pull-requests: read
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_REF: ${{ contains(github.event_name, 'workflow_') && format('refs/pull/{0}/merge', inputs.prNumber) || github.event.pull_request.head.sha }}
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
           credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
-
-      - name: Fetch PR metadata
-        id: pr_metadata
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
-          PR_DATA=$(gh pr view "$PR_NUMBER" --json headRepository,headRefName,headRepositoryOwner --jq '.headRepository.name, .headRefName, .headRepositoryOwner.login')
-          readarray -t DATA <<< "$PR_DATA"
-          echo "repo_full_name=${DATA[2]}/${DATA[0]}" >> $GITHUB_OUTPUT
-          echo "head_ref=${DATA[1]}" >> $GITHUB_OUTPUT
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
 
       - name: Checkout master
         uses: actions/checkout@v4
@@ -42,8 +33,7 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v4
         with:
-          repository: ${{ steps.pr_metadata.outputs.repo_full_name }}
-          ref: ${{ steps.pr_metadata.outputs.head_ref }}
+          ref: ${{ env.PR_REF }}
           path: pr
           sparse-checkout: pocs/linux/kernelctf
 
@@ -67,11 +57,13 @@ jobs:
         id: determine_folder
         run: |
           FILES=$(gh pr view ${{ steps.pr_metadata.outputs.pr_number }} --json files --jq '.files[] | .path')
-          POC_FOLDER=$(echo "$FILES" | grep '^pocs/linux/kernelctf/' | cut -d/ -f1-4 | sort -u | head -n 1)
-          echo $FILES
+          echo "Files in PR:"
+          echo "$FILES"
           
-          if [ -z "$POC_FOLDER" ]; then
-            echo "No added folders found in pocs/linux/kernelctf/"
+          POC_FOLDER=$(echo "$FILES" | grep '^pocs/linux/kernelctf/' | cut -d/ -f1-4 | sort -u)
+          if [ $(echo "$POC_FOLDER" | grep -c .) -ne 1 ]; then
+            echo "Exactly one PoC folder must be found in pocs/linux/kernelctf/, but found:"
+            echo "${POC_FOLDER:-<none>}"
             exit 1
           fi
 
