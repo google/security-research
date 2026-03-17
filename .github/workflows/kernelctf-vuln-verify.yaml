@@ -90,13 +90,13 @@ jobs:
 
       - name: Run vuln-verify
         id: vuln_verify
-        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
+        run: ./kernelctf/vuln-verify/verify.py --verbose-build --force-verify "pr/${{ steps.determine_folder.outputs.folder }}"
 
-      - name: Upload verify_results
+      - name: Upload logs
         if: always() && steps.vuln_verify.conclusion != 'skipped'
         uses: actions/upload-artifact@v6
         with:
-          name: verify_results
+          name: logs
           path: |
             ./kernelctf/vuln-verify/verify_results
             ./kernelctf/vuln-verify/builds/*.log*

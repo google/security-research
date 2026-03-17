@@ -18,10 +18,10 @@ def log(*args, **kwargs):
 
     s = " ".join(map(str, args))
     # Convert ANSI colors to Markdown colors (bolding + status words/emojis)
-    s = re.sub(r'\033\[1m(.*?)\033\[0m', r'**\1**', s)
+    s = re.sub(r'\033\[1m(.*?)\033\[0m', r'🟪 \1', s)
     colors = {31: "🔴", 32: "🟢", 33: "🟡"}
     for code, emoji in colors.items():
-        s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} **\\1**', s)
+        s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} \\1', s)
     # Strip other ANSI colors
     s = re.sub(r'\033\[[0-9;]*m', '', s)
     summary_lines.append(s)
@@ -29,7 +29,7 @@ def log(*args, **kwargs):
 def write_summary():
     if not summary_fn or not summary_lines: return
     with open(summary_fn, "a") as f:
-        f.write(f"### Vulnerability Verification Results\n\n```{"\n".join(summary_lines).strip()}```")
+        f.write(f"### Vulnerability Verification Results\n\n```\n{"\n".join(summary_lines).strip()}\n```")
 
 def fatal(msg):
     log(msg, file=sys.stderr)
