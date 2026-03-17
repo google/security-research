@@ -65,12 +65,14 @@ def gcs_upload(local_fn, gcs_fn, gzip=False):
         cmd.append("--gzip-encoded")
     run(cmd)
 
+args.exploit_paths = [os.path.abspath(p) for p in args.exploit_paths]
 os.chdir(os.path.dirname(__file__))
 
 public_csv = parseCsv(fetch(PUBLIC_CSV_URL, "kernelctf_public_sheet.csv"), "ID")
 #pprint(public_csv)
 
 if not is_cached(KERNEL_DANCE_SQL_FN, 3600*24*7):
+    print(f"  [CACHE] downloading {KERNEL_DANCE_SQL_FN}...")
     run(["wget", "-O", KERNEL_DANCE_SQL_FN, KERNEL_DANCE_SQL_URL])
 sqlconn = sqlite3.connect(KERNEL_DANCE_SQL_FN)
 sql = sqlconn.cursor()

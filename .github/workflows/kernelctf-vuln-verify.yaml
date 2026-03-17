@@ -81,7 +81,8 @@ jobs:
           pip install requests
 
       - name: Download kernel.dance database
-        run: wget -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
+        working-directory: kernelctf/vuln-verify
+        run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
       - name: Run vuln-verify
         if: steps.determine_folder.outputs.folder != ''
