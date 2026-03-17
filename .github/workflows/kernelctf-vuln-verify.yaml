@@ -87,4 +87,4 @@ jobs:
       - name: Run vuln-verify
         if: steps.determine_folder.outputs.folder != ''
         run: |
-          ./kernelctf/vuln-verify/verify.py "pr/${{ steps.determine_folder.outputs.folder }}"
+          ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"

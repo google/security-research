@@ -17,6 +17,7 @@ parser.add_argument("--upstream", action=argparse.BooleanOptionalAction, default
 parser.add_argument("--stable", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--target-patching", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--gcs-cache", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--verbose-build", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--no-gh-auth", action="store_true")
 parser.add_argument("exploit_paths", nargs="+")
 args = parser.parse_args()
@@ -155,9 +156,18 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             if not args.build or os.path.isfile(log_fn):
                 return False
 
-            cmd = f"./build_release.sh {repo_url} {commit_hash} {config_fn} kasan.config {patch_commit_fn} >{log_fn}.tmp 2>&1"
+            cmd = f"./build_release.sh {repo_url} {commit_hash} {config_fn} kasan.config {patch_commit_fn}"
+            if args.verbose_build:
+                print(f"::group::Building {name}")
+                cmd += f" 2>&1 | tee {log_fn}.tmp"
+            else:
+                cmd += f" >{log_fn}.tmp 2>&1"
+
             print(f"Running '{cmd}'")
             success = run(cmd) is not None
+            if args.verbose_build:
+                print("::endgroup::")
+
             os.rename(f"{log_fn}.tmp", log_fn)  # move in case of error too, so we won't run it again
             if success:
                 os.rename("linux/arch/x86/boot/bzImage", bzImage_fn)
