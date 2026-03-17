@@ -42,22 +42,6 @@ jobs:
       - name: List PR contents
         run: find pr
 
-      - name: Checkout kernel-research
-        uses: actions/checkout@v4
-        with:
-          repository: google/kernel-research
-          path: kernel-research
-          sparse-checkout: image_runner
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole
-          pip install requests
-
-      - name: Setup environment
-        run: echo "IMAGE_RUNNER_DIR=${{ github.workspace }}/kernel-research/image_runner" >> $GITHUB_ENV
-
       - name: Determine submission folder
         id: determine_folder
         run: |
@@ -72,8 +56,32 @@ jobs:
             exit 1
           fi
 
+          if [ ! -d "pr/$POC_FOLDER" ]; then
+            echo "Error: Directory pr/$POC_FOLDER does not exist"
+            exit 1
+          fi
+
           echo "folder=$POC_FOLDER" >> $GITHUB_OUTPUT
           echo "Found PoC folder: $POC_FOLDER"
+
+      - name: Checkout kernel-research
+        uses: actions/checkout@v4
+        with:
+          repository: google/kernel-research
+          path: kernel-research
+          sparse-checkout: image_runner
+
+      - name: Setup image_runner dir
+        run: echo "IMAGE_RUNNER_DIR=${{ github.workspace }}/kernel-research/image_runner" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole
+          pip install requests
+
+      - name: Download kernel.dance database
+        run: wget -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
       - name: Run vuln-verify
         if: steps.determine_folder.outputs.folder != ''
