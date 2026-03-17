@@ -29,14 +29,12 @@ def log(*args, **kwargs):
 def write_summary():
     if not summary_fn or not summary_lines: return
     with open(summary_fn, "a") as f:
-        f.write("### Vulnerability Verification Results\n\n")
-        f.write("\n".join(summary_lines).strip() + "\n\n")
+        f.write(f"### Vulnerability Verification Results\n\n```{"\n".join(summary_lines).strip()}```")
 
 def fatal(msg):
     log(msg, file=sys.stderr)
     write_summary()
     sys.exit(1)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--build", action=argparse.BooleanOptionalAction, default=True)
@@ -88,8 +86,7 @@ def gcs_upload(local_fn, gcs_fn, gzip=False):
     if not args.gcs_cache or not os.path.isfile(local_fn):
         return
     print(f"  [CACHE] uploading {os.path.basename(local_fn)} to GCS...")
-    cmd = ["gcloud", "storage", "cp"] + (["-Z"] if gzip else []) + [local_fn, f"{GCS_BASE_URL}/{gcs_fn}"]
-    run(cmd)
+    run(["gcloud", "storage", "cp"] + (["-Z"] if gzip else []) + [local_fn, f"{GCS_BASE_URL}/{gcs_fn}"])
 
 args.exploit_paths = [os.path.abspath(p) for p in args.exploit_paths]
 os.chdir(os.path.dirname(__file__))
