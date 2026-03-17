@@ -27,12 +27,15 @@ def log(*args, **kwargs):
     summary_lines.append(s)
 
 def write_summary():
-    if not summary_fn: return
+    if not summary_fn or not summary_lines: return
     with open(summary_fn, "a") as f:
-        f.write("### Vulnerability Verification Results\n")
-        f.write("```\n")
-        f.write("\n".join(summary_lines).strip() + "\n")
-        f.write("```\n")
+        f.write("### Vulnerability Verification Results\n\n")
+        f.write("\n".join(summary_lines).strip() + "\n\n")
+
+def fatal(msg):
+    log(msg, file=sys.stderr)
+    write_summary()
+    sys.exit(1)
 
 
 parser = argparse.ArgumentParser()
@@ -50,13 +53,11 @@ args = parser.parse_args()
 
 IMAGE_RUNNER_DIR = os.environ.get("IMAGE_RUNNER_DIR")
 if not IMAGE_RUNNER_DIR:
-    log("Error: IMAGE_RUNNER_DIR environment variable is missing", file=sys.stderr)
-    sys.exit(1)
+    fatal("Error: IMAGE_RUNNER_DIR environment variable is missing")
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 if not GITHUB_TOKEN and not args.no_gh_auth:
-    log("Error: GITHUB_TOKEN environment variable is missing (use --no-gh-auth to skip)", file=sys.stderr)
-    sys.exit(1)
+    fatal("Error: GITHUB_TOKEN environment variable is missing (use --no-gh-auth to skip)")
 
 GH_HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN and not args.no_gh_auth else {}
 
@@ -92,6 +93,8 @@ def gcs_upload(local_fn, gcs_fn, gzip=False):
 
 args.exploit_paths = [os.path.abspath(p) for p in args.exploit_paths]
 os.chdir(os.path.dirname(__file__))
+os.makedirs("builds", exist_ok=True)
+os.makedirs("verify_results", exist_ok=True)
 
 public_csv = parseCsv(fetch(PUBLIC_CSV_URL, "kernelctf_public_sheet.csv"), "ID")
 #pprint(public_csv)
