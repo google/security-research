@@ -8,6 +8,7 @@ import sqlite3
 import shutil
 import subprocess
 import argparse
+from utils import bold, parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
 
 summary_lines = []
 summary_fn = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -17,6 +18,7 @@ def log(*args, **kwargs):
 
     s = " ".join(map(str, args))
     # Convert ANSI colors to Markdown colors (bolding + status words/emojis)
+    s = re.sub(r'\033\[1m(.*?)\033\[0m', r'**\1**', s)
     colors = {31: "🔴", 32: "🟢", 33: "🟡"}
     for code, emoji in colors.items():
         s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} **\\1**', s)
@@ -32,7 +34,6 @@ def write_summary():
         f.write("\n".join(summary_lines).strip() + "\n")
         f.write("```\n")
 
-from utils import parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--build", action=argparse.BooleanOptionalAction, default=True)
@@ -279,7 +280,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                     pwned = False
 
             res[name] = pwned
-            log(f"  [VERIFY] {exp_ids}_{name}: {result}")
+            log(f"  [VERIFY] {exp_ids}_{name}: {bold(result)}")
 
         success_target_patching = res[name_base] == True and res[name_base_patched] == False if args.stable and args.target_patching else None
         success_patch_commit = res[name_before_patch] == True and res[name_after_patch] == False if args.stable else None
