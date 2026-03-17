@@ -56,15 +56,13 @@ def gcs_download(local_fn, gcs_fn):
     if not args.gcs_cache or os.path.isfile(local_fn):
         return os.path.isfile(local_fn)
     print(f"  [CACHE] downloading {os.path.basename(local_fn)} from GCS...")
-    return run(["gcloud", "storage", "cp", f"{GCS_BASE_URL}/{gcs_fn}", local_fn]) is not None
+    return run(["gcloud", "storage", "cp", f"{GCS_BASE_URL}/{gcs_fn}", local_fn], fail_silent=True) is not None
 
 def gcs_upload(local_fn, gcs_fn, gzip=False):
     if not args.gcs_cache or not os.path.isfile(local_fn):
         return
     print(f"  [CACHE] uploading {os.path.basename(local_fn)} to GCS...")
-    cmd = ["gcloud", "storage", "cp", local_fn, f"{GCS_BASE_URL}/{gcs_fn}"]
-    if gzip:
-        cmd.append("--gzip-encoded")
+    cmd = ["gcloud", "storage", "cp"] + (["-Z"] if gzip else []) + [local_fn, f"{GCS_BASE_URL}/{gcs_fn}"]
     run(cmd)
 
 args.exploit_paths = [os.path.abspath(p) for p in args.exploit_paths]

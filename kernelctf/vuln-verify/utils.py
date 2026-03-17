@@ -12,13 +12,15 @@ CACHE_DIR = "./"
 CACHE_TIME = 0 if "--disable-cache" in sys.argv else 3600*24
 CACHE_FOREVER = float("inf")
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, fail_silent=False):
     shell = not isinstance(cmd, list)
     try:
-        result = subprocess.check_output(cmd, cwd=cwd, shell=shell).decode('utf-8').split('\n')
+        stderr = subprocess.DEVNULL if fail_silent else None
+        result = subprocess.check_output(cmd, cwd=cwd, shell=shell, stderr=stderr).decode('utf-8').split('\n')
         return result if result[-1] != "" else result[0:-1]
     except subprocess.CalledProcessError as e:
-        print(f"[!] executing '{cmd}' failed with exit code {e.returncode}")
+        if not fail_silent:
+            print(f"[!] executing '{cmd}' failed with exit code {e.returncode}")
         return None
 
 def readTextFile(fn):
