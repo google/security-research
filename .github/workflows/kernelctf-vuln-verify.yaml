@@ -45,11 +45,6 @@ jobs:
             exit 1
           fi
 
-          if [ ! -d "pr/$POC_FOLDER" ]; then
-            echo "Error: Directory pr/$POC_FOLDER does not exist"
-            exit 1
-          fi
-
           echo "folder=$POC_FOLDER" >> $GITHUB_OUTPUT
           echo "Found PoC folder: $POC_FOLDER"
 
@@ -62,8 +57,16 @@ jobs:
           sparse-checkout-cone-mode: true
           fetch-depth: 1
 
-      - name: List PR contents
-        run: find pr
+      - name: List and check PR folder
+        env:
+          POC_FOLDER: ${{ steps.determine_folder.outputs.folder }}
+        run: |
+          find pr
+
+          if [ ! -d "pr/$POC_FOLDER" ]; then
+              echo "Error: Directory pr/$POC_FOLDER does not exist"
+              exit 1
+          fi
 
       - name: Checkout kernel-research
         uses: actions/checkout@v4
