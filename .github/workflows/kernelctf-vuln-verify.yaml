@@ -1,7 +1,5 @@
 name: kernelCTF vuln verify
 on:
-  pull_request_target:
-    types: [labeled]
   workflow_dispatch:
     inputs:
       prNumber:
@@ -15,7 +13,6 @@ permissions: {}
 jobs:
   vuln-verify:
     permissions: {}
-    if: github.event_name != 'pull_request_target' || github.event.label.name == 'vuln-verify'
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
