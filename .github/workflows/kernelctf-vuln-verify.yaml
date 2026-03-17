@@ -36,7 +36,11 @@ jobs:
         with:
           ref: ${{ env.PR_REF }}
           path: pr
-          sparse-checkout: pocs/linux/kernelctf
+          sparse-checkout: pocs/linux/kernelctf/**
+          sparse-checkout-cone-mode: false
+      
+      - name: List PR contents
+        run: find pr
 
       - name: Checkout kernel-research
         uses: actions/checkout@v4
