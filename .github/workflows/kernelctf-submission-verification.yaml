@@ -368,8 +368,9 @@ jobs:
           name: ${{ needs.structure_check.outputs.artifact_backup_dir }}_repro_summary_${{ env.RELEASE_ID }}
           path: ./kernelctf/repro/repro_summary.md
 
-  verify:
+  vuln_verify:
     uses: ./.github/workflows/kernelctf-vuln-verify.yaml
+    needs: structure_check
     secrets: inherit
     with:
       prNumber: ${{ contains(github.event_name, 'workflow_') && inputs.prNumber || github.event.pull_request.number }}
