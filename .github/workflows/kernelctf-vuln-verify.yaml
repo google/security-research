@@ -89,6 +89,15 @@ jobs:
         run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
       - name: Run vuln-verify
-        if: steps.determine_folder.outputs.folder != ''
-        run: |
-          ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
+        id: vuln_verify
+        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
+
+      - name: Upload verify_results
+        if: steps.vuln_verify.conclusion != 'skipped'
+        uses: actions/upload-artifact@v6
+        with:
+          name: verify_results
+          path: |
+            ./kernelctf/vuln-verify/verify_results
+            ./kernelctf/vuln-verify/builds/*.log*
+          if-no-files-found: error

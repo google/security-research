@@ -8,6 +8,30 @@ import sqlite3
 import shutil
 import subprocess
 import argparse
+
+summary_lines = []
+summary_fn = os.environ.get("GITHUB_STEP_SUMMARY")
+def log(*args, **kwargs):
+    print(*args, **kwargs)
+    if not summary_fn: return
+
+    s = " ".join(map(str, args))
+    # Convert ANSI colors to Markdown colors (bolding + status words/emojis)
+    colors = {31: "🔴", 32: "🟢", 33: "🟡"}
+    for code, emoji in colors.items():
+        s = re.sub(f'\\033\\[{code}m(.*?)\\033\\[0m', f'{emoji} **\1**', s)
+    # Strip other ANSI colors
+    s = re.sub(r'\033\[[0-9;]*m', '', s)
+    summary_lines.append(s)
+
+def write_summary():
+    if not summary_fn: return
+    with open(summary_fn, "a") as f:
+        f.write("### Vulnerability Verification Results\n")
+        f.write("```\n")
+        f.write("\n".join(summary_lines).strip() + "\n")
+        f.write("```\n")
+
 from utils import parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
 
 parser = argparse.ArgumentParser()
@@ -25,12 +49,12 @@ args = parser.parse_args()
 
 IMAGE_RUNNER_DIR = os.environ.get("IMAGE_RUNNER_DIR")
 if not IMAGE_RUNNER_DIR:
-    print("Error: IMAGE_RUNNER_DIR environment variable is missing", file=sys.stderr)
+    log("Error: IMAGE_RUNNER_DIR environment variable is missing", file=sys.stderr)
     sys.exit(1)
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 if not GITHUB_TOKEN and not args.no_gh_auth:
-    print("Error: GITHUB_TOKEN environment variable is missing (use --no-gh-auth to skip)", file=sys.stderr)
+    log("Error: GITHUB_TOKEN environment variable is missing (use --no-gh-auth to skip)", file=sys.stderr)
     sys.exit(1)
 
 GH_HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN and not args.no_gh_auth else {}
@@ -80,7 +104,7 @@ sql = sqlconn.cursor()
 def sql_value(query, *params):
     results = sql.execute(query, *params).fetchall()
     if len(results) != 1:
-        raise Exception(f"{"Multiple" if results else "No"} results for query '{query}' (with params {params}): {results}")
+        raise Exception(f"Multiple results for query '{query}' (with params {params}): {results}" if results else f"No results for query '{query}' (with params {params})")
     return results[0][0] if len(results) > 0 else None
 
 
@@ -118,7 +142,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
     commit_hash_pr = hash_from_url(metadata["vulnerability"]["patch_commit"])
     commit_hash = hash_from_url(public_csv[first_exp_id]["Patch commit"])
     if commit_hash != commit_hash_pr:
-        print(f"WARNING! {exp_ids}: public commit hash ({commit_hash}) does not match PR commit hash ({commit_hash_pr})")
+        log(f"WARNING! {exp_ids}: public commit hash ({commit_hash}) does not match PR commit hash ({commit_hash_pr})")
     exp_success = False
     exp_fail = False
     targets = list(metadata["exploits"].keys())
@@ -140,7 +164,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         if args.upstream:
             ups_commit = get_upstream_commit(commit_hash)
             ups_parent_commit = get_parent_commit(ups_commit)
-        print(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
+        log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
               f"{kernel_ver}, commit: {commit_hash}, stable: {stable_commit}, parent: {parent_commit}")
 
         config_fn = f"builds/{target}.config"
@@ -176,9 +200,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
 
         def build_release(name, *args):
             success = build_release_(name, *args)
-            print(f"  [BUILD] {exp_ids} -> {name}: {success}")
+            log(f"  [BUILD] {exp_ids} -> {name}: {success}")
 
-        p_id = f"{first_exp_id}_{kernel_ver.replace(".", "_")}"
+        p_id = f"{first_exp_id}_{kernel_ver.replace('.', '_')}"
         name_orig = target
         name_base = f"{target}_kasan"
         build_targets = [name_orig]
@@ -255,7 +279,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                     pwned = False
 
             res[name] = pwned
-            print(f"  [VERIFY] {exp_ids}_{name}: {result}")
+            log(f"  [VERIFY] {exp_ids}_{name}: {result}")
 
         success_target_patching = res[name_base] == True and res[name_base_patched] == False if args.stable and args.target_patching else None
         success_patch_commit = res[name_before_patch] == True and res[name_after_patch] == False if args.stable else None
@@ -266,27 +290,28 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         exp_fail = exp_fail or fail
         if args.stable:
             if args.target_patching:
-                print(f"  Target patching test: {success_target_patching} (before: {res[name_base]}, after: {res[name_base_patched]})")
-            print(f"  Patch commit test: {success_patch_commit} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
+                log(f"  Target patching test: {success_target_patching} (before: {res[name_base]}, after: {res[name_base_patched]})")
+            log(f"  Patch commit test: {success_patch_commit} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
         if args.upstream:
-            print(f"  Upstream patch commit test: {success_upstream_patch} (before: {res[ups_name_before_patch]}, after: {res[ups_name_after_patch]})")
+            log(f"  Upstream patch commit test: {success_upstream_patch} (before: {res[ups_name_before_patch]}, after: {res[ups_name_after_patch]})")
 
         if success_target_patching and not success_patch_commit:
-            print("  [STAT] Only target patching worked.")
+            log("  [STAT] Only target patching worked.")
         if not success_target_patching and success_patch_commit:
-            print("  [STAT] Only patch commit testing worked.")
+            log("  [STAT] Only patch commit testing worked.")
         if success_upstream_patch and not success_patch_commit:
-            print("  [STAT] Only upstream patch worked.")
+            log("  [STAT] Only upstream patch worked.")
         if not success_upstream_patch and success_patch_commit:
-            print("  [STAT] Only stable patch worked.")
+            log("  [STAT] Only stable patch worked.")
 
-        print(f"  Verification of {exp_ids} on {target}: {red("FAIL") if fail else green("SUCCESS") if success else yellow("UNKNOWN")}")
-        print()
+        log(f"  Verification of {exp_ids} on {target}: {red('FAIL') if fail else green('SUCCESS') if success else yellow('UNKNOWN')}")
+        log()
 
-    print(f"[PR_VERIFY] of {exp_ids}: {red("FAIL") if exp_fail else green("SUCCESS") if exp_success else yellow("UNKNOWN")}")
-    print()
+    log(f"[PR_VERIFY] of {exp_ids}: {red('FAIL') if exp_fail else green('SUCCESS') if exp_success else yellow('UNKNOWN')}")
+    log()
     if exp_fail or not exp_success:
         all_success = False
 
 save_cache()
+write_summary()
 sys.exit(0 if all_success else 1)
