@@ -78,6 +78,12 @@ jobs:
       - name: Setup image_runner dir
         run: echo "IMAGE_RUNNER_DIR=${{ github.workspace }}/kernel-research/image_runner" >> $GITHUB_ENV
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -90,7 +96,7 @@ jobs:
 
       - name: Run vuln-verify
         id: vuln_verify
-        run: ./kernelctf/vuln-verify/verify.py --verbose-build --force-verify "pr/${{ steps.determine_folder.outputs.folder }}"
+        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
 
       - name: Upload logs
         if: always() && steps.vuln_verify.conclusion != 'skipped'

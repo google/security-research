@@ -39,7 +39,6 @@ def fatal(msg):
 parser = argparse.ArgumentParser()
 parser.add_argument("--build", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--verify", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--force-verify", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--upstream", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--stable", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--target-patching", action=argparse.BooleanOptionalAction, default=False)
@@ -231,7 +230,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             build_release(ups_name_after_patch, UPSTREAM_REPO, ups_commit)
             build_targets.extend([ups_name_before_patch, ups_name_after_patch])
 
-        if args.verify or args.force_verify:
+        if args.verify:
             exp_fn = f"{exp_dir}/exploit/{orig_target}/exploit"
             shutil.copyfile(exp_fn, f"{IMAGE_RUNNER_DIR}/rootfs/exp")
 
@@ -243,13 +242,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         for name in build_targets:
             log_fn = f"verify_results/{first_exp_id}_{name}.txt"
 
-            if not args.force_verify:
-                gcs_download(log_fn, log_fn)
-
-            if args.force_verify or (args.verify and not os.path.isfile(log_fn)):
+            if args.verify and not os.path.isfile(log_fn):
                 print(f"  [RUN] running exploit {first_exp_id}_{name}...")
                 run(f"((timeout 3m ./run_exploit.sh {name}; EC=$?; echo; echo EXIT_CODE=$EC)|sed -u 's/\\r//g') 2>&1 >{log_fn}")
-                gcs_upload(log_fn, log_fn)
 
             pwned = None
             if not os.path.isfile(log_fn):
