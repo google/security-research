@@ -1,6 +1,9 @@
 # kernelCTF rules
 
-kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rules/6625378258649088/google-and-alphabet-vulnerability-reward-program-vrp-rules) and is focused on making exploiting Linux kernel vulnerabilities harder by inviting security researchers to demonstrate their exploitation techniques on 0-day and 1-day vulnerabilities in various kernel versions. This includes the kernel version with our experimental mitigations; we'd like to see if and how researchers can bypass these mitigations.
+> [!WARNING]
+> These rules apply from 2026-04-30, you can find [the previous version of the rules on Github](https://github.com/google/security-research/blob/50daccf87c86c36c6e82bbd344ba71c7f33f4161/kernelctf/rules.md).
+
+kernelCTF is a part of the [Google VRP](https://bughunters.google.com/about/rules/6625378258649088/google-and-alphabet-vulnerability-reward-program-vrp-rules) and is focused on making exploiting Linux kernel vulnerabilities harder by inviting security researchers to demonstrate their exploitation techniques on 0-day and 1-day vulnerabilities.
 
 We are asking researchers to publish their submissions, helping the community to learn from each other's techniques.
 
@@ -8,15 +11,15 @@ We are asking researchers to publish their submissions, helping the community to
 
 ## Targets
 
-A submission can contain any number of the following 4 parts:
+A submission can contain any number of the following 2 parts:
 
 ### 1. Exploit for the latest LTS instance
 
-This instance uses the latest LTS with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig) and unpriviledged user namespaces turned off since July 1st, 2025 (this configuration considered temporary and could be revised in a new kernelCTF iteration). Besides that, `io_uring` and `nftables` are also [disabled](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/lts-6.12.config). Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
+This instance uses the latest LTS with [COS kernel config](https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig) and unpriviledged user namespaces turned off since July 1st, 2025. Besides that, `io_uring` and `nftables` are also [disabled](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/lts-6.12.config). Only the first submission is eligible per LTS kernel version, but we are upgrading the kernel version every 2-4 weeks on average.
 
 #### Rewards
 
-  * Base reward: $21,337
+  * Base reward: $71,337
 
   * Stability bonus (+$10,000)
 
@@ -24,63 +27,25 @@ This instance uses the latest LTS with [COS kernel config](https://cos.googlesou
 
     * More precisely, the [exploit_repro Github Action](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) reports `Reliability: 90%` or better in the `Reproduction summary` (after a sane amount of re-runs if needed)
 
-    * If the exploit requires us to provide a KASLR base address, then it is ineligible for the bonus (`requires_separate_kaslr_leak` is true in `metadata.json` file).
-
-  * Reduced attack surface bonus (+$20,000)
-
-    * Criteria: Exploit works without using unprivileged user namespaces.
-
-    * Note: The bonus applies to all the submissions since July 1st, 2025, as we temporary don't accept the LTS submissions with unpriviledged user namespaces.
-
-    * Note: We may change the bonus definition from time to time (for example adding additional restrictions). Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
+    * We don't support providing a KASLR base address anymore (`"requires_separate_kaslr_leak": true` in the `metadata.json` file), using this option makes the submission ineligible.
 
   * 0-day bonus (+$20,000)
 
     * Criteria: You are exploiting a non-patched, non-disclosed vulnerability (see a more detailed definition in the section "0-day submissions" below).
 
-### 2. Mitigation bypass (on the mitigation instance)
+### 2. Novel techniques
 
-The mitigation instance is upgraded far less frequently than the LTS instance, thus more 1-day vulnerabilities can be exploited. This way you have more opportunity to present your mitigation bypass techniques. At the same time the unpriviledged namespaces are turned off on this target, similar to LTS, starting from July 1st, 2025. Besides that, `io_uring` and `nftables` are also disabled for this target. 
+Every three months, we reward the submission - or submissions - that demonstrate the most novel exploitation techniques, at our discretion.
 
-Only exploits which clearly bypass [our mitigations](https://github.com/thejh/linux/blob/slub-virtual/MITIGATION_README) are eligible (e.g. if a mitigation protects against UAF, but not against BoF, then an exploit using a BoF vulnerability is not eligible).
-
-As the current instance uses the `CONFIG_RANDOM_KMALLOC_CACHES` probabilistic memory allocator hardening, only exploits with at least 70% reliability are eligible (checked the same way as the LTS stability bonus).
-
-See the [source code](https://github.com/thejh/linux/tree/4c5b4a60a8f52798223807f76442e96d9eb15046) and the [extra kernel hardenings](https://github.com/google/security-research/blob/master/kernelctf/kernel_configs/mitigation-v4.config) turned on.
-
-#### Reward
-
-  * $21,000
-
-### 3. Exploits for COS instances
-
-These instances follow the live COS kernel config (which is also used in GKE), with the necessary modifications to make it work in our infrastructure. `io_uring` and `nftables` are enabled here.
-
-Only the first submission is eligible per COS version unless it is part of a valid 0-day LTS submission. New COS versions are released every few weeks on average.
-
-#### Reward
-
-  * $21,000 if the exploit does not use user namespaces and io\_uring
-
-  * $10,500 if the exploit uses user namespaces or io\_uring
-
-    * This reward is based on whether the exploit works on GKE AutoPilot or not. AutoPilot currently does not enable unprivileged user namespaces and they are also considering disabling io\_uring.
-
-  * Currently, there are two instances (COS 121 and COS 113) available. The reward is the same regardless of which instance was exploited (the reward is not doubled if both were exploited).
-
-  * Note: We may change the number of instances or their kernel versions from time to time. Follow recommendations from "Program change notifications and communication" section to stay up to date on changes.
-
-  * Note: Other bonuses (e.g. 0-day and reduced attack surface bonuses) do not apply here.
-
-### 4. Novel techniques
-
-We reward submissions demonstrating novel exploitation techniques (at our discretion), and including a description of the technique that shows why it is novel.
+The submission should include a description of the techniques (`docs/novel-techniques.md`) and show why it is novel.
 
 Novel techniques can be submitted at any time exploiting any available environment, even if the vulnerability was already exploited in that environment.
 
+A technique can only be sent once.
+
 #### Reward
 
-  * From $0 to $20,000 per technique, at our discretion.
+  * From $0 to $20,000, once every 3 months (at our discretion).
 
 ### Target instances
 
@@ -107,17 +72,23 @@ The source code running on the server is available [on our Github](https://githu
 
 ## Additional eligibility rules
 
-Only the first submission for a vulnerability is eligible for a reward (per target). The COS instances are considered to be one target so there are 3 targets in total (LTS, mitigation, COS).
+### Vulnerability dupes
 
-This means: if a vulnerability is exploited on the latest LTS by Researcher A (but not on the other targets), then it can still be exploited on the mitigation instance and COS instances (e.g. by Researcher B or later by Researcher A), but can no longer be exploited on the latest LTS (even if the LTS kernel version is updated).
+Only the first submission for a vulnerability is eligible for a reward (per target).
+
+This means: if a vulnerability is exploited on the latest LTS by Researcher A (but not on the other targets), then it can still be exploited on other targets (e.g. by Researcher B or later by Researcher A), but can no longer be exploited on the latest LTS (even if the LTS kernel version is updated).
 
 If a patch commit fixes multiple vulnerabilities (e.g. by backporting a new version of a component to the stable tree), we assume the root cause is the same and we consider further submissions (for the same target) as duplicates.
 
 If the same vulnerability is fixed in multiple patch commits (e.g. in commit A in the mainline tree and separately in commit B in the stable tree), then we still consider it as the same vulnerability, thus making further submissions (for the same target) duplicates.
 
+The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
+
+### Technical requirements
+
 Minimum 10% stability (if not specified otherwise) is required for all targets. Stability is measured by the [exploit_repro Github Action](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) which should report `Reliability: 10%` or better in the `Reproduction summary` (after a sane amount of re-runs if needed).
 
-The "novel techniques" category is an exception from these rules, as in that category we are rewarding the technique, so you can target already exploited vulnerabilities.
+The exploit needs to run within 5 minutes, otherwise it will be counted as a failed run when we measure stability.
 
 If you are unsure about eligibility, contact us on the [#kernelctf Discord channel](https://discord.gg/ECS5VnJZys) before making the submission.
 
@@ -201,7 +172,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   5. Send us your exploit within 90 days of Step 1 with the description of the exploitation technique via a PR to [the security-research repo](https://github.com/google/security-research/) (see required structure below). This is mandatory step for us to start verification of the vulnerability.
 
-  6. If the PR GHA checks are successful and we verified that the submission exploits the claimed vulnerability, you get half of the reward amount (except the novelty bonus). After a manual PR review and the PR is merged, you get the other half of the reward amount (and the potential novelty bonus).
+  6. Once the PR's GitHub Actions (GHA) checks pass and we confirm the submission exploits the claimed vulnerability, you receive the first half of the reward. After a manual review and the PR is merged, the second half is issued. Note that these payouts exclude the potential novelty bonus, which is awarded separately every three months.
 
 ### Google Bughunter's website submission process
 
@@ -209,7 +180,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
   2. Sign in (this helps us identify you and send you a reward)
 
-  3. Put a summary of the vulnerability in the report description field – please mention "kernelCTF", the submission ID ("expNN") listed on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml), the affected targets, the affected subsystem, the cause and type of vulnerability (e.g. `kernelCTF exp45: Refcount issue leading to UAF in io_uring affecting COS 5.15 and Linux 6.1`)
+  3. Put a summary of the vulnerability in the report description field – please mention "kernelCTF", the submission ID ("expNN") listed on the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml), the affected targets, the affected subsystem, the cause and type of vulnerability (e.g. `kernelCTF expNNN: Refcount issue leading to UAF in <subsystem> affecting LTS 6.12`)
 
   4. Enter `Linux Kernel` into the affected product / website field, select the `My product is not listed in the product list` checkbox.
 
@@ -221,7 +192,7 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
      * Put "kernelCTF" and the submission ID here again (e.g. "kernelCTF exp45").
 
-     * Make sure that the patch commit, CVE (optionally, if it is already known) and the exact target(s) (e.g. `cos-93-16623.402.40`) are included.
+     * Make sure that the patch commit, CVE (optionally, if it is already known) and the exact target(s) (e.g. `lts-6.12.36`) are included.
 
      * You can reuse the contents of your `vulnerability.md` if it already exists (see the "Exploit PR file structure" section).
 
@@ -243,7 +214,9 @@ A submission will not be eligible as a 0-day submission if the vulnerability det
 
 You have to publish your exploit within 90 days of submitting the patch commit via the Google Form to be eligible for a reward.
 
-We only process submissions after the exploit is public and we can only start issuing first half of the reward (except the novelty bonus) when the PR checks the automated checks and the initial submission review confirms the submission exploits the claimed vulnerability. The second half of the reward (and the novelty bonus) is issued after successful merge of the PR which includes a more depth review (including submission quality checks).
+We only process submissions after the exploit becomes public. We can only issue the first half of the reward once the PR passes the automated checks and the initial review confirms that the submission exploits the claimed vulnerability. Following an in-depth review and successful quality checks, the PR will be merged, and the second half of the reward will be issued.
+
+The novelty bonus is awarded separately once per quarter; if yours is chosen, the bonus will be issued after the quarterly review.
 
 If you want to delay the publication (within the 90 days window), you could do that, but you would get the money later (we want to encourage you to publish the exploit details sooner than later).
 
@@ -257,11 +230,11 @@ The submission should be put into the `pocs/linux/kernelctf/<cve>_<targets>/` fo
 
   * `<targets>` is the list of targets separated by underscore (`_`)
 
-    * Valid target names: `lts`, `mitigation`, `cos`
+    * Valid target names: `lts`
 
   * If there is a conflicting submission (e.g. you are only submitting a novel technique), then append `_2` (or `_3`, etc.) after the directory name.
 
-For example: `pocs/linux/kernelctf/CVE-2023-1872_lts_cos/`.
+For example: `pocs/linux/kernelctf/CVE-2023-1872_lts/`.
 
 The structure of this submission folder should be:
 
@@ -285,9 +258,7 @@ The structure of this submission folder should be:
 
     * Only required if submission contains novel technique(s). Contains the description of the techniques.
 
-  * `exploit/mitigation-6.1/`<br>
-    `exploit/lts-6.x.x/`<br>
-    `exploit/cos-(93|97|101|105|...)-xxxxx.yyy.zz/`
+  * `exploit/lts-6.x.x/`<br>
 
     * `exploit.c`
        * Required, source code of the exploit.
@@ -310,7 +281,7 @@ The exploit used on our server to capture the flag does not have to use the kern
 
 ### What is kernelXDK?
 
-kernelXDK is a toolset which aims to help in creating "universal" exploits that can be easily ported between various kernel versions. In its current form, it decouples target-specific information (symbol offsets, ROP gadgets, structure, field information) from the exploit itself, thereby can make (some) exploits target-independent. This approach allows us to easily introduce new targets for kernelCTF without the need to manually port existing exploits to new targets (e.g. from LTS to COS).
+kernelXDK is a toolset which aims to help in creating "universal" exploits that can be easily ported between various kernel versions. In its current form, it decouples target-specific information (symbol offsets, ROP gadgets, structure, field information) from the exploit itself, thereby can make (some) exploits target-independent. This approach allows us to easily introduce new targets for kernelCTF without the need to manually port existing exploits to new targets.
 
 ### What does it mean to "use the kernelXDK"?
 
@@ -322,7 +293,7 @@ To help understand the difference between a traditional exploit and a kernelXDK-
 
 The reproduction environment on Github has the kernelXDK pre-installed, you just have to compile your exploit as C++ and with the library linked (`-lkernelXDK`).
 
-If you are exploiting multiple targets where the exploits are identical, feel free to just symlink the exploit folders (e.g. `ln -s exploit/lts-6.1.36 exploit/cos-97-16919.353.23`) instead of submitting the same files multiple times.
+If you are exploiting multiple targets where the exploits are identical, feel free to just symlink the exploit folders (e.g. `ln -s exploit/lts-6.1.36 exploit/<other_target>`) instead of submitting the same files multiple times.
 
 If you have any questions regarding the usage of kernelXDK, use the [#kernelxdk Discord channel](https://discord.gg/8W8PJzA567). You can [report bugs on Github](https://github.com/google/kernel-research?tab=readme-ov-file#reporting-bugs).
 
@@ -408,7 +379,9 @@ We expect the following parts to be properly documented:
     * Syscall used for spraying a specific structure, not for its main purpose.
     * Some calls (e.g. `sleep`) used for a specific side-effect which is not trivial see.
 
-If possible, also include how stable your exploit is (e.g. it worked 90% of the time during your testing) and whether your exploit requires a separate kASLR leak (or bruteforce).
+If possible, also include how stable your exploit is (e.g. it worked 90% of the time during your testing).
+
+Your exploit must support the `--vuln-trigger` argument; passing this flag should trigger the vulnerability on a KASAN build. To ensure the submission runs within the [vuln-verify workflow](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-vuln-verify.yaml) time limits, this mode should also skip unnecessary steps, such as KASLR prefetch.
 
 # Additional information
 
@@ -423,3 +396,9 @@ If you have any questions regarding kernelCTF, check [the FAQ page](faq.md) and 
 ## Non-kernel vulnerabilities
 
 If you are submitting a non-kernel vulnerability affecting our kCTF VRP cluster, please submit the vulnerability to our [kCTF VRP](https://google.github.io/kctf/vrp.html).
+
+## Legal points
+
+kernelCTF is part of Google VRP, so its rules including but not limited to [these Legal points](https://bughunters.google.com/about/rules/google-friends/google-and-alphabet-vulnerability-reward-program-vrp-rules#legal-points) apply.
+
+You should understand that we can cancel the program at any time and the decision as to whether or not to pay a reward and how much has to be entirely at our discretion.
