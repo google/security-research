@@ -161,11 +161,11 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         kernel_ver = re.search(r"Linux/x86 (\d+\.\d+)\.\d+ Kernel Configuration", config).group(1)
         stable_commit = "n/a"
         parent_commit = "n/a"
+        ups_commit = get_upstream_commit(commit_hash)
         if args.stable:
-            stable_commit = get_stable_commit(commit_hash, kernel_ver)
+            stable_commit = get_stable_commit(ups_commit, kernel_ver)
             parent_commit = get_parent_commit(stable_commit)
         if args.upstream:
-            ups_commit = get_upstream_commit(commit_hash)
             ups_parent_commit = get_parent_commit(ups_commit)
         log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
               f"{kernel_ver}, commit: {commit_hash[:10]}, stable: {stable_commit[:10]}, parent: {parent_commit[:10]}")
