@@ -15,9 +15,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  4f... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  4f... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0830101c (Signed)
@@ -39,9 +39,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  86... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  86... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08301025 (Signed)
@@ -63,9 +63,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  9e... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  9e... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08301034 (Signed)
@@ -87,9 +87,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  99... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  99... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08301038 (Signed)
@@ -111,9 +111,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  09... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  09... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08301039 (Signed)
@@ -135,9 +135,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  aa... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  aa... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0830104d (Signed)
@@ -159,9 +159,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  0b... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  0b... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08301052 (Signed)
@@ -183,9 +183,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  9d... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  9d... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  false
 Revision:   08301055 (Signed)
@@ -207,9 +207,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  6d... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  6d... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -232,9 +232,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  88... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  88... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -257,9 +257,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  85... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  85... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -282,9 +282,9 @@ Cpuid:      00008310 Zen/Zen+/Zen2
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  7a... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  7a... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  false
 Revision:   0830107c (Signed)
@@ -306,9 +306,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  0b... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  0b... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08600102 (Signed)
@@ -330,9 +330,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  03... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  03... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08600103 (Signed)
@@ -354,9 +354,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  11... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  11... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08600104 (Signed)
@@ -378,9 +378,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  a4... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  a4... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08600106 (Signed)
@@ -402,9 +402,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  76... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  76... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  false
 Revision:   08600109 (Signed)
@@ -426,9 +426,9 @@ Cpuid:      00008601 AMD Ryzen (Grey Hawk, Renoir)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  77... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  77... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  false
 Revision:   0860010c (Signed)
@@ -450,9 +450,9 @@ Cpuid:      00008681 AMD Ryzen (Zen2, Lucienne)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  8a... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  8a... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   08608103 (Signed)
@@ -474,9 +474,9 @@ Cpuid:      0000a400 AMD Ryzen (Zen3+, Rembrandt)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  69... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  69... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0a400016 (Signed)
@@ -498,9 +498,9 @@ Cpuid:      0000a440 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  99... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  99... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0a404002 (Signed)
@@ -522,9 +522,9 @@ Cpuid:      0000a441 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  51... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  51... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0a404101 (Signed)
@@ -546,9 +546,9 @@ Cpuid:      0000a441 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  7d... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  7d... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  false
 Revision:   0a404102 (Signed)
@@ -570,9 +570,9 @@ Cpuid:      0000a441 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  8a... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  8a... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -595,9 +595,9 @@ Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  ae... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  ae... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -620,9 +620,9 @@ Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  94... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  94... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -645,9 +645,9 @@ Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  1a... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  1a... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -670,9 +670,9 @@ Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  6a... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  6a... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -695,9 +695,9 @@ Cpuid:      0000a500 AMD Ryzen (Zen3, Cezanne/Barcelo)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  54... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  54... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -720,9 +720,9 @@ Cpuid:      0000a700 AMD Ryzen (Zen4, Phoenix)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  1c... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  1c... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -745,9 +745,9 @@ Cpuid:      0000a740 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  92... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  92... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -770,9 +770,9 @@ Cpuid:      0000a741 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  9b... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  9b... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -795,9 +795,9 @@ Cpuid:      0000a741 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  6c... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  6c... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -820,9 +820,9 @@ Cpuid:      0000a742 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  72... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  72... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -845,9 +845,9 @@ Cpuid:      0000a742 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  8f... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  8f... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -870,9 +870,9 @@ Cpuid:      0000a752 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  35... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  35... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -895,9 +895,9 @@ Cpuid:      0000a752 Zen3/Zen4
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  a6... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  a6... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -920,9 +920,9 @@ Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  03... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  03... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -945,9 +945,9 @@ Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  8d... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  8d... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -970,9 +970,9 @@ Cpuid:      0000a780 AMD Ryzen (Phoenix 2)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  a6... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  a6... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    true
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
@@ -995,9 +995,9 @@ Cpuid:      0000a7c0 AMD Ryzen (Hawk Point)
 BiosRev:     00
 Flags:      00
 Reserved:   0000
-Signature:  c6... (use --verbose to see) (GOOD)
-Modulus:    c7... (use --verbose to see)
-Check:      5a... (use --verbose to see) (GOOD)
+Signature:  c6... (use global --verbose to see) (GOOD)
+Modulus:    c7... (use global --verbose to see)
+Check:      5a... (use global --verbose to see) (GOOD)
 Autorun:    false
 Encrypted:  true
     Use `zentool decrypt` to decrypt update
