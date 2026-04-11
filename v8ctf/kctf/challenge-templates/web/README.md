@@ -5,14 +5,14 @@ The basic steps when preparing a challenge are:
 * A Docker image is built from the `challenge` directory. For the simplest challenges, replacing `challenge/chal.c` is sufficient.
 * Edit `challenge/Dockerfile` to change the commandline or the files you want to include.
 * To try the challenge locally, you will need to
-  * create a local cluster with `kctf cluster create --type kind --start $configname`
+  * create a a local cluster with `kctf cluster create --type kind --start $configname`
   * and then deploy the challenge with `kctf chal start`
 * To access the challenge, create a port forward with `kctf chal debug port-forward` and connect to it via `nc localhost PORT` using the printed port.
 * Check out `kctf chal <tab>` for more commands.
 
 ## Sandboxing
 
-Sandboxing is only necessary for challenges that give players RCE-type of access. If a challenge does not provide such access, then it is reasonable to just use a normal HTTP server out of the box listening on port 1337, without any additional sandboxing.
+Sandboxing is only necessary for challenges that give players RCE-type of access. If a challenge does not provide such access, then it is reasonable to just use a normal HTTP server out of the box listening on port 1337, without any additonal sandboxing.
 
 For challenges that give users RCE-level access, it is then necessary to sandbox every player. In order to make that possible, kCTF provides two ways to sandbox a web server:
  1. **CGI-sandbox**: You can configure PHP (or any other CGI) to be sandboxed.

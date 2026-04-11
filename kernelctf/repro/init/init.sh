@@ -13,6 +13,9 @@ chmod a+rx /tmp/exp
 cp /tmp/exp_ro/* tmp/exp/
 chmod a+rx /tmp/exp/*
 
+# Set-up lo interface so that it's coherent with the live instance.
+ifconfig lo 127.0.0.1 netmask 255.0.0.0 up
+
 CMD="/tmp/exp/exploit"
 if [[ " $* " == *" kaslr_leak=1 "* ]]; then
     KASLR_BASE=`head -n 1 /proc/kallsyms | cut -d " " -f1`

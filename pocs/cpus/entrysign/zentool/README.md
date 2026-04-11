@@ -278,6 +278,10 @@ $ ./mcas "ld ls:[rax], rsi"
 
 The `mcas` command can also accept instructions on stdin.
 
+## Zen 5
+
+Zen 5 uses a different CMAC key, signing Zen 5 updates is possible but will require modifications.
+
 # Development
 
 There are several scripts for adding support for new processors.

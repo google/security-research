@@ -1,0 +1,108 @@
+name: kernelCTF vuln verify
+on:
+  workflow_dispatch:
+    inputs:
+      prNumber:
+        description: 'PR number to verify'
+        required: true
+  workflow_call:
+    inputs:
+      prNumber:
+        type: string
+permissions: {}
+jobs:
+  vuln-verify:
+    permissions: {}
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_REF: ${{ contains(github.event_name, 'workflow_') && format('refs/pull/{0}/merge', inputs.prNumber) || github.event.pull_request.head.sha }}
+      PR_NUM: ${{ contains(github.event_name, 'workflow_') && inputs.prNumber || github.event.pull_request.number }}
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          sparse-checkout: kernelctf/vuln-verify
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
+
+      - name: Determine submission folder
+        id: determine_folder
+        run: |
+          FILES=$(gh pr view $PR_NUM --json files --jq '.files[] | .path')
+          echo "Files in PR:"
+          echo "$FILES"
+
+          POC_FOLDER=$(echo "$FILES" | grep '^pocs/linux/kernelctf/' | cut -d/ -f1-4 | sort -u)
+          if [ $(echo "$POC_FOLDER" | grep -c .) -ne 1 ]; then
+            echo "Exactly one PoC folder must be found in pocs/linux/kernelctf/, but found:"
+            echo "${POC_FOLDER:-<none>}"
+            exit 1
+          fi
+
+          echo "folder=$POC_FOLDER" >> $GITHUB_OUTPUT
+          echo "Found PoC folder: $POC_FOLDER"
+
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PR_REF }}
+          path: pr
+          sparse-checkout: "${{ steps.determine_folder.outputs.folder }}"
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+
+      - name: List and check PR folder
+        env:
+          POC_FOLDER: ${{ steps.determine_folder.outputs.folder }}
+        run: |
+          find pr
+
+          if [ ! -d "pr/$POC_FOLDER" ]; then
+              echo "Error: Directory pr/$POC_FOLDER does not exist"
+              exit 1
+          fi
+
+      - name: Checkout kernel-research
+        uses: actions/checkout@v4
+        with:
+          repository: google/kernel-research
+          path: kernel-research
+          sparse-checkout: image_runner
+
+      - name: Setup image_runner dir
+        run: echo "IMAGE_RUNNER_DIR=${{ github.workspace }}/kernel-research/image_runner" >> $GITHUB_ENV
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 expect
+          pip install requests
+
+      - name: Download kernel.dance database
+        working-directory: kernelctf/vuln-verify
+        run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
+
+      - name: Run vuln-verify
+        id: vuln_verify
+        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
+
+      - name: Upload logs
+        if: always() && steps.vuln_verify.conclusion != 'skipped'
+        uses: actions/upload-artifact@v6
+        with:
+          name: logs
+          path: |
+            ./kernelctf/vuln-verify/verify_results
+            ./kernelctf/vuln-verify/builds/*.log*
+          if-no-files-found: error

@@ -1,0 +1,276 @@
+zen2@zen2:~/nsjail$ ./nsjail -Mo --user 0 --group 99999 -R /bin/ -R /lib -R /lib64/ -R /usr/ -R /sbin/ -T /dev -R /dev/urandom -R /home/zen2/retbleed -- /usr/bin/pstree -T
+pstree
+
+zen2@zen2:~/nsjail$ ./nsjail -Mo --user 0 --group 99999 -R /bin/ -R /lib -R /lib64/ -R /usr/ -R /sbin/ -T /dev -R /dev/urandom -R /home/zen2/retbleed -- /home/zen2/retbleed/retbleed_elf -s 128 -b 8 -t 4
+[+] KASLR base: 0xffffffff9f200000
+[+] F/R array PA: 0x34e400000
+[+] physmap base: 0xffff922e80000000
+swapper/0 @ 0xffffffffa101b440
+	systemd @ 0xffff922f802c6600
+		systemd-journal @ 0xffff922fa2269980
+		multipathd @ 0xffff922fa3099980
+		systemd-udevd @ 0xffff922fa04e6600
+		systemd-oomd @ 0xffff922f881a0000
+		systemd-timesyn @ 0xffff922f881a1980
+		wpa_supplicant @ 0xffff922f86c98000
+		systemd-network @ 0xffff922f86c9cc80
+		systemd-resolve @ 0xffff922f86c9b300
+		acpid @ 0xffff922f881a4c80
+		avahi-daemon @ 0xffff922f881a3300
+			avahi-daemon @ 0xffff922fa50f4c80
+		bluetoothd @ 0xffff922f86c99980
+		dbus-daemon @ 0xffff922fa04e1980
+		NetworkManager @ 0xffff922fa04e3300
+		irqbalance @ 0xffff922fa45b3300
+		networkd-dispat @ 0xffff922fa45b6600
+		polkitd @ 0xffff922fa5808000
+		nvidia-persiste @ 0xffff922fa97e0000
+		power-profiles- @ 0xffff922fa5d73300
+		rsyslogd @ 0xffff922fa5d76600
+		accounts-daemon @ 0xffff922f969ecc80
+		switcheroo-cont @ 0xffff922f969eb300
+		systemd-logind @ 0xffff922f969e8000
+		udisksd @ 0xffff922f98c38000
+		wpa_supplicant @ 0xffff922f98c3e600
+		ModemManager @ 0xffff922fa8293300
+		unattended-upgr @ 0xffff922f9a4d3300
+		cupsd @ 0xffff922f9a4d0000
+		cups-browsed @ 0xffff922f81909980
+		cron @ 0xffff922faa360000
+		kerneloops @ 0xffff922f83c63300
+		sshd @ 0xffff922fa5ac4c80
+		kerneloops @ 0xffff922f99be3300
+		gdm3 @ 0xffff922fa591e600
+			gdm-session-wor @ 0xffff922f9ec7e600
+				gdm-x-session @ 0xffff922f9ec78000
+					Xorg @ 0xffff922fa4771980
+					gnome-session-b @ 0xffff922f9ec7b300
+		systemd @ 0xffff922f96a71980
+			(sd-pam) @ 0xffff922fa3098000
+			pipewire @ 0xffff922f98c39980
+			pipewire-media- @ 0xffff922fa20b1980
+			pulseaudio @ 0xffff922fa20b0000
+			dbus-daemon @ 0xffff922f93c34c80
+			at-spi-bus-laun @ 0xffff922f97abb300
+				dbus-daemon @ 0xffff922fa2059980
+			gnome-session-c @ 0xffff922f8395b300
+			gvfsd @ 0xffff922f96a70000
+				gvfsd-trash @ 0xffff922f98d01980
+			gvfsd-fuse @ 0xffff922f9ecbb300
+			gnome-session-b @ 0xffff922fa2a11980
+				gsd-disk-utilit @ 0xffff922f9f23cc80
+				evolution-alarm @ 0xffff922f9f23b300
+				update-notifier @ 0xffff922f9a4c3300
+			gnome-shell @ 0xffff922fa2a13300
+				code @ 0xffff922f8c21b300
+					code @ 0xffff922f9580cc80
+						code @ 0xffff922f979dcc80
+					code @ 0xffff922f9580e600
+						code @ 0xffff922fa2a0b300
+							code @ 0xffff922fa1fdcc80
+					code @ 0xffff922f8a9a6600
+					code @ 0xffff922f8a9b0000
+					code @ 0xffff9230361e3300
+					code @ 0xffff92306ab41980
+						code @ 0xffff923023b89980
+						clangd.main @ 0xffff92307d049980
+					code @ 0xffff922f8ee89980
+				firefox @ 0xffff923153101980
+					Socket Process @ 0xffff923090500000
+					Privileged Cont @ 0xffff923090504c80
+					RDD Process @ 0xffff923090503300
+					WebExtensions @ 0xffff9230c764e600
+					Utility Process @ 0xffff922f94b58000
+					Isolated Web Co @ 0xffff922f94b5e600
+					Isolated Web Co @ 0xffff922fa50eb300
+					Isolated Web Co @ 0xffff922f947fb300
+					Isolated Web Co @ 0xffff923157193300
+					Isolated Web Co @ 0xffff92303f7c0000
+					Isolated Web Co @ 0xffff92317c004c80
+					Isolated Web Co @ 0xffff92317c001980
+					Web Content @ 0xffff9230c7d44c80
+					Web Content @ 0xffff92312d1fb300
+					Web Content @ 0xffff92312d1f9980
+				gjs @ 0xffff922f947f9980
+			xdg-permission- @ 0xffff922fa2a16600
+			evolution-sourc @ 0xffff922fa2a14c80
+			evolution-calen @ 0xffff922f9411e600
+			dconf-service @ 0xffff922f9411b300
+			gnome-shell-cal @ 0xffff922f94110000
+			goa-daemon @ 0xffff922f94c70000
+			gvfs-udisks2-vo @ 0xffff922f9ed1e600
+			goa-identity-se @ 0xffff922fa4501980
+			gvfs-goa-volume @ 0xffff922f9ed18000
+			evolution-addre @ 0xffff922f9ed1cc80
+			gvfs-afc-volume @ 0xffff922f9ed19980
+			gvfs-gphoto2-vo @ 0xffff922f86dc8000
+			gvfs-mtp-volume @ 0xffff922f9a609980
+			at-spi2-registr @ 0xffff922f94c71980
+			gjs @ 0xffff922f99923300
+			xdg-desktop-por @ 0xffff922f99920000
+			xdg-document-po @ 0xffff922f99926600
+				fusermount3 @ 0xffff922f89033300
+			xdg-desktop-por @ 0xffff922f9992cc80
+			sh @ 0xffff922f99928000
+				ibus-daemon @ 0xffff922f958b0000
+					ibus-dconf @ 0xffff922f849a0000
+					ibus-extension- @ 0xffff922f849a6600
+					ibus-engine-sim @ 0xffff922f86d56600
+			gsd-a11y-settin @ 0xffff922f9992e600
+			gsd-color @ 0xffff922f99938000
+			gsd-datetime @ 0xffff922f9993e600
+			gsd-housekeepin @ 0xffff922f99939980
+			gsd-keyboard @ 0xffff922f9993cc80
+			gsd-media-keys @ 0xffff922f9993b300
+			gsd-power @ 0xffff922f95ba0000
+			gsd-print-notif @ 0xffff922f95ba6600
+			gsd-rfkill @ 0xffff922f95ba1980
+			gsd-screensaver @ 0xffff922f95ba4c80
+			gsd-sharing @ 0xffff922fa97e4c80
+			gsd-smartcard @ 0xffff922f8a98cc80
+			gsd-sound @ 0xffff922f8a98b300
+			gsd-wacom @ 0xffff922f8a988000
+			gsd-xsettings @ 0xffff922f8a98e600
+			ibus-x11 @ 0xffff922f89039980
+			gsd-printer @ 0xffff922f8aabe600
+			ibus-portal @ 0xffff922f9a73b300
+			gjs @ 0xffff922f86d4b300
+			tracker-miner-f @ 0xffff922f849a1980
+			xdg-desktop-por @ 0xffff922f94bd1980
+			gvfsd-metadata @ 0xffff922f8b6c6600
+			nautilus @ 0xffff922f96d08000
+			update-manager @ 0xffff922f8aad3300
+			gnome-terminal- @ 0xffff922f8c221980
+				bash @ 0xffff922f95809980
+				bash @ 0xffff92316a8be600
+					nsjail @ 0xffff92315f8e0000
+						retbleed_elf @ 0xffff922f8aace600
+				bash @ 0xffff923090501980
+			gnome-calendar @ 0xffff922f8f053300
+			snap @ 0xffff9231173ab300
+			speech-dispatch @ 0xffff922fa1fd1980
+				sd_espeak-ng @ 0xffff923138beb300
+				sd_dummy @ 0xffff923157058000
+		rtkit-daemon @ 0xffff922fa20b6600
+		gnome-keyring-d @ 0xffff922f83c60000
+		upowerd @ 0xffff922f98c3cc80
+		packagekitd @ 0xffff922fa2a19980
+		colord @ 0xffff922f8a9b6600
+		snapd @ 0xffff922fa5b09980
+		dockerd @ 0xffff9230620db300
+			containerd @ 0xffff922f90fdb300
+
+zen2@zen2:~/nsjail$ /usr/bin/pstree -T
+systemd─┬─ModemManager
+        ├─NetworkManager
+        ├─accounts-daemon
+        ├─acpid
+        ├─avahi-daemon───avahi-daemon
+        ├─bluetoothd
+        ├─colord
+        ├─cron
+        ├─cups-browsed
+        ├─cupsd
+        ├─dbus-daemon
+        ├─dockerd───containerd
+        ├─gdm3───gdm-session-wor───gdm-x-session─┬─Xorg
+        │                                        └─gnome-session-b
+        ├─gnome-keyring-d
+        ├─irqbalance
+        ├─2*[kerneloops]
+        ├─multipathd
+        ├─networkd-dispat
+        ├─nvidia-persiste
+        ├─packagekitd
+        ├─polkitd
+        ├─power-profiles-
+        ├─rsyslogd
+        ├─rtkit-daemon
+        ├─snapd
+        ├─sshd
+        ├─switcheroo-cont
+        ├─systemd─┬─(sd-pam)
+        │         ├─at-spi-bus-laun───dbus-daemon
+        │         ├─at-spi2-registr
+        │         ├─dbus-daemon
+        │         ├─dconf-service
+        │         ├─evolution-addre
+        │         ├─evolution-calen
+        │         ├─evolution-sourc
+        │         ├─2*[gjs]
+        │         ├─gnome-calendar
+        │         ├─gnome-session-b─┬─evolution-alarm
+        │         │                 ├─gsd-disk-utilit
+        │         │                 └─update-notifier
+        │         ├─gnome-session-c
+        │         ├─gnome-shell─┬─code─┬─code───code
+        │         │             │      ├─code───code───code
+        │         │             │      ├─4*[code]
+        │         │             │      └─code─┬─clangd.main
+        │         │             │             └─code
+        │         │             ├─firefox─┬─7*[Isolated Web Co]
+        │         │             │         ├─Privileged Cont
+        │         │             │         ├─RDD Process
+        │         │             │         ├─Socket Process
+        │         │             │         ├─Utility Process
+        │         │             │         ├─3*[Web Content]
+        │         │             │         └─WebExtensions
+        │         │             └─gjs
+        │         ├─gnome-shell-cal
+        │         ├─gnome-terminal-─┬─2*[bash]
+        │         │                 └─bash───pstree
+        │         ├─goa-daemon
+        │         ├─goa-identity-se
+        │         ├─gsd-a11y-settin
+        │         ├─gsd-color
+        │         ├─gsd-datetime
+        │         ├─gsd-housekeepin
+        │         ├─gsd-keyboard
+        │         ├─gsd-media-keys
+        │         ├─gsd-power
+        │         ├─gsd-print-notif
+        │         ├─gsd-printer
+        │         ├─gsd-rfkill
+        │         ├─gsd-screensaver
+        │         ├─gsd-sharing
+        │         ├─gsd-smartcard
+        │         ├─gsd-sound
+        │         ├─gsd-wacom
+        │         ├─gsd-xsettings
+        │         ├─gvfs-afc-volume
+        │         ├─gvfs-goa-volume
+        │         ├─gvfs-gphoto2-vo
+        │         ├─gvfs-mtp-volume
+        │         ├─gvfs-udisks2-vo
+        │         ├─gvfsd───gvfsd-trash
+        │         ├─gvfsd-fuse
+        │         ├─gvfsd-metadata
+        │         ├─ibus-portal
+        │         ├─ibus-x11
+        │         ├─nautilus
+        │         ├─pipewire
+        │         ├─pipewire-media-
+        │         ├─pulseaudio
+        │         ├─sh───ibus-daemon─┬─ibus-dconf
+        │         │                  ├─ibus-engine-sim
+        │         │                  └─ibus-extension-
+        │         ├─snap
+        │         ├─speech-dispatch─┬─sd_dummy
+        │         │                 ├─sd_espeak-ng
+        │         │                 └─sd_espeak-ng-mb
+        │         ├─tracker-miner-f
+        │         ├─update-manager
+        │         ├─3*[xdg-desktop-por]
+        │         ├─xdg-document-po───fusermount3
+        │         └─xdg-permission-
+        ├─systemd-journal
+        ├─systemd-logind
+        ├─systemd-network
+        ├─systemd-oomd
+        ├─systemd-resolve
+        ├─systemd-timesyn
+        ├─systemd-udevd
+        ├─udisksd
+        ├─unattended-upgr
+        ├─upowerd
+        └─2*[wpa_supplicant]

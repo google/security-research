@@ -1,4 +1,4 @@
-# Copyright 2020 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:20.04 as chroot
+FROM ubuntu:24.04 as chroot
 
-RUN /usr/sbin/useradd -u 1000 user
+# ubuntu24 includes the ubuntu user by default
+RUN /usr/sbin/userdel -r ubuntu && /usr/sbin/useradd --no-create-home -u 1000 user
 
 RUN apt-get update \
     && apt-get install -yq --no-install-recommends \
        curl ca-certificates socat gnupg lsb-release software-properties-common php-cgi \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -sSL https://deb.nodesource.com/gpgkey/nodesource.gpg.key | apt-key add - \
-    && (echo "deb https://deb.nodesource.com/node_10.x $(lsb_release -s -c) main";\
-        echo "deb-src https://deb.nodesource.com/node_10.x $(lsb_release -s -c) main") \
-       > /etc/apt/sources.list.d/nodesource.list \
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x -o nodesource_setup.sh \
+    && bash nodesource_setup.sh \
     && add-apt-repository universe \
     && apt-get update \
     && apt-get install -yq --no-install-recommends nodejs socat \
@@ -40,7 +39,7 @@ COPY web-servers /web-servers
 
 COPY flag /
 
-FROM gcr.io/kctf-docker/challenge@sha256:0f7d757bcda470c3bbc063606335b915e03795d72ba1d8fdb6f0f9ff3757364f
+FROM gcr.io/kctf-docker/challenge@sha256:9f15314c26bd681a043557c9f136e7823414e9e662c08dde54d14a6bfd0b619f
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends tzdata apache2 \
