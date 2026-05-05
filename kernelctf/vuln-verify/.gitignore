@@ -1,0 +1,14 @@
+linux/
+builds/
+output
+__pycache__/
+*.sqlite3
+kernelctf_public_sheet.csv
+*.txt
+.cache/
+patches/
+cache.json
+verify_results*/
+*bzImage
+*.patch
+
