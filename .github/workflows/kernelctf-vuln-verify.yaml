@@ -87,17 +87,21 @@ jobs:
           wget -q -O rootfs_v3.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_v3.img.gz
           gzip -d rootfs_v3.img.gz
           
-          sudo modprobe nbd
-          sudo qemu-nbd -c /dev/nbd0 -P 1 -f raw rootfs_v3.img
+          sudo losetup -f rootfs_v3.img
+          LOOP_DEV=$(losetup -j rootfs_v3.img | cut -d: -f1)
           
+          sudo kpartx -av $LOOP_DEV
+          
+          LOOP_NAME=$(basename $LOOP_DEV)
           mkdir -p mnt
-          sudo mount /dev/nbd0p1 mnt/
+          sudo mount /dev/mapper/${LOOP_NAME}p1 mnt/
           
           mkdir -p ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
           sudo rsync -a mnt/ ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
           
           sudo umount mnt/
-          sudo qemu-nbd -d /dev/nbd0
+          sudo kpartx -dv $LOOP_DEV
+          sudo losetup -d $LOOP_DEV
 
       - name: Run vuln-verify
         id: vuln_verify
