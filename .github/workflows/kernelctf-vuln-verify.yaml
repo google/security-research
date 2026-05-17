@@ -56,17 +56,6 @@ jobs:
           sparse-checkout-cone-mode: true
           fetch-depth: 1
 
-      - name: List and check PR folder
-        env:
-          POC_FOLDER: ${{ steps.determine_folder.outputs.folder }}
-        run: |
-          find pr
-
-          if [ ! -d "pr/$POC_FOLDER" ]; then
-              echo "Error: Directory pr/$POC_FOLDER does not exist"
-              exit 1
-          fi
-
       - name: Checkout kernel-research
         uses: actions/checkout@v4
         with:
@@ -86,28 +75,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86
+          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 libguestfs-tools
           pip install requests
 
       - name: Download kernel.dance database
         working-directory: kernelctf/vuln-verify
         run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
-      - name: Fetch repro rootfs
+      - name: Prepare environment (Fetch repro rootfs)
         run: |
-          wget -q -O rootfs.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v2.img.gz
-          gzip -d rootfs.img.gz
-
-      - name: Synchronize verify environment with repro environment
-        run: |
-          mkdir -p mnt
-          sudo mount -o loop rootfs.img mnt/
+          # Fetch the same rootfs used by exploit_repro
+          wget -q https://storage.googleapis.com/kernelctf-build/releases/rootfs_v3.img
           
+          # Extract rootfs to the directory expected by verify.py
           mkdir -p ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
-          
-          sudo rsync -a mnt/ ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
-          
-          sudo umount mnt/
+          virt-copy-out -a rootfs_v3.img / ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
 
       - name: Run vuln-verify
         id: vuln_verify
