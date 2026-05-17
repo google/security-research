@@ -84,7 +84,8 @@ jobs:
 
       - name: Prepare environment
         run: |
-          wget -q -O rootfs_v3.img https://storage.googleapis.com/kernelctf-build/releases/rootfs_v3.img 
+          wget -q -O rootfs_v3.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_v3.img.gz
+          gzip -d rootfs_v3.img.gz
           
           sudo modprobe nbd
           sudo qemu-nbd -c /dev/nbd0 rootfs_v3.img
