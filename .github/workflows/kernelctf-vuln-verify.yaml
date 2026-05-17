@@ -86,12 +86,28 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 binutils
+          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86
           pip install requests
 
       - name: Download kernel.dance database
         working-directory: kernelctf/vuln-verify
         run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
+
+      - name: Fetch repro rootfs
+        run: |
+          wget -q -O rootfs.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v2.img.gz
+          gzip -d rootfs.img.gz
+
+      - name: Synchronize verify environment with repro environment
+        run: |
+          mkdir -p mnt
+          sudo mount -o loop rootfs.img mnt/
+          
+          mkdir -p ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
+          
+          sudo rsync -a mnt/ ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
+          
+          sudo umount mnt/
 
       - name: Run vuln-verify
         id: vuln_verify
