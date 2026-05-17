@@ -82,14 +82,21 @@ jobs:
         working-directory: kernelctf/vuln-verify
         run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
-      - name: Prepare environment (Fetch repro rootfs)
+      - name: Prepare environment
         run: |
-          # Fetch the same rootfs used by exploit_repro
-          wget -q https://storage.googleapis.com/kernelctf-build/releases/rootfs_v3.img
+          wget -q -O rootfs_v3.img https://storage.googleapis.com/kernelctf-build/releases/rootfs_v3.img 
           
-          # Extract rootfs to the directory expected by verify.py
+          sudo modprobe nbd
+          sudo qemu-nbd -c /dev/nbd0 rootfs_v3.img
+          
+          mkdir -p mnt
+          sudo mount /dev/nbd0p1 mnt/
+          
           mkdir -p ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
-          virt-copy-out -a rootfs_v3.img / ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
+          sudo rsync -a mnt/ ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
+          
+          sudo umount mnt/
+          sudo qemu-nbd -d /dev/nbd0
 
       - name: Run vuln-verify
         id: vuln_verify
