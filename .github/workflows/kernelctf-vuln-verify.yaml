@@ -88,7 +88,7 @@ jobs:
           gzip -d rootfs_v3.img.gz
           
           sudo modprobe nbd
-          sudo qemu-nbd -c /dev/nbd0 rootfs_v3.img
+          sudo qemu-nbd -c /dev/nbd0 -f raw rootfs_v3.img
           
           mkdir -p mnt
           sudo mount /dev/nbd0p1 mnt/
