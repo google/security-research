@@ -86,7 +86,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 expect
+          sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 binutils
           pip install requests
 
       - name: Download kernel.dance database
