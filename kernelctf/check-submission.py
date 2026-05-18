@@ -4,6 +4,7 @@ import sys
 import json
 import jsonschema
 import hashlib
+import re
 from utils import *
 
 PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
@@ -38,12 +39,11 @@ printList("Submission files", files)
 exploitFolders = subdirEntries(files, EXPLOIT_DIR)
 printList("Exploit folders", exploitFolders)
 
-validExploitFolderPrefixes = [f"{t}-" for t in targets] + ["extra-"]
+validExploitFolderPrefixes = [f"{t}-" for t in targets]
 checkList(exploitFolders, lambda f: any(f.startswith(p) for p in validExploitFolderPrefixes),
     f"The submission folder name (`{subDirName}`) is not consistent with the exploits in the `{EXPLOIT_DIR}` folder. " +
     f"Based on the folder name (`{subDirName}`), the subfolders are expected to be prefixed with one of these: {', '.join(f'`{t}-`' for t in targets)}, " +
-    "but this is not true for the following entries: <LIST>. You can put the extra files into a folder prefixed with `extra-`, " +
-    "but try to make it clear what's the difference between this exploit and the others.")
+    "but this is not true for the following entries: <LIST>.")
 
 reqFilesPerExploit = ["Makefile", "exploit.c", "exploit"]
 
@@ -83,6 +83,16 @@ if isinstance(submissionIds, str):
     submissionIds = [submissionIds]
 submissionIds.sort()
 print(f"[-] Submission IDs = {submissionIds}")
+
+# WARNING: metadata is not trusted and needs to be sanitized
+for x in submissionIds:
+    if not re.match(r"^exp\d+$", x):
+        fail(f"Error: invalid exp_id '{x}'")
+
+if "exploits" in metadata:
+    for target in metadata["exploits"].keys():
+        if not re.match(r"^(lts|cos|mitigation)-[a-z0-9.-]+$", target):
+            fail(f"Error: invalid target '{target}'")
 
 publicCsv = fetch(PUBLIC_CSV_URL, "public.csv")
 publicSheet = { x["ID"]: x for x in parseCsv(publicCsv) }

@@ -188,7 +188,8 @@ int fixup_patch_hash(patch_t *patch, int offset)
 
     CMAC_Init(ctx, kCMACKey, sizeof kCMACKey, EVP_aes_128_cbc(), NULL);
     CMAC_Update(ctx, paddedInput, preimagesz);
-    CMAC_Final(ctx, result, NULL);
+    size_t result_len;
+    CMAC_Final(ctx, result, &result_len);
     CMAC_CTX_free(ctx);
 
     if (memcmp(result, target, bs) != 0) {

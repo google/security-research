@@ -10,6 +10,12 @@ import subprocess
 import argparse
 from utils import bold, parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
 
+VALID_REPO_URLS = {
+    "https://github.com/gregkh/linux",
+    "https://cos.googlesource.com/third_party/kernel",
+    "https://github.com/thejh/linux"
+}
+
 summary_lines = []
 summary_fn = os.environ.get("GITHUB_STEP_SUMMARY")
 def log(*args, **kwargs):
@@ -122,16 +128,21 @@ def cache(category, key, getter):
 def save_cache():
     writeTextFile(CACHE_DB_FN, json.dumps(cache_db, indent=4))
 
+def check_hash(hash):
+    if hash is not None and not re.match(r"^[0-9a-fA-F]+$", hash):
+        fatal(f"Error: invalid commit hash '{hash}'")
+    return hash
+
 def get_stable_commit(commit_hash, kernel_ver):
-    return cache("stable_commits", f"{commit_hash}_{kernel_ver}", lambda:
-                 sql_value(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"}))
+    return check_hash(cache("stable_commits", f"{commit_hash}_{kernel_ver}", lambda:
+                 sql_value(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"})))
 
 def get_upstream_commit(commit_hash):
-    return cache("upstream_commits", f"{commit_hash}", lambda: sql_value(UPSTREAM_COMMIT_QUERY, {"hash": f"{commit_hash}%"}))
+    return check_hash(cache("upstream_commits", f"{commit_hash}", lambda: sql_value(UPSTREAM_COMMIT_QUERY, {"hash": f"{commit_hash}%"})))
 
 def get_parent_commit(commit_hash):
-    return json.loads(fetch(f"https://api.github.com/repos/gregkh/linux/commits/{commit_hash}", f".cache/{commit_hash}.json",
-                GH_HEADERS))["parents"][0]["sha"]
+    return check_hash(json.loads(fetch(f"https://api.github.com/repos/gregkh/linux/commits/{commit_hash}", f".cache/{commit_hash}.json",
+                GH_HEADERS))["parents"][0]["sha"])
 
 def success_color(success):
     return green('SUCCESS') if success else red('FAIL') if not success else yellow('UNKNOWN')
@@ -139,7 +150,11 @@ def success_color(success):
 builds = []
 all_success = True
 for i_exp, exp_dir in enumerate(args.exploit_paths):
+    # WARNING: metadata is not trusted and needs to be sanitized
     metadata = json.loads(readTextFile(f"{exp_dir}/metadata.json"))
+    for x in metadata["submission_ids"]:
+        if not re.match(r"^exp\d+$", x):
+            fatal(f"Error: invalid exp_id '{x}'")
     exp_ids = "exp" + "_".join(x.replace("exp", "") for x in metadata["submission_ids"])
     first_exp_id = metadata["submission_ids"][0]
     commit_hash_pr = hash_from_url(metadata["vulnerability"]["patch_commit"])
@@ -149,6 +164,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
     exp_success = False
     exp_fail = False
     targets = list(metadata["exploits"].keys())
+    for target in targets:
+        if not re.match(r"^(lts|cos|mitigation)-[a-z0-9.-]+$", target):
+            fatal(f"Error: invalid target '{target}'")
     for i_target, target in enumerate(targets):
         orig_target = target
         if target == "mitigation-6.1":
@@ -157,7 +175,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         commit_info_txt = fetch(f"{KERNELCTF_RELEASES_URL}/{target}/COMMIT_INFO", f"builds/{target}_COMMIT_INFO")
         commit_info = {x[0]: x[1] for x in [line.split("=") for line in commit_info_txt.strip().split("\n")]}
         repo_url = commit_info["REPOSITORY_URL"]
-        base_commit = commit_info["COMMIT_HASH"]
+        base_commit = check_hash(commit_info["COMMIT_HASH"])
+        if repo_url not in VALID_REPO_URLS:
+            fatal(f"Error: invalid repo_url '{repo_url}'")
         kernel_ver = re.search(r"Linux/x86 (\d+\.\d+)\.\d+ Kernel Configuration", config).group(1)
         stable_commit = "n/a"
         parent_commit = "n/a"
@@ -239,7 +259,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
 
             if not os.path.isfile(f"builds/{target}_bzImage"):
                 print(f"  [DOWNLOAD] downloading release {target}...")
-                run(f"wget -qO builds/{target}_bzImage {KERNELCTF_RELEASES_URL}/{target}/bzImage")
+                run(["wget", "-qO", f"builds/{target}_bzImage", f"{KERNELCTF_RELEASES_URL}/{target}/bzImage"])
 
         res = {}
         for name in build_targets:

@@ -112,7 +112,7 @@ static void dump_ucode_hdr(const patch_t *patch)
     if (memcmp(signedhash, actualhash, sizeof signedhash) == 0)
         verified = true;
 
-    putmsg("Signature:   %02x... (use --verbose to see) (%s)",
+    putmsg("Signature:   %02x... (use global --verbose to see) (%s)",
         hdr->signature[0],
         verified ? "GOOD" : "BAD");
 
@@ -126,7 +126,7 @@ static void dump_ucode_hdr(const patch_t *patch)
         loghex(actualhash, 16);
     }
 
-    putmsg("Modulus:     %02x... (use --verbose to see)", hdr->modulus[0]);
+    putmsg("Modulus:     %02x... (use global --verbose to see)", hdr->modulus[0]);
 
     if (options.verbose)
         loghex(hdr->modulus, sizeof hdr->modulus);
@@ -144,7 +144,7 @@ static void dump_ucode_hdr(const patch_t *patch)
     if (memcmp(check, hdr->check, sizeof hdr->check) == 0)
         verified = true;
 
-    putmsg("Check:       %02x... (use --verbose to see) (%s)",
+    putmsg("Check:       %02x... (use global --verbose to see) (%s)",
         hdr->check[0],
         verified ? "GOOD" : "BAD");
 
@@ -223,7 +223,7 @@ int cmd_dump_main(int argc, char **argv)
         logmsg("; Patch %#x Match Registers (%u total)", patch->hdr.revision, patch->nmatch * 2);
 
         if (!options.verbose) {
-            logmsg("; (use --verbose to see empty slots)");
+            logmsg("; (use global --verbose to see empty slots)");
         }
 
         for (size_t i = 0; i < patch->nmatch; i++) {
@@ -260,7 +260,7 @@ int cmd_dump_main(int argc, char **argv)
         logmsg("; Patch %#0x OpQuad Disassembly (%u total)", patch->hdr.revision, patch->nquad);
 
         if (!options.verbose) {
-            logmsg("; (use --verbose to see further details)");
+            logmsg("; (use global --verbose to see further details)");
         }
 
         for (size_t i = 0; i < patch->nquad; i++) {
