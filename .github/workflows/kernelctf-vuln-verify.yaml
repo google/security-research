@@ -9,7 +9,9 @@ on:
     inputs:
       prNumber:
         type: string
+
 permissions: {}
+
 jobs:
   vuln-verify:
     permissions: {}
@@ -87,8 +89,7 @@ jobs:
           wget -q -O rootfs_v3.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_v3.img.gz
           gzip -d rootfs_v3.img.gz
           
-          sudo losetup -f rootfs_v3.img
-          LOOP_DEV=$(losetup -j rootfs_v3.img | cut -d: -f1)
+          LOOP_DEV=$(sudo losetup -f --show rootfs_v3.img)
           
           sudo kpartx -av $LOOP_DEV
           
@@ -112,7 +113,7 @@ jobs:
         if: always() && steps.vuln_verify.conclusion != 'skipped'
         uses: actions/upload-artifact@v6
         with:
-          name: logs
+          name: qemu_verify_logs_PR-${{ env.PR_NUM }}
           path: |
             ./kernelctf/vuln-verify/verify_results
             ./kernelctf/vuln-verify/builds/*.log*
