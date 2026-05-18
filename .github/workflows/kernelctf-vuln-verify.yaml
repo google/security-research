@@ -9,9 +9,7 @@ on:
     inputs:
       prNumber:
         type: string
-
 permissions: {}
-
 jobs:
   vuln-verify:
     permissions: {}
