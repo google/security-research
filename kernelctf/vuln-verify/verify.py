@@ -107,11 +107,17 @@ if not is_cached(KERNEL_DANCE_SQL_FN, 3600*24*7):
 sqlconn = sqlite3.connect(KERNEL_DANCE_SQL_FN)
 sql = sqlconn.cursor()
 
-def sql_value(query, *params):
+def sql_value_or_none(query, *params):
     results = sql.execute(query, *params).fetchall()
-    if len(results) != 1:
-        raise Exception(f"Multiple results for query '{query}' (with params {params}): {results}" if results else f"No results for query '{query}' (with params {params})")
+    if len(results) > 1:
+        raise Exception(f"Multiple results for query '{query}' (with params {params}): {results}")
     return results[0][0] if len(results) > 0 else None
+
+def sql_value(query, *params):
+    result = sql_value_or_none(query, *params)
+    if not result:
+        raise Exception(f"No results for query '{query}' (with params {params})")
+    return result
 
 
 def hash_from_url(url):
@@ -135,7 +141,7 @@ def check_hash(hash):
 
 def get_stable_commit(commit_hash, kernel_ver):
     return check_hash(cache("stable_commits", f"{commit_hash}_{kernel_ver}", lambda:
-                 sql_value(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"})))
+                 sql_value_or_none(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"})))
 
 def get_upstream_commit(commit_hash):
     return check_hash(cache("upstream_commits", f"{commit_hash}", lambda: sql_value(UPSTREAM_COMMIT_QUERY, {"hash": f"{commit_hash}%"})))
@@ -184,11 +190,20 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         ups_commit = get_upstream_commit(commit_hash)
         if args.stable:
             stable_commit = get_stable_commit(ups_commit, kernel_ver)
-            parent_commit = get_parent_commit(stable_commit)
+            if stable_commit:
+                parent_commit = get_parent_commit(stable_commit)
+            else:
+                parent_commit = None
         if args.upstream:
             ups_parent_commit = get_parent_commit(ups_commit)
-        log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
-              f"{kernel_ver}, commit: {commit_hash[:10]}, stable: {stable_commit[:10]}, parent: {parent_commit[:10]}")
+
+        if stable_commit:
+            log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
+                f"{kernel_ver}, commit: {commit_hash[:10]}, stable: {stable_commit[:10]}, parent: {parent_commit[:10]}")
+        else:
+            log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
+                f"{kernel_ver}, commit: {commit_hash[:10]}. "
+                f"Upstream commit {ups_commit} was not backported to {kernel_ver}, skipping fix verification on this kernel version...")
 
         config_fn = f"builds/{target}.config"
         def build_release_(name, repo_url, commit_hash, patch_commit_fn=""):
@@ -234,7 +249,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             build_targets.append(name_base)
             build_release(name_base, repo_url, base_commit)
 
-        if args.stable:
+        if args.stable and stable_commit:
             name_before_patch = f"{p_id}_kasan_wo_patch_{parent_commit[0:7]}"
             name_after_patch = f"{p_id}_kasan_patched_{stable_commit[0:7]}"
             build_release(name_before_patch, STABLE_REPO, parent_commit)
@@ -301,13 +316,13 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             log(f"  [VERIFY] {exp_ids}_{name}: {bold(result)}")
 
         success_target_patching = res[name_base] == True and res[name_base_patched] == False if args.stable and args.target_patching else None
-        success_patch_commit = res[name_before_patch] == True and res[name_after_patch] == False if args.stable else None
+        success_patch_commit = res[name_before_patch] == True and res[name_after_patch] == False if args.stable and stable_commit else None
         success_upstream_patch = res[ups_name_before_patch] == True and res[ups_name_after_patch] == False if args.upstream else None
         success = success_target_patching or success_patch_commit or success_upstream_patch
-        fail = (args.stable and (args.target_patching and res[name_base_patched] or res[name_after_patch])) or (args.upstream and res[ups_name_after_patch])
+        fail = (args.stable and stable_commit and (args.target_patching and res[name_base_patched] or res[name_after_patch])) or (args.upstream and res[ups_name_after_patch])
         exp_success = exp_success or success
         exp_fail = exp_fail or fail
-        if args.stable:
+        if args.stable and stable_commit:
             if args.target_patching:
                 log(f"  Target patching test: {success_color(success_target_patching)} (before: {res[name_base]}, after: {res[name_base_patched]})")
             log(f"  Stable patch commit test: {success_color(success_patch_commit)} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
