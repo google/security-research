@@ -306,7 +306,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                     pwned = True
                 elif "majority vote failed" in logs:
                     result = "prefetch failed"
-                elif "Running command: /exp.sh" not in logs:
+                elif "Running id and then the exploit" not in logs:
                     result = "VM hanged before running exploit"
                 elif "EXIT_CODE=124" in logs:
                     result = "timed out"
