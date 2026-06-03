@@ -48,6 +48,6 @@ We execute the benchmark 10 times on each host configuration.
 
 | Configuration | Runs | MEAN | MEDIAN | STDDEV | Overhead |
 | :------------ | :--- | :----------- | :------------- | :----------- | :------- |
-| retbleed=off (A) | 10 | 38619.000 | 38649.500 | 99.936 | 0 |
+| retbleed=off (A) | 10 | 91385.800 | 91393.500 | 119.416 | 0 |
 | retbleed=auto (B) | 10 | 86271.600 | 86296.500 | 270.602 | 5.59% |
-| retbleed=ibpb (C) | 10 | 91385.800 | 91393.500 | 119.416 | 57.74% |
+| retbleed=ibpb (C) | 10 | 38619.000 | 38649.500 | 99.936 | 57.74% |
