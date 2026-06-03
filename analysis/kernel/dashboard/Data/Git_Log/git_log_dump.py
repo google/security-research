@@ -90,23 +90,15 @@ def create_log_table(
         tmp2.close()
 
         with open(tmp2.name, mode="r") as f:
-            command = (
-                PARALLEL
-                + " --workdir "
-                + repo_folder
-                + " --bar --group -P "
-                + str(no_cpu)
-                + " -a "
-                + tmp2.name
-                + " "
-                + GIT
-                + " --no-pager log --format=\\'{},%at,%H\\' --no-patch -L {}"
-                + " >> "
-                + tmp.name
-            )
+            command = [
+                PARALLEL, "--workdir", repo_folder, "--bar", "--group",
+                "-P", str(no_cpu), "-a", tmp2.name, GIT, "--no-pager",
+                "log", "--format={},%at,%H", "--no-patch", "-L", "{}"
+            ]
 
             logging.info("Command that we're running: %s" % command)
-            os.system(command)
+            with open(tmp.name, "a") as out_f:
+                subprocess.run(command, stdout=out_f, check=True)
             logging.info("Command execution complete!")
 
     log_data = ""
