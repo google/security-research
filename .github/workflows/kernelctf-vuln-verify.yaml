@@ -5,10 +5,19 @@ on:
       prNumber:
         description: 'PR number to verify'
         required: true
+      skipPrepare:
+        description: 'Skip "Prepare environment" step'
+        type: boolean
+        required: false
+        default: false
   workflow_call:
     inputs:
       prNumber:
         type: string
+      skipPrepare:
+        type: boolean
+        required: false
+        default: false
 permissions: {}
 jobs:
   vuln-verify:
@@ -83,6 +92,7 @@ jobs:
         run: wget -q --show-progress --progress=dot:mega -O kernel-dance.sqlite3 https://linux-mirror-db.storage.googleapis.com/mirror.sl3
 
       - name: Prepare environment
+        if: ${{ inputs.skipPrepare != true }}
         run: |
           wget -q -O rootfs_v3.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_v3.img.gz
           gzip -d rootfs_v3.img.gz
