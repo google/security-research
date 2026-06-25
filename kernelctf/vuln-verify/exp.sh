@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
 ifconfig lo 127.0.0.1 netmask 255.0.0.0 up
 
 if [ -e /flag ]; then rm /flag; fi

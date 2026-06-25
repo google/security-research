@@ -9,7 +9,7 @@ on:
         description: 'Skip "Prepare environment" step'
         type: boolean
         required: false
-        default: false
+        default: true
   workflow_call:
     inputs:
       prNumber:
@@ -17,7 +17,7 @@ on:
       skipPrepare:
         type: boolean
         required: false
-        default: false
+        default: true
 permissions: {}
 jobs:
   vuln-verify:
@@ -123,7 +123,7 @@ jobs:
         if: always() && steps.vuln_verify.conclusion != 'skipped'
         uses: actions/upload-artifact@v6
         with:
-          name: logs
+          name: vuln_verify_logs
           path: |
             ./kernelctf/vuln-verify/verify_results
             ./kernelctf/vuln-verify/builds/*.log*
