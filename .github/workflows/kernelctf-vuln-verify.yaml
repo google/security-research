@@ -113,6 +113,7 @@ jobs:
           sudo umount mnt/
           sudo kpartx -dv $LOOP_DEV
           sudo losetup -d $LOOP_DEV
+          ls -al ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
 
       - name: Run vuln-verify
         id: vuln_verify
