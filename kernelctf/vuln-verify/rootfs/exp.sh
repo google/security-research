@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -e
 ifconfig lo 127.0.0.1 netmask 255.0.0.0 up
 
 if [ -e /flag ]; then rm /flag; fi
@@ -23,6 +24,13 @@ if [ -e /dev/xdk ]; then
     chmod o+rw /dev/xdk
 fi
 chmod o+rx /exp
+
+chmod -R o+rx /bin /etc /usr /lib64
+
+mkdir /tmp/exp
+chmod 777 /tmp/exp
+cp /exp /tmp/exp/exploit
+
 echo "Running id and then the exploit: /exp $@"
 ARG="id; /exp $@"
 su user -c /bin/sh -c "$ARG"

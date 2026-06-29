@@ -85,7 +85,7 @@ def gcs_download(local_fn, gcs_fn):
     if not args.gcs_cache or os.path.isfile(local_fn):
         return os.path.isfile(local_fn)
     print(f"  [CACHE] downloading {os.path.basename(local_fn)} from GCS...")
-    return run(["gcloud", "storage", "cp", f"{GCS_BASE_URL}/{gcs_fn}", local_fn], fail_silent=True) is not None
+    return run(["gcloud", "storage", "cp", f"{GCS_BASE_URL}/{gcs_fn}", local_fn]) is not None
 
 def gcs_upload(local_fn, gcs_fn, gzip=False):
     if not args.gcs_cache or not os.path.isfile(local_fn):
@@ -310,6 +310,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                     result = "VM hanged before running exploit"
                 elif "EXIT_CODE=124" in logs:
                     result = "timed out"
+                    pwned = False
+                elif "EXIT_CODE=" in logs:
+                    result = "exploit exited"
                     pwned = False
 
             res[name] = pwned
