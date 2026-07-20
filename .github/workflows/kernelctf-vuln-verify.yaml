@@ -64,6 +64,7 @@ jobs:
           sparse-checkout: "${{ steps.determine_folder.outputs.folder }}"
           sparse-checkout-cone-mode: true
           fetch-depth: 1
+          allow-unsafe-pr-checkout: true
 
       - name: Checkout kernel-research
         uses: actions/checkout@v4
