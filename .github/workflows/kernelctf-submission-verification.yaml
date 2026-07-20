@@ -60,6 +60,7 @@ jobs:
           path: pr-content
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
+          allow-unsafe-pr-checkout: true
 
       - id: check_submission
         name: Check submission
@@ -86,6 +87,7 @@ jobs:
         with:
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
+          allow-unsafe-pr-checkout: true
 
       - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
@@ -169,6 +171,7 @@ jobs:
         with:
           ref: ${{ env.PR_REF }}
           fetch-depth: 0
+          allow-unsafe-pr-checkout: true
 
       - name: Checkout Android scripts (sparse) - Android only
         if: startsWith(matrix.target, 'android')
