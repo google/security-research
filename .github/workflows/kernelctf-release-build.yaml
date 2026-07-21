@@ -64,12 +64,30 @@ jobs:
       - name: Install Linux build prerequisites
         if: steps.detect.outputs.type == 'linux'
         run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf /usr/local/lib/android
+
           sudo apt-get update
           sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole
+          
+          sudo apt-get clean
       
       - name: Install Android build prerequisites
         if: steps.detect.outputs.type == 'android'
-        run: sudo apt install -yq --no-install-recommends git
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf /usr/local/lib/android
+
+          sudo apt-get update
+          sudo apt install -yq --no-install-recommends git
+          
+          sudo apt-get clean
       
       - name: Setup Go
         if: steps.detect.outputs.type == 'android'
