@@ -84,9 +84,17 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android
+
           sudo apt-get update
           sudo apt-get install -y expect build-essential flex bison bc libelf-dev libssl-dev cpio pahole qemu-system-x86 kpartx
           pip install requests
+
+          sudo apt-get clean
 
       - name: Download kernel.dance database
         working-directory: kernelctf/vuln-verify
@@ -114,6 +122,9 @@ jobs:
           sudo umount mnt/
           sudo kpartx -dv $LOOP_DEV
           sudo losetup -d $LOOP_DEV
+
+          rm -f rootfs_v3.img rootfs_v3.img.gz
+                    
           ls -al ${{ env.IMAGE_RUNNER_DIR }}/rootfs/
 
       - name: Run vuln-verify
