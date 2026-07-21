@@ -10,7 +10,6 @@
 
 import cpp
 
-
 class FlexibleArrayMember extends Field {
   FlexibleArrayMember() {
     exists(Struct s |
@@ -24,15 +23,38 @@ class FlexibleArrayMember extends Field {
   }
 }
 
-class KmallocCall extends FunctionCall {
-  KmallocCall() { this.getTarget().hasName(["kmalloc", "kzalloc", "kvmalloc"]) }
+class AllocSizeAttribute extends GnuAttribute {
+  AllocSizeAttribute() { this.getName() = "alloc_size" }
 
-  Expr getSizeArg() { result = this.getArgument(0) }
+  int getSizeParamOneBased() { result = this.getArgument(0).getValueInt() }
+
+  predicate isSingleParamForm() { not exists(this.getArgument(1)) }
+}
+
+class KmallocCall extends FunctionCall {
+  int sizeArgIndex;
+  int flagsArgIndex;
+
+  KmallocCall() {
+    exists(AllocSizeAttribute attr |
+      attr = this.getTarget().getAnAttribute() and
+      attr.isSingleParamForm() and
+      sizeArgIndex = attr.getSizeParamOneBased() - 1
+    ) and
+    exists(Parameter p |
+      p = this.getTarget().getParameter(flagsArgIndex) and
+      p.getType().hasName("gfp_t")
+    )
+  }
+
+  Expr getSizeArg() { result = this.getArgument(sizeArgIndex) }
+
+  Expr getFlagsArg() { result = this.getArgument(flagsArgIndex) }
 
   string getFlag() {
     result =
       concat(Expr flag |
-        flag = this.getArgument(1).getAChild*() and flag.getValueText().matches("%GFP%")
+        flag = this.getFlagsArg().getAChild*() and flag.getValueText().matches("%GFP%")
       |
         flag.getValueText(), "|"
       )
@@ -54,24 +76,33 @@ class KmallocCall extends FunctionCall {
     exists(Expr sof |
       this.getSizeArg().getAChild*() = sof and
       this.sizeofParam(sof) = result
-    ) or
-   result = this.getFullyConverted().getType().stripType() 
+    )
+    or
+    not exists(Expr sof |
+      this.getSizeArg().getAChild*() = sof and exists(this.sizeofParam(sof))
+    ) and
+    result = this.getFullyConverted().getType().stripType()
+  }
+
+  predicate sizeViaSafeSizeMacro() {
+    exists(MacroInvocation mi |
+      mi.getMacro().getName() = ["struct_size", "array_size", "flex_array_size", "struct_size_t"] and
+      mi.getExpr() = this.getSizeArg().getAChild*()
+    )
   }
 
   string isFlexible() {
-    this.getSize() = "unknown" and
+    (this.getSize() = "unknown" or this.sizeViaSafeSizeMacro()) and
     this.getStruct().getAField() instanceof FlexibleArrayMember and
     result = "true"
     or
-    not this.getSize() = "unknown" and
+    not (this.getSize() = "unknown" or this.sizeViaSafeSizeMacro()) and
     not this.getStruct().getAField() instanceof FlexibleArrayMember and
     result = "false"
   }
 }
 
 from KmallocCall kfc, Struct s
-where
-  s = kfc.getStruct() and
-  not kfc.getSizeArg().isAffectedByMacro()
+where s = kfc.getStruct()
 select kfc.getLocation(), kfc, s, s.getLocation(), s.getSize(), kfc.getFlag(), kfc.getSize(),
-  kfc.getArgument(0), kfc.isFlexible()
+  kfc.getSizeArg(), kfc.isFlexible(), kfc.getTarget().getName()
