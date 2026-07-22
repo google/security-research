@@ -71,7 +71,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android
 
           sudo apt-get update
-          sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole
+          sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole clang llvm lld
           
           sudo apt-get clean
       
@@ -169,7 +169,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ${{inputs.releaseId}}
-          path: kernelctf/releases/${{inputs.releaseId}}
+          path: kernelctf/releases/${{inputs.releaseId}}*
           if-no-files-found: error
           include-hidden-files: true
 
@@ -181,7 +181,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: ${{inputs.releaseId}}
-          path: ./kernelctf/releases/${{inputs.releaseId}}
+          path: ./kernelctf/releases/
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -191,7 +191,7 @@ jobs:
       - name: Upload release
         uses: 'google-github-actions/upload-cloud-storage@v2'
         with:
-          path: kernelctf/releases/${{inputs.releaseId}}
+          path: kernelctf/releases
           destination: kernelctf-build/releases
           predefinedAcl: publicRead
           gzip: false # most of the files are compressed already, do not compress them again

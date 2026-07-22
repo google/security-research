@@ -2,27 +2,31 @@
 set -ex
 
 usage() {
-    echo "Usage: $0 (lts|cos|mitigation)-<version> [<branch-tag-or-commit>]";
+    echo "Usage: $0 (lts|lts2|cos|mitigation)-<version> [<branch-tag-or-commit>]";
     exit 1;
 }
 
 RELEASE_NAME="$1"
 BRANCH="$2"
 
-if [[ ! "$RELEASE_NAME" =~ ^(lts|cos|mitigation)-(.*) ]]; then usage; fi
+if [[ ! "$RELEASE_NAME" =~ ^(lts|lts2|cos|mitigation)-(.*) ]]; then usage; fi
 TARGET="${BASH_REMATCH[1]}"
 VERSION="${BASH_REMATCH[2]}"
 
 case $TARGET in
-  lts)
+  lts | lts2)
     REPO="https://github.com/gregkh/linux"
     DEFAULT_BRANCH="v${VERSION}"
     case $VERSION in
-        6.12.*) CONFIG_FN="lts-6.12.config" ;;
-        6.6.*) CONFIG_FN="lts-6.6.config" ;;
-        6.1.*) CONFIG_FN="lts-6.1.config" ;;
+        6.12.*) CONFIG_FN="${TARGET}-6.12.config" ;;
+        6.6.*) CONFIG_FN="${TARGET}-6.6.config" ;;
+        6.1.*) CONFIG_FN="${TARGET}-6.1.config" ;;
     esac
     if [ -z "$CONFIG_FN" ]; then echo "Failed to select config (VERSION=$VERSION)"; exit 1; fi
+    if [ "$TARGET" == "lts2" ]; then
+        export LLVM=1
+        export LOCALVERSION=""
+    fi
     ;;
   cos)
     REPO="https://cos.googlesource.com/third_party/kernel"
@@ -98,7 +102,7 @@ if [ "$TARGET" == "cos" ]; then
     rm lakitu_defconfig || true
     make lakitu_defconfig
     cp .config lakitu_defconfig
-else
+elif [ "$TARGET" != "lts2" ]; then
     if [[ $VERSION == "6.12"* ]]; then
         curl 'https://cos.googlesource.com/third_party/kernel/+/refs/heads/cos-6.12/arch/x86/configs/lakitu_defconfig?format=text'|base64 -d > lakitu_defconfig
     else
@@ -107,9 +111,11 @@ else
     cp lakitu_defconfig .config
 fi
 
-# build everything into the kernel instead of modules
-# note: this can increase the attack surface!
-sed -i s/=m/=y/g .config
+if [ "$TARGET" != "lts2" ]; then
+    # build everything into the kernel instead of modules
+    # note: this can increase the attack surface!
+    sed -i s/=m/=y/g .config
+fi
 
 if [ ! -z "$CONFIG_FN" ]; then
     cp $CONFIGS_DIR/$CONFIG_FN kernel/configs/
@@ -118,7 +124,7 @@ fi
 
 make olddefconfig
 
-if [ ! -z "$CONFIG_FN" ]; then
+if [ "$TARGET" != "lts2" ] && [ ! -z "$CONFIG_FN" ]; then
     if scripts/diffconfig $CONFIGS_DIR/$CONFIG_FN .config|grep "^[^+]"; then
         echo "Config did not apply cleanly."
         exit 1
@@ -137,15 +143,95 @@ if [ "$TARGET" == "cos" ] && grep __cold include/linux/compiler_types.h; then
     sed -i 's/.*#define.__cold.*//' include/linux/compiler_attributes.h
 fi
 
-make -j`nproc`
+install_and_tar_module_type() {
+    local DEST_DIR="$1"
+    local KRELEASE="$2"
+    local MOD_TYPE="$3"
+    local STRIP="$4"
+    local WORK_DIR="$BUILD_DIR/$MOD_TYPE"
 
-mkdir -p $RELEASE_DIR 2>/dev/null || true
+    echo "--> Generating ${MOD_TYPE} modules..."
+    rm -rf "$WORK_DIR"
+    mkdir -p "$WORK_DIR"
 
-echo "REPOSITORY_URL=$REPO" > $RELEASE_DIR/COMMIT_INFO
-(echo -n "COMMIT_HASH="; git rev-parse HEAD) >> $RELEASE_DIR/COMMIT_INFO
+    local MAKE_ARGS=(modules_install INSTALL_MOD_PATH="$WORK_DIR" KERNELRELEASE="$KRELEASE")
+    if [ -n "$STRIP" ]; then
+        MAKE_ARGS+=(INSTALL_MOD_STRIP="$STRIP")
+    fi
 
-cp $BUILD_DIR/arch/x86/boot/bzImage $RELEASE_DIR/
-cp $BUILD_DIR/lakitu_defconfig $RELEASE_DIR/
-cp $BUILD_DIR/.config $RELEASE_DIR/
-if [ "$TARGET" == "lts" ]; then cp $BUILD_DIR/upstream_defconfig $RELEASE_DIR/; fi
-gzip -c $BUILD_DIR/vmlinux > $RELEASE_DIR/vmlinux.gz
+    make "${MAKE_ARGS[@]}"
+    rm -f "$WORK_DIR/lib/modules/$KRELEASE/build" "$WORK_DIR/lib/modules/$KRELEASE/source"
+    tar -czf "$DEST_DIR/${MOD_TYPE}.tar.gz" -C "$WORK_DIR" lib
+}
+
+install_and_tar_modules() {
+    local DEST_DIR="$1"
+    local KRELEASE="$2"
+
+    install_and_tar_module_type "$DEST_DIR" "$KRELEASE" "modules" "1"
+    install_and_tar_module_type "$DEST_DIR" "$KRELEASE" "modules_dbgsym" ""
+}
+
+build_and_package() {
+    local REL_NAME="$1"
+    local REL_DIR="$2"
+    shift 2
+    local CFG_FILES=("$@")
+
+    for cfg in "${CFG_FILES[@]}"; do
+        echo "--> Checking required config: $(basename "$cfg")..."
+        python3 "$BASEDIR/check_required_config.py" .config "$cfg"
+    done
+
+    make olddefconfig
+    make -j`nproc`
+
+    mkdir -p "$REL_DIR" 2>/dev/null || true
+
+    echo "REPOSITORY_URL=$REPO" > "$REL_DIR/COMMIT_INFO"
+    (echo -n "COMMIT_HASH="; git rev-parse HEAD) >> "$REL_DIR/COMMIT_INFO"
+
+    cp "$BUILD_DIR/arch/x86/boot/bzImage" "$REL_DIR/"
+    if [ -f "$BUILD_DIR/lakitu_defconfig" ]; then cp "$BUILD_DIR/lakitu_defconfig" "$REL_DIR/"; fi
+    if [ -f "$BUILD_DIR/upstream_defconfig" ]; then cp "$BUILD_DIR/upstream_defconfig" "$REL_DIR/"; fi
+    cp "$BUILD_DIR/.config" "$REL_DIR/"
+    gzip -c "$BUILD_DIR/vmlinux" > "$REL_DIR/vmlinux.gz"
+
+    if [ "$TARGET" == "lts2" ]; then
+        local KERNEL_REL
+        KERNEL_REL=$(make -s kernelrelease)
+        install_and_tar_modules "$REL_DIR" "$KERNEL_REL"
+    fi
+}
+
+if [ "$TARGET" == "lts2" ]; then
+    build_and_package "$RELEASE_NAME" "$RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config"
+
+    MITIGATION_RELEASE_NAME="${RELEASE_NAME}_mitigation"
+    MITIGATION_RELEASE_DIR="$BASEDIR/releases/$MITIGATION_RELEASE_NAME"
+
+    echo "=========================================================="
+    echo "  Building LTS2 Mitigation Release ($MITIGATION_RELEASE_NAME)"
+    echo "=========================================================="
+
+    if [ -d "$MITIGATION_RELEASE_DIR" ]; then
+        echo "Mitigation release directory already exists ($MITIGATION_RELEASE_DIR). Stopping."
+        exit 1
+    fi
+
+    mkdir -p kernel/configs
+    cp "$CONFIGS_DIR/lts2-mitigation.config" kernel/configs/mitigation.config
+    make mitigation.config
+
+    build_and_package "$MITIGATION_RELEASE_NAME" "$MITIGATION_RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config" "$CONFIGS_DIR/lts2-mitigation.config"
+else
+    build_and_package "$RELEASE_NAME" "$RELEASE_DIR"
+fi
+
+echo "=========================================================="
+echo "  Release build completed successfully!"
+echo "  Primary release: $RELEASE_DIR"
+if [ "$TARGET" == "lts2" ]; then
+    echo "  Mitigation release: $MITIGATION_RELEASE_DIR"
+fi
+echo "=========================================================="
