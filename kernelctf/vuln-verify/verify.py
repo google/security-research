@@ -98,7 +98,7 @@ os.chdir(os.path.dirname(__file__))
 os.makedirs("builds", exist_ok=True)
 os.makedirs("verify_results", exist_ok=True)
 
-public_csv = parseCsv(fetch(PUBLIC_CSV_URL, "kernelctf_public_sheet.csv"), "ID")
+public_csv = parseCsv(fetch(PUBLIC_CSV_URL, "kernelctf_public_sheet.csv", cache_time=24*3600), "ID")
 #pprint(public_csv)
 
 if not is_cached(KERNEL_DANCE_SQL_FN, 3600*24*7):
