@@ -191,7 +191,7 @@ jobs:
       - name: Upload release
         uses: 'google-github-actions/upload-cloud-storage@v2'
         with:
-          path: kernelctf/releases
+          path: kernelctf/releases/${{inputs.releaseId}}*
           destination: kernelctf-build/releases
           predefinedAcl: publicRead
           gzip: false # most of the files are compressed already, do not compress them again

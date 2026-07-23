@@ -11,10 +11,11 @@ def add_release(release_id, branch=None):
     url = f"https://storage.googleapis.com/kernelctf-build/releases/{release_id}/bzImage"
     status_code = requests.head(url).status_code
     if status_code == 200:
-        print("  -> Release already exists, skipping...")
+        print(f"  -> Release {release_id} already exists, skipping...")
         return
     if status_code != 403:
         fail(f"Unexpected HTTP status code for release check: {status_code} (url = {url})")
+    print(f"  -> Adding release {release_id}")
 
     global releases
     releases.append({ "releaseId": release_id, "branch": branch })
