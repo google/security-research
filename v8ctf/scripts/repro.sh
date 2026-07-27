@@ -2,9 +2,23 @@
 
 set -e
 
+DEBUG=false
+while getopts "d" opt; do
+  case ${opt} in
+    d )
+      DEBUG=true
+      ;;
+    \? )
+      echo "Usage: $0 [-d] MAJOR path/to/exploit.tar.gz" >&2
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
 if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 MAJOR path/to/exploit.tar.gz" >&2
-    echo "Example: $0 137 ~/Downloads/exploit.tar.gz" >&2
+    echo "Usage: $0 [-d] MAJOR path/to/exploit.tar.gz" >&2
+    echo "Example: $0 -d 137 ~/Downloads/exploit.tar.gz" >&2
     exit 1
 fi
 
@@ -110,7 +124,7 @@ TRIES=10
 TIMEOUT_SECONDS=300
 SLEEP_SECONDS=5
 MAX_LOOP=$(( TIMEOUT_SECONDS / SLEEP_SECONDS ))
-FLAG_REGEX='v8CTF\{.*\}'
+FLAG_REGEX='v8CTF\{[^}]+\}'
 
 success_cnt=0
 for ((i = 0 ; i < ${TRIES} ; i++ )); do
@@ -119,14 +133,13 @@ for ((i = 0 ; i < ${TRIES} ; i++ )); do
     NC_PID=$!
 
     for ((j = 0 ; j < ${MAX_LOOP} ; j++ )); do
-        FLAG="$(grep --only-matching --max-count 1 --no-filename -E "${FLAG_REGEX}" "${NC_OUT}" || true)"
+        FLAG="$(grep --text --only-matching --max-count 1 --no-filename -E "${FLAG_REGEX}" "${NC_OUT}" || true)"
         if [[ ! -z "${FLAG}" ]]; then
             break;
         fi
         sleep "${SLEEP_SECONDS}"
     done
     kill -SIGTERM ${NC_PID} || true
-    rm "${NC_OUT}"
 
     REAL_FLAG="$(kubectl get secret v8ctf-flag -o=jsonpath='{.data.flag}' | base64 -d)"
     if [[ "${FLAG}" == "${REAL_FLAG}" ]]; then
@@ -137,15 +150,13 @@ for ((i = 0 ; i < ${TRIES} ; i++ )); do
             echo "Got an invalid flag: ${FLAG} (real flag: ${REAL_FLAG})" >&2
         fi
         echo "Try $i: fail"
+        if [[ "${DEBUG}" == "true" ]]; then
+            echo "--- Exploit Output (Try $i) ---" >&2
+            cat "${NC_OUT}" >&2
+            echo "----------------------------" >&2
+        fi
     fi
+    rm "${NC_OUT}"
 done
 
 echo "success rate: ${success_cnt} / ${TRIES}"
-
-#timeout --foreground "${TIMEOUT_SECONDS}s" tail --follow -n +1 | grep --only-matching --max-count 1 --no-filename -E "${FLAG_REGEX}"
-
-#if timeout --foreground "${TIMEOUT_SECONDS}s" nc localhost "${PORT}" 2>&1 | grep --only-matching --max-count 1 --no-filename -E "${FLAG_REGEX}"; then
-#    echo "success"
-#else
-#    echo "fail"
-#fi
