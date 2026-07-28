@@ -13,7 +13,9 @@ on:
         required: true
         default: 'lts2-6.12.98'
 
-permissions: {}
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   upload:
