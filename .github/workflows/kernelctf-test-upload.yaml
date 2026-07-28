@@ -28,6 +28,7 @@ jobs:
           path: ./kernelctf/releases/
           repository: google/security-research
           run-id: ${{ inputs.runId }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
