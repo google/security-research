@@ -3,10 +3,10 @@
 kvmCTF is a part of the
 [Google VRP](https://bughunters.google.com/about/rules/6625378258649088/google-and-alphabet-vulnerability-reward-program-vrp-rules)
 and is focused on eliminating VM-reachable Kernel-based Virtual Machine (KVM)
-vulnerabilities. We invite security researchers to demonstrate their bug hunting
-and exploitation techniques on an LTS kernel version. Eventually we might add
-experimental mitigations to KVM that we would like to see if and how researchers
-can bypass them.
+vulnerabilities in upstream mainline kernel. We invite security researchers to
+demonstrate their bug hunting and exploitation techniques on an LTS kernel version.
+Eventually we might add experimental mitigations to KVM that we would like to see
+if and how researchers can bypass them.
 
 We are additionally asking researchers to publish their submissions, helping the
 community to learn from each other’s techniques.
@@ -14,6 +14,7 @@ community to learn from each other’s techniques.
 # Competition Rules
 
 ## Target: Linux LTS KVM
+
 The host runs v6.1.74 and runs on an Intel(R) Xeon(R) Gold 5222 CPU @ 3.80GHz.
 Participants will have the option to select whether they want the host to run
 with `CONFIG_KASAN` disabled or enabled. The complete setup of the host can be
@@ -34,6 +35,11 @@ Participants will be connected to a Debian 12.5 (bookworm) guest that runs on a
 
 The goal is to perform a successful guest-to-host attack. Currently we do not
 reward QEMU, host-to-KVM or CPU/DRAM/HW-based vulnerabilities.
+
+Note: Although our testing environment runs an LTS kernel, vulnerabilities must
+be reproducible in the upstream Linux mainline master branch to be eligible.
+Vulnerabilities that only exist in downstream backports or older LTS trees are
+out of scope.
 
 ## Rewards
 | Tier                   | Reward   |
@@ -149,11 +155,9 @@ to the server.
 
 ## Additional eligibility rules
 Only the first submission for a vulnerability is eligible for a reward.
-If a patch commit fixes multiple vulnerabilities (e.g. by backporting a new
-version of a component to the stable tree), we assume the root cause is the same
+If a patch commit fixes multiple vulnerabilities, we assume the root cause is the same
 and we consider further submissions as duplicates.
-If the same vulnerability is fixed in multiple patch commits (e.g. in commit A
-in the mainline tree and separately in commit B in the stable tree), then we
+If the same vulnerability is fixed in multiple patch commits, then we
 still consider it as the same vulnerability, thus making further submissions
 duplicates.
 
@@ -236,7 +240,7 @@ in the first stage.
      invalidate the submission, change the reward or make a custom decision at
      our discretion. 
 3. Wait for the patch to land in a release candidate on the mainline tree (and
-    tagged in Git), or committed on a stable tree.
+    tagged in Git).
 4. Contact us within 7 days and provide the following details:
     * The patch commit, CVE (optionally, if it is already known) and the exact
     target(s) (e.g. `LTS 6.1.74`).
@@ -258,19 +262,22 @@ details were reported somewhere (e.g. Pwn2Own) other than
 [security@kernel.org](mailto:security@kernel.org).
 
 ## Note about making the exploit public
-You can publish your exploit at any time you would like to, but we recommend
-publishing the exploit 30 days after the vulnerability was disclosed. This gives
-the industry time to apply patches. Read our stance on the topic in [Google’s
-disclosure policy](http://about.google/appsecurity).
+You have to publish your exploit within 90 days of disclosing the vulnerability
+to be eligible for a reward.
+
+We recommend publishing the exploit 30 days after
+the vulnerability was disclosed. This gives the industry time to apply patches.
+Read our stance on the topic in [Google’s disclosure
+policy](http://about.google/appsecurity).
 
 We only process submissions after the exploit is public (and we can only issue
 rewards when the submission was processed), but not sooner than 30 days after
 the vulnerability disclosure.
 
 If you publish sooner than 30 days, you won’t get the reward faster. If you want
-to delay the publication (disclose later than 30 days), you could do that, but
-you would get the money later (we want to encourage you to publish the exploit
-details sooner than later).
+to delay the publication (disclose later than 30 days but within the 90 days
+window), you could do that, but you would get the money later (we want to
+encourage you to publish the exploit details sooner than later).
 
 ## Exploit PR file structure
 The submission should be put into the `pocs/linux/kvmctf/<cve>/` folder within
@@ -360,11 +367,9 @@ If possible, also include how stable your exploit is (e.g. it worked 90% of the
 time during your testing).
 # Additional information
 ## Program change notifications and communication
-We announce major program changes on
-[Google’s Security Blog](https://security.googleblog.com/), but we may change
-minor, mostly technical details (like steps in the submission process) by
-changing this page and announcing the change on our
-[#kvmctf-announcements](https://discord.gg/gBrsEgvAUk) Discord channel.
+We announce program changes through
+[#kvmctf-announcements](https://discord.gg/gBrsEgvAUk) Discord channel. This
+document is updated to reflect the current set of kvmCTF rules.
 
 If you have any question regarding kvmCTF, feel free to ask on the
 [#kvmctf](https://discord.gg/c8drZpwYBn) Discord channel.
