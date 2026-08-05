@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+"""Extracts Linux kernel BTF type information from a vmlinux binary into a SQLite database."""
 
 import logging
 import sqlite3
@@ -9,20 +10,23 @@ import os
 import tempfile
 import math
 import sys
+import shutil
 
 from contextlib import closing
 
 
-PAHOLE = "/usr/bin/pahole"
-BPFTOOL = "/usr/sbin/bpftool"
-READELF = "/usr/bin/readelf"
+PAHOLE = shutil.which("pahole") or "/usr/bin/pahole"
+BPFTOOL = shutil.which("bpftool") or "/usr/sbin/bpftool"
+READELF = shutil.which("readelf") or "/usr/bin/readelf"
 
 
 def eprint(*args, **kwargs):
+    """Prints output to stderr."""
     print(*args, file=sys.stderr, **kwargs)
 
 
 def vmlinux(filename: str) -> str:
+    """Validates that the given file exists, is an ELF64 binary, and contains debug data."""
     base_dir, file_name = os.path.split(filename)
     if not base_dir:
         base_dir = os.getcwd()
@@ -48,6 +52,7 @@ def vmlinux(filename: str) -> str:
 
 
 def can_create_file(filename: str) -> str:
+    """Validates that the output directory exists and is writable."""
     base_dir, file_name = os.path.split(filename)
     if not base_dir:
         base_dir = os.getcwd()
@@ -60,6 +65,7 @@ def can_create_file(filename: str) -> str:
 
 
 def dump_btf_json(vmlinux: str) -> bytes:
+    """Generates BTF data using Pahole and dumps it as JSON via bpftool."""
     with tempfile.NamedTemporaryFile() as tmp:
         logging.info("TMP file created: %s" % tmp.name)
 
@@ -96,6 +102,345 @@ def dump_btf_json(vmlinux: str) -> bytes:
         return json_data
 
 
+def unwrap_modifiers(type: dict, types: dict) -> dict:
+    """Unwraps modifier wrappers (TYPEDEF, CONST, VOLATILE, RESTRICT, TYPE_TAG).
+    Assigns typedef names to inline anonymous structs/enums.
+    """
+    while type.get("kind") in ["TYPEDEF", "CONST", "VOLATILE", "RESTRICT", "TYPE_TAG"]:
+        if (type["kind"] == "TYPEDEF") and (
+            types.get(type.get("type_id", 0), {}).get("name") == "(anon)"
+        ):
+            name = type["name"]
+            type = types[type["type_id"]]
+            type["name"] = name
+        elif "type_id" in type and type["type_id"] != 0:
+            type = types[type["type_id"]]
+        else:
+            break
+    return type
+
+
+def format_func_proto(
+    pointer_type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    prefix: str,
+) -> str:
+    """Formats function prototype signature for FUNC_PROTO pointer targets."""
+    ret_type_name = "void"
+    if pointer_type.get("ret_type_id", 0) != 0:
+        expanded_object = object.copy()
+        expanded_object["type_id"] = pointer_type["ret_type_id"]
+        deeper_types = get_shallow(
+            types,
+            struct_name,
+            struct_size,
+            expanded_object,
+            pointer_type.get("name", "(anon)"),
+            prefix,
+        )
+        if deeper_types:
+            ret_type_name = deeper_types[0]["type"]
+
+    fun_params = []
+    for param in pointer_type.get("params", []):
+        if param.get("type_id", 0) != 0:
+            expanded_object = object.copy()
+            expanded_object["type_id"] = param["type_id"]
+            expanded_object["bits_offset"] = 0
+            deeper_types = get_shallow(
+                types,
+                struct_name,
+                struct_size,
+                expanded_object,
+                pointer_type.get("name", "(anon)"),
+                prefix,
+            )
+
+            if deeper_types:
+                ptype = deeper_types[0]["type"]
+                pname = param["name"]
+                if pname != "(anon)":
+                    param_str = (ptype + pname) if ptype.endswith("*") else (ptype + " " + pname)
+                else:
+                    param_str = (ptype + "?") if ptype.endswith("*") else (ptype + " ?")
+                fun_params.append(param_str)
+        else:
+            pname = param.get("name", "")
+            param_str = ("void *" + pname) if pname != "(anon)" else "void *?"
+            fun_params.append(param_str)
+
+    return "%s (*<name>) (%s)" % (ret_type_name, ", ".join(fun_params))
+
+
+def format_anonymous_struct_or_union(
+    pointer_type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    prefix: str,
+) -> str:
+    """Formats inline member strings for anonymous struct/union pointer targets."""
+    struct_members = []
+    for member in pointer_type.get("members", []):
+        if member.get("type_id", 0) != 0:
+            expanded_object = object.copy()
+            expanded_object["type_id"] = member["type_id"]
+            deeper_types = get_shallow(
+                types,
+                struct_name,
+                struct_size,
+                expanded_object,
+                pointer_type.get("name", "(anon)"),
+                prefix,
+            )
+
+            if deeper_types:
+                mtype = deeper_types[0]["type"]
+                mname = member["name"]
+                if mname != "(anon)":
+                    mem_str = (mtype + mname) if mtype.endswith("*") else (mtype + " " + mname)
+                else:
+                    mem_str = (mtype + "?") if mtype.endswith("*") else (mtype + " ?")
+                struct_members.append(mem_str)
+
+        elif member.get("type_id", 0) == 0:
+            mname = member.get("name", "")
+            mem_str = ("void *" + mname) if mname != "(anon)" else "void *?"
+            struct_members.append(mem_str)
+
+    kind_str = pointer_type["kind"].lower()
+    return "%s {%s} *" % (kind_str, ", ".join(struct_members))
+
+
+def resolve_pointer_target(
+    type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    prefix: str,
+) -> str:
+    """Resolves pointer target type and formats output type string."""
+    if "type_id" not in type:
+        return "(anon) *"
+
+    if type["type_id"] == 0:
+        return "void *"
+
+    pointer_type = types[type["type_id"]]
+    depth = 0
+
+    while "(anon)" in pointer_type.get("name", ""):
+        depth += 1
+        if depth > 100:
+            break
+
+        if pointer_type["kind"] in ["STRUCT", "UNION"]:
+            pointer_type["name"] = format_anonymous_struct_or_union(
+                pointer_type, types, struct_name, struct_size, object, prefix
+            )
+            break
+        elif pointer_type["kind"] == "FUNC_PROTO":
+            pointer_type["name"] = format_func_proto(
+                pointer_type, types, struct_name, struct_size, object, prefix
+            )
+            break
+        elif "type_id" in pointer_type and pointer_type["type_id"] != 0:
+            pointer_type = types[pointer_type["type_id"]]
+        elif "type_id" in pointer_type and pointer_type["type_id"] == 0:
+            pointer_type["name"] = "void"
+            break
+        else:
+            break
+
+    pname = pointer_type.get("name", "void")
+    pkind = pointer_type.get("kind", "")
+
+    if pkind == "STRUCT":
+        return ("struct " + pname + " *") if not pname.endswith(")") else ("struct " + pname)
+    elif pkind == "CONST":
+        return ("const " + pname + " *") if not pname.endswith(")") else ("const " + pname)
+    else:
+        return (pname + " *") if not pname.endswith(")") else pname
+
+
+def process_array_type(
+    type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    parent_type: str,
+    prefix: str,
+    bits_offset: int,
+) -> list:
+    """Processes fixed-size array members by recursively unrolling indices."""
+    shallow_types = []
+    object_bits_offset = object["bits_offset"] + bits_offset
+
+    for index in range(type["nr_elems"]):
+        expanded_object = object.copy()
+        expanded_object["type_id"] = type["type_id"]
+        expanded_object["name"] += f"[{index}]"
+
+        deeper_types = get_shallow(
+            types,
+            struct_name,
+            struct_size,
+            expanded_object,
+            parent_type,
+            prefix,
+            object_bits_offset,
+        )
+
+        sorted_deepest = sorted(
+            deeper_types, key=lambda x: x["bits_end"], reverse=True
+        )
+
+        for element in reversed(sorted_deepest):
+            element["bits_offset"] = object_bits_offset
+            element["bits_end"] -= object["bits_offset"]
+            object_bits_offset = element["bits_end"]
+
+        deepest_bits_end = (
+            sorted_deepest[0]["bits_end"] if len(sorted_deepest) > 0 else 0
+        )
+        object_bits_offset = 8 * math.ceil(deepest_bits_end / 8)
+        shallow_types += deeper_types
+
+    return shallow_types
+
+
+def process_struct_or_union_type(
+    type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    prefix: str,
+    bits_offset: int,
+) -> list:
+    """Processes struct or union members, including bitfield offsets."""
+    shallow_types = []
+    members = [(idx, member) for idx, member in enumerate(type.get("members", []))]
+    bitfield_id = -1
+
+    for idx, member in members:
+        if type["kind"] == "UNION":
+            new_prefix = prefix + "/*" + str(idx) + ":" + object["name"] + "*/"
+        else:
+            new_prefix = prefix + object["name"] + "."
+
+        if "bitfield_size" in member:
+            if [
+                True
+                for id, mem in members
+                if (id == idx - 1) and ("bitfield_size" not in mem)
+            ]:
+                bitfield_id = idx
+            elif idx == 0:
+                bitfield_id = 0
+
+            member["bits_offset"] = [
+                mem["bits_offset"]
+                for id, mem in members
+                if (id == bitfield_id)
+            ][0]
+
+            if (":" + str(member["bitfield_size"])) not in member["name"]:
+                member["name"] = member["name"] + ":" + str(member["bitfield_size"])
+
+        deeper_types = get_shallow(
+            types,
+            struct_name,
+            struct_size,
+            member,
+            type.get("name", "(anon)"),
+            new_prefix,
+            bits_offset + object["bits_offset"],
+        )
+
+        shallow_types += deeper_types
+
+    return shallow_types
+
+
+def process_pointer_or_scalar_type(
+    type: dict,
+    types: dict,
+    struct_name: str,
+    struct_size: int,
+    object: dict,
+    parent_type: str,
+    prefix: str,
+    bits_offset: int,
+) -> list:
+    """Processes leaf node types (PTR, ENUM, ARRAY flex, INT, FLOAT, FWD, etc.)."""
+    kind = type["kind"]
+    out_type = type.get("name", "(anon)")
+    is_flex = False
+
+    if type["kind"] == "PTR":
+        out_type = resolve_pointer_target(
+            type, types, struct_name, struct_size, object, prefix
+        )
+        nr_bits = 64  # PTR_SIZE
+        bits_end = bits_offset + object["bits_offset"] + nr_bits
+    elif type["kind"] in ["ENUM", "ENUM64"]:
+        nr_bits = type.get("size", 4) * 8
+        bits_end = bits_offset + object["bits_offset"] + nr_bits
+    elif type["kind"] == "ARRAY":
+        expanded_object = object.copy()
+        expanded_object["type_id"] = type["type_id"]
+        expanded_object["bits_offset"] = 0
+        deeper_types = get_shallow(
+            types,
+            struct_name,
+            struct_size,
+            expanded_object,
+            type.get("name", "(anon)"),
+            prefix,
+            0,
+        )
+
+        sorted_deepest = sorted(
+            deeper_types, key=lambda x: x["bits_end"], reverse=True
+        )
+        nr_bits = sorted_deepest[0]["bits_end"] if sorted_deepest else 0
+
+        elem_type = unwrap_modifiers(types[type["type_id"]], types)
+        kind = "ARRAY<" + elem_type["kind"] + ">"
+        is_flex = True
+        bits_end = bits_offset + object["bits_offset"]
+    else:
+        if "nr_bits" in type:
+            nr_bits = type["nr_bits"]
+        elif "size" in type:
+            nr_bits = type["size"] * 8
+        else:
+            nr_bits = 0
+        bits_end = bits_offset + object["bits_offset"] + nr_bits
+
+    return [
+        {
+            "struct_name": struct_name,
+            "struct_size": struct_size,
+            "parent_type": parent_type,
+            "kind": kind,
+            "type": out_type,
+            "name": prefix + object["name"],
+            "bits_offset": bits_offset + object["bits_offset"],
+            "nr_bits": nr_bits,
+            "bits_end": bits_end,
+            "is_flex": is_flex,
+        }
+    ]
+
+
 def get_shallow(
     types,
     struct_name,
@@ -105,362 +450,45 @@ def get_shallow(
     prefix="",
     bits_offset=0,
 ):
-    shallow_types = []
-    type = types[object["type_id"]]
+    """Recursively flattens BTF member types for a struct or field into shallow field records."""
+    type = unwrap_modifiers(types[object["type_id"]], types)
 
-    while type["kind"] in ["TYPEDEF", "CONST", "VOLATILE", "RESTRICT"]:
-        if (type["kind"] == "TYPEDEF") and (
-            types[type["type_id"]]["name"] == "(anon)"
-        ):
-            # Sometimes we have inline structs and enumes defined via typedef.
-            # They are considered as anonymous. So we want to put typedef name instead.
-            #
-            # Before this fix example:
-            # {'id': 2184, 'kind': 'TYPEDEF', 'name': 'efi_memory_desc_t', 'type_id': 2183}
-            # {'id': 2183, 'kind': 'STRUCT', 'name': '(anon)', 'size': 40, 'vlen': 6, 'members': [{'name': 'type', 'type_id': 33, 'bits_offset': 0}, {'name': 'pad', 'type_id': 33, 'bits_offset': 32}, {'name': 'phys_addr', 'type_id': 35, 'bits_offset': 64}, {'name': 'virt_addr', 'type_id': 35, 'bits_offset': 128}, {'name': 'num_pages', 'type_id': 35, 'bits_offset': 192}, {'name': 'attribute', 'type_id': 35, 'bits_offset': 256}]}
-            #
-            # After this fix example:
-            # {'id': 2184, 'kind': 'TYPEDEF', 'name': 'efi_memory_desc_t', 'type_id': 2183}
-            # {'id': 2183, 'kind': 'STRUCT', 'name': 'efi_memory_desc_t', 'size': 40, 'vlen': 6, 'members': [{'name': 'type', 'type_id': 33, 'bits_offset': 0}, {'name': 'pad', 'type_id': 33, 'bits_offset': 32}, {'name': 'phys_addr', 'type_id': 35, 'bits_offset': 64}, {'name': 'virt_addr', 'type_id': 35, 'bits_offset': 128}, {'name': 'num_pages', 'type_id': 35, 'bits_offset': 192}, {'name': 'attribute', 'type_id': 35, 'bits_offset': 256}]}
-            name = type["name"]
-            type = types[type["type_id"]]
-            type["name"] = name
-        else:
-            type = types[type["type_id"]]
-
-    if type["kind"] == "ARRAY" and type["nr_elems"] > 0:
-        object_bits_offset = object["bits_offset"] + bits_offset
-        for index in range(type["nr_elems"]):
-            expanded_object = object.copy()
-            expanded_object["type_id"] = type["type_id"]
-            expanded_object["name"] += f"[{index}]"
-            deeper_types = get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                expanded_object,
-                parent_type,
-                prefix,
-                object_bits_offset,
-            )
-
-            sorted_deepest = sorted(
-                deeper_types, key=lambda x: x["bits_end"], reverse=True
-            )
-
-            for element in reversed(sorted_deepest):
-                element["bits_offset"] = object_bits_offset
-                element["bits_end"] -= object["bits_offset"]
-                object_bits_offset = element["bits_end"]
-
-            deepest_bits_end = (
-                sorted_deepest[0]["bits_end"] if len(sorted_deepest) > 0 else 0
-            )
-            object_bits_offset = 8 * math.ceil(deepest_bits_end / 8)
-            shallow_types += deeper_types
-    elif type["kind"] == "STRUCT" or type["kind"] == "UNION":
-        members = [(idx, member) for idx, member in enumerate(type["members"])]
-        bitfield_id = -1
-        for idx, member in members:
-            if type["kind"] == "UNION":
-                new_prefix = (
-                    prefix + "/*" + str(idx) + ":" + object["name"] + "*/"
-                )
-            else:
-                new_prefix = prefix + object["name"] + "."
-
-            if "bitfield_size" in member:
-                # Handle situations with bit masks like this:
-                #
-                # struct nft_table {
-                # 	struct list_head		list;
-                # 	struct rhltable			chains_ht;
-                # 	struct list_head		chains;
-                # 	struct list_head		sets;
-                # 	struct list_head		objects;
-                # 	struct list_head		flowtables;
-                # 	u64				        hgenerator;
-                # 	u64				        handle;
-                # 	u32				        use;
-                # 	u16				        family:6,
-                # 					        flags:8,
-                # 					        genmask:2;
-                # 	u32				        nlpid;
-                # 	char			        *name;
-                # 	u16				        udlen;
-                # 	u8				        *udata;
-                # };
-                if [
-                    True
-                    for id, mem in members
-                    if (id == idx - 1) and ("bitfield_size" not in mem)
-                ]:
-                    bitfield_id = idx
-                elif idx == 0:
-                    bitfield_id = 0
-
-                member["bits_offset"] = [
-                    mem["bits_offset"]
-                    for id, mem in members
-                    if (id == bitfield_id)
-                ][0]
-
-                if (":" + str(member["bitfield_size"])) not in member["name"]:
-                    member["name"] = (
-                        member["name"] + ":" + str(member["bitfield_size"])
-                    )
-
-            deeper_types = get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                member,
-                type["name"],
-                new_prefix,
-                bits_offset + object["bits_offset"],
-            )
-
-            shallow_types += deeper_types
-    else:
-        kind = type["kind"]
-        out_type = type["name"]
-        is_flex = False
-
-        if type["kind"] == "PTR":
-            if "type_id" in type:
-                pointer_type = type
-
-                if pointer_type["type_id"] != 0:
-                    pointer_type = types[pointer_type["type_id"]]
-
-                    while "(anon)" in pointer_type["name"]:
-                        if pointer_type["kind"] == "STRUCT":
-                            struct_members = []
-                            for member in pointer_type["members"]:
-                                if member["type_id"] != 0:
-                                    expanded_object = object.copy()
-                                    expanded_object["type_id"] = member[
-                                        "type_id"
-                                    ]
-                                    deeper_types = get_shallow(
-                                        types,
-                                        struct_name,
-                                        struct_size,
-                                        expanded_object,
-                                        pointer_type["name"],
-                                        prefix,
-                                    )
-
-                                    member_type = ""
-                                    if member["name"] != "(anon)":
-                                        member_type = (
-                                            deeper_types[0]["type"]
-                                            + member["name"]
-                                            if deeper_types[0]["type"][-1]
-                                            == "*"
-                                            else deeper_types[0]["type"]
-                                            + " "
-                                            + member["name"]
-                                        )
-                                    else:
-                                        member_type = (
-                                            deeper_types[0]["type"] + "?"
-                                            if deeper_types[0]["type"][-1]
-                                            == "*"
-                                            else deeper_types[0]["type"] + " ?"
-                                        )
-                                    struct_members.append(member_type)
-
-                                elif member["type_id"] == 0:
-                                    struct_members.append(
-                                        "void *" + member["name"]
-                                        if param["name"] != "(anon)"
-                                        else "void *?"
-                                    )
-
-                            pointer_type["name"] = "struct {%s} *" % (
-                                ", ".join(struct_members)
-                            )
-
-                        elif pointer_type["kind"] == "FUNC_PROTO":
-                            # Example of function structure that we parse here:
-                            #
-                            # {'id': 86, 'kind': 'FUNC_PROTO', 'name': '(anon)', 'ret_type_id': 0, 'vlen': 1, 'params': [{'name': '(anon)', 'type_id': 85}]}
-                            ret_type = {}
-                            if pointer_type["ret_type_id"] != 0:
-                                expanded_object = object.copy()
-                                expanded_object["type_id"] = pointer_type[
-                                    "ret_type_id"
-                                ]
-                                deeper_types = get_shallow(
-                                    types,
-                                    struct_name,
-                                    struct_size,
-                                    expanded_object,
-                                    pointer_type["name"],
-                                    prefix,
-                                )
-
-                                ret_type["name"] = deeper_types[0]["type"]
-
-                            else:
-                                ret_type["name"] = "void"
-
-                            fun_params = []
-                            for param in pointer_type["params"]:
-                                if param["type_id"] != 0:
-                                    expanded_object = object.copy()
-                                    expanded_object["type_id"] = param[
-                                        "type_id"
-                                    ]
-                                    expanded_object["bits_offset"] = 0
-                                    deeper_types = get_shallow(
-                                        types,
-                                        struct_name,
-                                        struct_size,
-                                        expanded_object,
-                                        pointer_type["name"],
-                                        prefix,
-                                    )
-
-                                    param_type = ""
-                                    if param["name"] != "(anon)":
-                                        param_type = (
-                                            deeper_types[0]["type"]
-                                            + param["name"]
-                                            if deeper_types[0]["type"][-1]
-                                            == "*"
-                                            else deeper_types[0]["type"]
-                                            + " "
-                                            + param["name"]
-                                        )
-                                    else:
-                                        param_type = (
-                                            deeper_types[0]["type"] + "?"
-                                            if deeper_types[0]["type"][-1]
-                                            == "*"
-                                            else deeper_types[0]["type"] + " ?"
-                                        )
-                                    fun_params.append(param_type)
-
-                                elif param["type_id"] == 0:
-                                    param_type = (
-                                        "void *" + param["name"]
-                                        if param["name"] != "(anon)"
-                                        else "void *?"
-                                    )
-                                    fun_params.append(param_type)
-
-                            pointer_type["name"] = "%s (*<name>) (%s)" % (
-                                ret_type["name"],
-                                ", ".join(fun_params),
-                            )
-
-                        elif pointer_type["type_id"] != 0:
-                            pointer_type = types[pointer_type["type_id"]]
-                        else:
-                            pointer_type["name"] = "void"
-                else:
-                    pointer_type["name"] = "void"
-
-                if pointer_type["kind"] == "STRUCT":
-                    out_type = (
-                        "struct " + pointer_type["name"] + " *"
-                        if pointer_type["name"][-1] != ")"
-                        else "struct " + pointer_type["name"]
-                    )
-                elif pointer_type["kind"] == "CONST":
-                    out_type = (
-                        "const " + pointer_type["name"] + " *"
-                        if pointer_type["name"][-1] != ")"
-                        else "const " + pointer_type["name"]
-                    )
-                else:
-                    out_type = (
-                        pointer_type["name"] + " *"
-                        if pointer_type["name"][-1] != ")"
-                        else pointer_type["name"]
-                    )
-
-            nr_bits = 64  # PTR_SIZE
-            bits_end = bits_offset + object["bits_offset"] + nr_bits
-        elif type["kind"] == "ENUM" or type["kind"] == "ENUM64":
-            nr_bits = type["size"] * 8
-            bits_end = bits_offset + object["bits_offset"] + nr_bits
-        elif type["kind"] == "ARRAY":
-            expanded_object = object.copy()
-            expanded_object["type_id"] = type["type_id"]
-            expanded_object["bits_offset"] = 0
-            deeper_types = get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                expanded_object,
-                type["name"],
-                prefix,
-                0,
-            )
-
-            sorted_deepest = sorted(
-                deeper_types, key=lambda x: x["bits_end"], reverse=True
-            )
-            nr_bits = sorted_deepest[0]["bits_end"]
-
-            while type["kind"] in [
-                "TYPEDEF",
-                "CONST",
-                "VOLATILE",
-                "ARRAY",
-                "RESTRICT",
-            ]:
-                if (type["kind"] == "TYPEDEF") and (
-                    types[type["type_id"]]["name"] == "(anon)"
-                ):
-                    # Sometimes we have inline structs and enumes defined via typedef.
-                    # They are considered as anonymous. So we want to put typedef name instead.
-                    #
-                    # Before this fix example:
-                    # {'id': 2184, 'kind': 'TYPEDEF', 'name': 'efi_memory_desc_t', 'type_id': 2183}
-                    # {'id': 2183, 'kind': 'STRUCT', 'name': '(anon)', 'size': 40, 'vlen': 6, 'members': [{'name': 'type', 'type_id': 33, 'bits_offset': 0}, {'name': 'pad', 'type_id': 33, 'bits_offset': 32}, {'name': 'phys_addr', 'type_id': 35, 'bits_offset': 64}, {'name': 'virt_addr', 'type_id': 35, 'bits_offset': 128}, {'name': 'num_pages', 'type_id': 35, 'bits_offset': 192}, {'name': 'attribute', 'type_id': 35, 'bits_offset': 256}]}
-                    #
-                    # After this fix example:
-                    # {'id': 2184, 'kind': 'TYPEDEF', 'name': 'efi_memory_desc_t', 'type_id': 2183}
-                    # {'id': 2183, 'kind': 'STRUCT', 'name': 'efi_memory_desc_t', 'size': 40, 'vlen': 6, 'members': [{'name': 'type', 'type_id': 33, 'bits_offset': 0}, {'name': 'pad', 'type_id': 33, 'bits_offset': 32}, {'name': 'phys_addr', 'type_id': 35, 'bits_offset': 64}, {'name': 'virt_addr', 'type_id': 35, 'bits_offset': 128}, {'name': 'num_pages', 'type_id': 35, 'bits_offset': 192}, {'name': 'attribute', 'type_id': 35, 'bits_offset': 256}]}
-                    name = type["name"]
-                    type = types[type["type_id"]]
-                    type["name"] = name
-                else:
-                    type = types[type["type_id"]]
-
-            kind = "ARRAY<" + type["kind"] + ">"
-            is_flex = True
-            bits_end = bits_offset + object["bits_offset"]
-        else:
-            if "nr_bits" not in type:
-                eprint(type)
-
-            nr_bits = type["nr_bits"]
-            bits_end = bits_offset + object["bits_offset"] + nr_bits
-
-        shallow_types.append(
-            {
-                "struct_name": struct_name,
-                "struct_size": struct_size,
-                "parent_type": parent_type,
-                "kind": kind,
-                "type": out_type,
-                "name": prefix + object["name"],
-                "bits_offset": bits_offset + object["bits_offset"],
-                "nr_bits": nr_bits,
-                "bits_end": bits_end,
-                "is_flex": is_flex,
-            }
+    if type["kind"] == "ARRAY" and type.get("nr_elems", 0) > 0:
+        return process_array_type(
+            type,
+            types,
+            struct_name,
+            struct_size,
+            object,
+            parent_type,
+            prefix,
+            bits_offset,
         )
-
-    return shallow_types
+    elif type["kind"] in ["STRUCT", "UNION"]:
+        return process_struct_or_union_type(
+            type,
+            types,
+            struct_name,
+            struct_size,
+            object,
+            prefix,
+            bits_offset,
+        )
+    else:
+        return process_pointer_or_scalar_type(
+            type,
+            types,
+            struct_name,
+            struct_size,
+            object,
+            parent_type,
+            prefix,
+            bits_offset,
+        )
 
 
 def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
+    """Creates the SQLite 'types' table schema and populates it with extracted BTF fields."""
     con.execute("DROP TABLE IF EXISTS types;")
 
     con.execute(
@@ -487,9 +515,11 @@ def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
 
     for type in json_data["types"]:
         if type["kind"] == "STRUCT":
-            for member in type["members"]:
+            sname = type.get("name", "(anon)")
+            ssize = type.get("size", 0)
+            for member in type.get("members", []):
                 data += get_shallow(
-                    types, type["name"], type["size"], member, type["name"]
+                    types, sname, ssize, member, sname
                 )
 
     if not data:
@@ -509,6 +539,7 @@ def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
 
 
 def create_sql_db(db_file: str, json_data: dict) -> None:
+    """Connects to SQLite database file and writes BTF type records."""
     with closing(sqlite3.connect(db_file)) as conn:
         sqlite3.register_adapter(bool, int)
         sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
@@ -519,30 +550,38 @@ def create_sql_db(db_file: str, json_data: dict) -> None:
 
 
 def check_tools() -> None:
-    subprocess.run(
-        [PAHOLE, "--version"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
-    logging.info("Pahole found: %s" % PAHOLE)
-    subprocess.run(
-        [BPFTOOL, "--version"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
-    logging.info("Bpftool found: %s" % BPFTOOL)
-    subprocess.run(
-        [READELF, "-v"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
-    logging.info("Readelf found: %s" % READELF)
+    """Verifies that Pahole, Bpftool, and Readelf CLI utilities are installed and functional."""
+    tools = [
+        ("Pahole", PAHOLE, ["--version"], "dwarves"),
+        ("Bpftool", BPFTOOL, ["--version"], "bpftool"),
+        ("Readelf", READELF, ["-v"], "binutils"),
+    ]
+
+    for name, path, flag, pkg in tools:
+        if not path or not os.path.exists(path):
+            logging.critical(
+                "Tool '%s' not found at '%s'! Please install it (e.g. 'sudo apt install %s')."
+                % (name, path, pkg)
+            )
+            raise FileNotFoundError(f"Required binary '{name}' not found at {path}")
+
+        try:
+            subprocess.run(
+                [path] + flag,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+            logging.info("%s found: %s" % (name, path))
+        except (subprocess.CalledProcessError, OSError) as e:
+            logging.critical(
+                "Tool '%s' at '%s' failed execution check: %s" % (name, path, e)
+            )
+            raise ValueError(f"Tool '{name}' failed execution check: {e}")
 
 
 def main():
+    """CLI entry point for extracting BTF field data from vmlinux into SQLite."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
     parser = argparse.ArgumentParser()
@@ -571,6 +610,11 @@ def main():
     check_tools()
 
     json_data = dump_btf_json(args.vmlinux[0])
+
+    if args.json_file:
+        with open(args.json_file, "w") as f:
+            json.dump(json_data, f)
+        logging.info("Saved BTF JSON output to: %s" % args.json_file)
 
     create_sql_db(args.db_file, json_data)
 
