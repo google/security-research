@@ -61,6 +61,8 @@ def create_log_table(
     con: sqlite3.Connection,
     function_locations: list,
 ) -> int:
+    con.execute("PRAGMA journal_mode = OFF;")
+    con.execute("PRAGMA synchronous = OFF;")
     con.execute("DROP TABLE IF EXISTS git_log;")
 
     con.execute(
@@ -69,7 +71,9 @@ def create_log_table(
                 end_line UNSIGNED BIG INT NOT NULL,
                 file_path TEXT NOT NULL,
                 author_date UNSIGNED BIG INT NOT NULL,
-                `commit` VARCHAR(40) NOT NULL
+                `commit` VARCHAR(40) NOT NULL,
+                data TEXT NOT NULL,
+                PRIMARY KEY (file_path, start_line, end_line)
             );"""
     )
     logging.info("Git Log table created in DB.")
@@ -89,25 +93,32 @@ def create_log_table(
             )
         tmp2.close()
 
-        with open(tmp2.name, mode="r") as f:
-            command = (
-                PARALLEL
-                + " --workdir "
-                + repo_folder
-                + " --bar --group -P "
-                + str(no_cpu)
-                + " -a "
-                + tmp2.name
-                + " "
-                + GIT
-                + " --no-pager log --format=\\'{},%at,%H\\' --no-patch -L {}"
-                + " >> "
-                + tmp.name
-            )
+        cmd = [
+            PARALLEL,
+            "--workdir",
+            repo_folder,
+            "--bar",
+            "--group",
+            "-P",
+            str(no_cpu),
+            "-a",
+            tmp2.name,
+            "--",
+            GIT,
+            "--no-pager",
+            "log",
+            "-n",
+            "1",
+            "--format={},%at,%H",
+            "--no-patch",
+            "-L",
+            "{}",
+        ]
 
-            logging.info("Command that we're running: %s" % command)
-            os.system(command)
-            logging.info("Command execution complete!")
+        logging.info("Command that we're running: %s" % " ".join(cmd))
+        with open(tmp.name, "w", encoding="utf-8") as out_f:
+            subprocess.run(cmd, stdout=out_f, check=True)
+        logging.info("Command execution complete!")
 
     log_data = ""
     with open(tmp.name, "r", encoding="utf-8", errors="ignore") as f:
@@ -121,20 +132,44 @@ def create_log_table(
         )
         raise ValueError
 
+    file_cache = {}
+
+    def get_file_lines(file_rel_path: str):
+        if file_rel_path not in file_cache:
+            full_path = os.path.join(repo_folder, file_rel_path)
+            if os.path.isfile(full_path):
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    file_cache[file_rel_path] = f.readlines()
+            else:
+                file_cache[file_rel_path] = []
+        return file_cache[file_rel_path]
+
     for log_entry in log_data:
         log_entry_chunks = log_entry.replace(":", ",").split(",")
 
-        if (not log_entry_chunks) or (len(log_entry_chunks) < 2):
+        if (not log_entry_chunks) or (len(log_entry_chunks) < 5):
             logging.critical("Can't get log entry parsed: %s" % log_entry)
             raise ValueError
 
-        start_line = log_entry_chunks[0].strip()
-        end_line = log_entry_chunks[1].strip()
+        start_line = int(log_entry_chunks[0].strip())
+        end_line = int(log_entry_chunks[1].strip())
         file_path = log_entry_chunks[2].strip()
-        author_date = log_entry_chunks[3].strip()
+        author_date = int(log_entry_chunks[3].strip())
         commit = log_entry_chunks[4].strip()
 
-        data.append((start_line, end_line, file_path, author_date, commit))
+        file_lines = get_file_lines(file_path)
+        function_code = "".join(file_lines[start_line - 1 : end_line])
+
+        data.append(
+            (
+                start_line,
+                end_line,
+                file_path,
+                author_date,
+                commit,
+                function_code,
+            )
+        )
 
     logging.info("Git data processing for specified commit is complete")
 
@@ -145,8 +180,8 @@ def create_log_table(
         raise ValueError
 
     con.executemany(
-        """INSERT INTO git_log
-                    VALUES(:start_line, :end_line, :file_path, :author_date, :commit)""",
+        """INSERT OR IGNORE INTO git_log
+                    VALUES(?, ?, ?, ?, ?, ?)""",
         data,
     )
 
@@ -227,12 +262,13 @@ def main():
         type=can_create_file,
         default="git_log.db",
     )
+    default_cpu_count = os.cpu_count() or 4
     parser.add_argument(
         "--no_cpu",
         nargs="?",
-        help="No of CPU to use for Git Log data parsing.",
+        help="No of CPU to use for Git Log data parsing (default: all available cores).",
         type=int,
-        default=5,
+        default=default_cpu_count,
     )
     args = parser.parse_args()
 
