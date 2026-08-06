@@ -57,19 +57,31 @@ class TestValidationHelpers(unittest.TestCase):
 
 
 class TestCheckTools(unittest.TestCase):
+    @patch("os.access")
+    @patch("os.path.exists")
     @patch("subprocess.run")
-    def test_check_tools_success(self, mock_run):
+    def test_check_tools_success(self, mock_run, mock_exists, mock_access):
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+        mock_exists.return_value = True
+        mock_access.return_value = True
         try:
             git_log_dump.check_tools()
         except Exception as e:
             self.fail(f"check_tools raised exception on success: {e}")
-        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(mock_run.call_count, 1)
 
     @patch("subprocess.run")
     def test_check_tools_failure(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(1, "git")
         with self.assertRaises(subprocess.CalledProcessError):
+            git_log_dump.check_tools()
+
+    @patch("os.path.exists")
+    @patch("subprocess.run")
+    def test_check_tools_parallel_missing(self, mock_run, mock_exists):
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+        mock_exists.return_value = False
+        with self.assertRaises(ValueError):
             git_log_dump.check_tools()
 
 
@@ -103,7 +115,7 @@ class TestCreateLogTable(unittest.TestCase):
         ]
 
         def fake_run(cmd, stdout=None, check=True):
-            if stdout:
+            if stdout and hasattr(stdout, "write"):
                 stdout.write(
                     "10,20:net/socket.c,1680000000,11223344556677889900aabbccddeeff11223344\n"
                 )
@@ -147,7 +159,7 @@ class TestCreateLogTable(unittest.TestCase):
     @patch("subprocess.run")
     def test_create_log_table_invalid_chunk_format(self, mock_subproc):
         def fake_run(cmd, stdout=None, check=True):
-            if stdout:
+            if stdout and hasattr(stdout, "write"):
                 stdout.write("invalid_format_line\n")
             return subprocess.CompletedProcess(args=cmd, returncode=0)
 
@@ -161,7 +173,7 @@ class TestCreateLogTable(unittest.TestCase):
     @patch("subprocess.run")
     def test_create_log_table_missing_file_in_repo(self, mock_subproc):
         def fake_run(cmd, stdout=None, check=True):
-            if stdout:
+            if stdout and hasattr(stdout, "write"):
                 stdout.write("1,5:non_existent.c,1680000000,abcdef123456\n")
             return subprocess.CompletedProcess(args=cmd, returncode=0)
 

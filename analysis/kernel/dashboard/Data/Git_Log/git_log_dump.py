@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """Dumps Git blame and commit metadata into an SQLite database for CodeQL functions."""
 
 import argparse
@@ -239,12 +239,9 @@ def check_tools() -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )
-    subprocess.run(
-        [PARALLEL, "--version"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
+    if not (os.path.exists(PARALLEL) and os.access(PARALLEL, os.X_OK)):
+        logging.critical("Parallel binary not found or not executable: %s" % PARALLEL)
+        raise ValueError("Parallel binary not found: %s" % PARALLEL)
 
 
 def main():
