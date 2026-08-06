@@ -22,45 +22,15 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v6
       
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-      
       - name: Install prerequisites
-        run: sudo apt-get install -yq --no-install-recommends jq python3-lxml
-      
-      - name: Build fetch_artifact tool
-        run: |
-          git clone https://android.googlesource.com/tools/fetch_artifact
-          cd fetch_artifact
-          go build -o fetch_artifact .
-          sudo mv fetch_artifact /usr/local/bin/
-          cd ..
-          rm -rf fetch_artifact
+        run: sudo apt-get install -yq --no-install-recommends python3-lxml
             
       - name: Check latest Linux kernel versions
         id: check_linux
         run: python3 get_latest_lts_cos_versions.py
-
-      - name: Check for new Android builds
-        id: check_android
-        run: python3 get_latest_android_versions.py
-            
-      - name: Merge all releases
-        id: merge
-        run: |
-          LINUX_RELEASES='${{ steps.check_linux.outputs.releases }}'
-          ANDROID_RELEASES='${{ steps.check_android.outputs.releases }}'
-          
-          # Merge both release arrays
-          MERGED=$(jq -sc 'add' <(echo "$LINUX_RELEASES") <(echo "$ANDROID_RELEASES"))
-          
-          echo "releases=$MERGED" >> $GITHUB_OUTPUT
-          echo "Merged releases: $MERGED"
     
     outputs:
-      releases: ${{ steps.merge.outputs.releases }}
+      releases: ${{ steps.check_linux.outputs.releases }}
   
   build_release:
     needs: get_new_builds
