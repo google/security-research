@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL syscall reachability CSV records into an SQLite database.
-
-Reads syscall reachability nodes from a CSV file and populates the syscall_node table.
-"""
+"""Imports CodeQL syscall reachability CSV records into SQLite database."""
 
 import argparse
 import csv

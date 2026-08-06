@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL heap allocation CSV records into an SQLite database.
-
-Reads allocation sites from a CSV file and populates the kmalloc_calls table.
-"""
+"""Imports CodeQL heap allocation CSV records into SQLite database."""
 
 import argparse
 import csv

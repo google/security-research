@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL macro invocation CSV records into an SQLite database.
-
-Reads macro invocations from a CSV file and populates the macroinvocation_locations table.
-"""
+"""Imports CodeQL macro invocation CSV records into SQLite database."""
 
 import argparse
 import csv

@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL kernel config CSV records into an SQLite database.
-
-Reads kernel preprocessor config guards from a CSV file and populates the configs table.
-"""
+"""Imports CodeQL kernel config CSV records into SQLite database."""
 
 import argparse
 import csv

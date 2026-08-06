@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Path trimming utility functions for CodeQL CSV dataset processing.
-
-Provides functions to detect repository root prefixes and trim local workspace paths.
-"""
+"""Path trimming utility functions for CodeQL CSV dataset processing."""
 
 from collections import Counter
 from typing import Sequence

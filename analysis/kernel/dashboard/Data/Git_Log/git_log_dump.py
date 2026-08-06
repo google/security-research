@@ -1,31 +1,32 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
+"""Dumps Git blame and commit metadata into an SQLite database for CodeQL functions."""
 
-import logging
-import sqlite3
 import argparse
-import subprocess
+import logging
 import os
-import git
+import sqlite3
+import subprocess
+import sys
 import tempfile
-
-from urllib.request import urlopen
-from urllib.parse import urlparse
-from urllib.parse import urlsplit
 from contextlib import closing
+from urllib.parse import urlparse
+import git
 from tqdm import tqdm
-
 
 GIT = "/usr/bin/git"
 PARALLEL = "/usr/bin/parallel"
 
 
 class CloneProgress(git.RemoteProgress):
+    """Progress bar callback for Git clone operations."""
+
     def update(self, op_code, cur_count, max_count=None, message=""):
         pbar = tqdm(total=max_count)
         pbar.update(cur_count)
 
 
 def repo_url(repo_url: str) -> str:
+    """Validates that repo_url is a valid URL with scheme and domain."""
     logging.info("Validating URL provided")
     result = urlparse(repo_url)
     if result.scheme and result.netloc:
@@ -35,24 +36,34 @@ def repo_url(repo_url: str) -> str:
         raise ValueError
 
 
+def can_read_dir(dirname: str) -> str:
+    """Validates that a path is an existing readable directory."""
+    if os.path.isdir(dirname) and os.access(dirname, os.R_OK):
+        return dirname
+    logging.critical("Directory not found or unreadable: %s" % dirname)
+    raise ValueError
+
+
 def can_create_file(filename: str) -> str:
+    """Validates that a file path can be created in its target directory."""
     base_dir, file_name = os.path.split(filename)
     if not base_dir:
         base_dir = os.getcwd()
 
     if os.path.isdir(base_dir) and os.access(base_dir, os.W_OK):
         return os.path.join(base_dir, file_name)
-    else:
-        logging.critical("Wrong path provided: %s" % filename)
-        raise ValueError
+
+    logging.critical("Wrong path provided: %s" % filename)
+    raise ValueError
 
 
 def can_read_file(filename: str) -> str:
+    """Validates that a file path exists and is readable."""
     if os.path.isfile(filename) and os.access(filename, os.R_OK):
         return filename
-    else:
-        logging.critical("Can't read file: %s" % filename)
-        raise ValueError
+
+    logging.critical("Can't read file: %s" % filename)
+    raise ValueError
 
 
 def create_log_table(
@@ -61,6 +72,7 @@ def create_log_table(
     con: sqlite3.Connection,
     function_locations: list,
 ) -> int:
+    """Executes parallel git log for function locations and populates the git_log table."""
     con.execute("PRAGMA journal_mode = OFF;")
     con.execute("PRAGMA synchronous = OFF;")
     con.execute("DROP TABLE IF EXISTS git_log;")
@@ -191,6 +203,7 @@ def create_log_table(
 def create_sql_db(
     db_file: str, codeql_db: str, no_cpu: int, repo: git.repo.base.Repo
 ) -> None:
+    """Reads function locations from CodeQL database and creates the git_log table."""
     function_locations = []
     with closing(sqlite3.connect(codeql_db)) as conn:
         with conn as con:
@@ -219,6 +232,7 @@ def create_sql_db(
 
 
 def check_tools() -> None:
+    """Checks that git and parallel tools are installed and available."""
     subprocess.run(
         [GIT, "--version"],
         check=True,
@@ -234,26 +248,35 @@ def check_tools() -> None:
 
 
 def main():
+    """Parses command-line arguments and runs Git log dump into SQLite DB."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "repo_url",
+    parser = argparse.ArgumentParser(
+        description="Dump Git log information into SQLite database."
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--repo_url",
         help="Linux Kernel Repository URL.",
         type=repo_url,
-        nargs=1,
     )
-    parser.add_argument(
-        "commit",
-        help="Commit to which we should hard reset the repo.",
-        type=str,
-        nargs=1,
+    group.add_argument(
+        "--repo_dir",
+        help="Path to local Linux Kernel Repository directory.",
+        type=can_read_dir,
     )
+
     parser.add_argument(
-        "codeql_db",
+        "--codeql_db",
         help="CodeQL DB file that contains function data.",
         type=can_read_file,
-        nargs=1,
+        required=True,
+    )
+    parser.add_argument(
+        "--commit",
+        help="Commit hash or branch to hard reset to (required with --repo_url, optional with --repo_dir).",
+        type=str,
+        default=None,
     )
     parser.add_argument(
         "--db_file",
@@ -272,27 +295,38 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.repo_url and not args.commit:
+        parser.error("--commit is required when using --repo_url")
+
     check_tools()
 
-    repo = ""
-    if not os.path.exists("linux"):
-        logging.info(
-            "Clonning the Git repo as linux folder is empty: %s"
-            % args.repo_url[0]
-        )
-        repo = git.Repo.clone_from(
-            args.repo_url[0], "linux", branch="master", progress=CloneProgress()
-        )
+    repo = None
+    if args.repo_dir:
+        logging.info("Using local Linux repository folder: %s" % args.repo_dir)
+        repo = git.Repo(args.repo_dir)
+        if args.commit:
+            logging.info("Making hard reset to commit: %s" % args.commit)
+            repo.git.reset("--hard", args.commit)
+        else:
+            logging.info("Skipping reset and using current repository state.")
     else:
-        logging.info("Reusing source code in Linux folder")
-        repo = git.Repo("linux")
-        repo.git.reset("--hard", "origin")
-        repo.remotes.origin.pull()
+        if not os.path.exists("linux"):
+            logging.info(
+                "Cloning the Git repo as linux folder is empty: %s" % args.repo_url
+            )
+            repo = git.Repo.clone_from(
+                args.repo_url, "linux", branch="master", progress=CloneProgress()
+            )
+        else:
+            logging.info("Reusing source code in Linux folder")
+            repo = git.Repo("linux")
+            repo.git.reset("--hard", "origin")
+            repo.remotes.origin.pull()
 
-    logging.info("Making hard reset to commit: %s" % args.commit[0])
-    repo.git.reset("--hard", args.commit[0])
+        logging.info("Making hard reset to commit: %s" % args.commit)
+        repo.git.reset("--hard", args.commit)
 
-    create_sql_db(args.db_file, args.codeql_db[0], args.no_cpu, repo)
+    create_sql_db(args.db_file, args.codeql_db, args.no_cpu, repo)
 
 
 if __name__ == "__main__":

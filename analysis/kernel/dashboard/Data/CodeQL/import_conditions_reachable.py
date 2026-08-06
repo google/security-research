@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL condition reachability CSV records into an SQLite database.
-
-Reads condition reachability nodes from a CSV file and populates the conditions_node table.
-"""
+"""Imports CodeQL condition reachability CSV records into SQLite database."""
 
 import argparse
 import csv

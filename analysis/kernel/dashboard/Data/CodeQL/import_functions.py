@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL function location CSV records into an SQLite database.
-
-Reads function boundary locations from a CSV file and populates the function_locations table.
-"""
+"""Imports CodeQL function location CSV records into SQLite database."""
 
 import argparse
 import csv

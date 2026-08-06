@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL struct field access CSV records into an SQLite database.
-
-Reads struct field access locations from a CSV file and populates the field_access table.
-"""
+"""Imports CodeQL struct field access CSV records into SQLite database."""
 
 import argparse
 import csv

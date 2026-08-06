@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL macro definition CSV records into an SQLite database.
-
-Reads macro definitions from a CSV file and populates the macro_locations table.
-"""
+"""Imports CodeQL macro definition CSV records into SQLite database."""
 
 import argparse
 import csv

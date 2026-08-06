@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL ops target calls CSV records into an SQLite database.
-
-Reads ops target function call locations from a CSV file and populates the ops_targets table.
-"""
+"""Imports CodeQL ops target calls CSV records into SQLite database."""
 
 import argparse
 import csv

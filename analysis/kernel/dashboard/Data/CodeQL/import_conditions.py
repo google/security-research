@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL condition statement CSV records into an SQLite database.
-
-Reads conditional statements from a CSV file and populates the conditions table.
-"""
+"""Imports CodeQL condition statement CSV records into SQLite database."""
 
 import argparse
 import csv

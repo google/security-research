@@ -247,8 +247,11 @@ class TestMain(unittest.TestCase):
             "sys.argv",
             [
                 "git_log_dump.py",
+                "--repo_url",
                 "https://github.com/torvalds/linux.git",
+                "--commit",
                 "master",
+                "--codeql_db",
                 __file__,  # valid readable file for codeql_db
             ],
         ):
@@ -273,8 +276,11 @@ class TestMain(unittest.TestCase):
             "sys.argv",
             [
                 "git_log_dump.py",
+                "--repo_url",
                 "https://github.com/torvalds/linux.git",
+                "--commit",
                 "master",
+                "--codeql_db",
                 __file__,  # valid readable file for codeql_db
             ],
         ):
@@ -283,9 +289,92 @@ class TestMain(unittest.TestCase):
         mock_check_tools.assert_called_once()
         mock_clone_from.assert_called_once()
         mock_create_sql_db.assert_called_once()
-        # Verify default no_cpu passed to create_sql_db matches os.cpu_count() or 4
         expected_cpus = os.cpu_count() or 4
         self.assertEqual(mock_create_sql_db.call_args[0][2], expected_cpus)
+
+    def test_main_url_missing_commit(self):
+        with patch(
+            "sys.argv",
+            [
+                "git_log_dump.py",
+                "--repo_url",
+                "https://github.com/torvalds/linux.git",
+                "--codeql_db",
+                __file__,
+            ],
+        ):
+            with self.assertRaises(SystemExit):
+                git_log_dump.main()
+
+    def test_main_missing_codeql_db(self):
+        with patch(
+            "sys.argv",
+            [
+                "git_log_dump.py",
+                "--repo_url",
+                "https://github.com/torvalds/linux.git",
+                "--commit",
+                "master",
+            ],
+        ):
+            with self.assertRaises(SystemExit):
+                git_log_dump.main()
+
+    @patch("git_log_dump.check_tools")
+    @patch("git_log_dump.create_sql_db")
+    @patch("git.Repo")
+    def test_main_local_folder_no_reset(
+        self, mock_git_repo, mock_create_sql_db, mock_check_tools
+    ):
+        with tempfile.TemporaryDirectory() as tmp_local_repo:
+            mock_repo_obj = MagicMock()
+            mock_git_repo.return_value = mock_repo_obj
+
+            with patch(
+                "sys.argv",
+                [
+                    "git_log_dump.py",
+                    "--repo_dir",
+                    tmp_local_repo,
+                    "--codeql_db",
+                    __file__,  # valid readable file for codeql_db
+                ],
+            ):
+                git_log_dump.main()
+
+            mock_check_tools.assert_called_once()
+            mock_git_repo.assert_called_with(tmp_local_repo)
+            mock_repo_obj.git.reset.assert_not_called()
+            mock_create_sql_db.assert_called_once()
+
+    @patch("git_log_dump.check_tools")
+    @patch("git_log_dump.create_sql_db")
+    @patch("git.Repo")
+    def test_main_local_folder_with_reset(
+        self, mock_git_repo, mock_create_sql_db, mock_check_tools
+    ):
+        with tempfile.TemporaryDirectory() as tmp_local_repo:
+            mock_repo_obj = MagicMock()
+            mock_git_repo.return_value = mock_repo_obj
+
+            with patch(
+                "sys.argv",
+                [
+                    "git_log_dump.py",
+                    "--repo_dir",
+                    tmp_local_repo,
+                    "--commit",
+                    "v6.1.111",
+                    "--codeql_db",
+                    __file__,  # valid readable file for codeql_db
+                ],
+            ):
+                git_log_dump.main()
+
+            mock_check_tools.assert_called_once()
+            mock_git_repo.assert_called_with(tmp_local_repo)
+            mock_repo_obj.git.reset.assert_called_with("--hard", "v6.1.111")
+            mock_create_sql_db.assert_called_once()
 
 
 if __name__ == "__main__":
