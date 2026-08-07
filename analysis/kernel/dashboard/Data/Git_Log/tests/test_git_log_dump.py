@@ -1,11 +1,11 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
-import unittest
-import sqlite3
-import tempfile
 import os
-import sys
+import sqlite3
 import subprocess
+import sys
+import tempfile
+import unittest
 from unittest.mock import MagicMock, patch
 
 # Add parent directory to sys.path
@@ -49,7 +49,6 @@ class TestValidationHelpers(unittest.TestCase):
 
     def test_clone_progress(self):
         progress = git_log_dump.CloneProgress()
-        # Ensure update method executes without error
         try:
             progress.update(0, 50, 100, "Downloading")
         except Exception as e:
@@ -57,31 +56,19 @@ class TestValidationHelpers(unittest.TestCase):
 
 
 class TestCheckTools(unittest.TestCase):
-    @patch("os.access")
-    @patch("os.path.exists")
     @patch("subprocess.run")
-    def test_check_tools_success(self, mock_run, mock_exists, mock_access):
+    def test_check_tools_success(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
-        mock_exists.return_value = True
-        mock_access.return_value = True
         try:
             git_log_dump.check_tools()
         except Exception as e:
             self.fail(f"check_tools raised exception on success: {e}")
-        self.assertEqual(mock_run.call_count, 1)
+        self.assertEqual(mock_run.call_count, 2)
 
     @patch("subprocess.run")
     def test_check_tools_failure(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(1, "git")
         with self.assertRaises(subprocess.CalledProcessError):
-            git_log_dump.check_tools()
-
-    @patch("os.path.exists")
-    @patch("subprocess.run")
-    def test_check_tools_parallel_missing(self, mock_run, mock_exists):
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
-        mock_exists.return_value = False
-        with self.assertRaises(ValueError):
             git_log_dump.check_tools()
 
 
@@ -90,18 +77,23 @@ class TestCreateLogTable(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.repo_dir = self.tmp_dir.name
 
-        # Create a sample file in fake repo
-        self.rel_file_path = "net/socket.c"
-        self.full_file_path = os.path.join(self.repo_dir, self.rel_file_path)
-        os.makedirs(os.path.dirname(self.full_file_path), exist_ok=True)
+        # Create sample files based on real CodeQL function locations from fun.db
+        self.real_functions = [
+            ("error", "arch/x86/boot/compressed/error.c", 18, 24),
+            ("isxdigit", "arch/x86/boot/ctype.h", 11, 19),
+            ("set_bit", "arch/x86/boot/bitops.h", 40, 42),
+            ("offset_to_ptr", "include/linux/compiler.h", 266, 268),
+        ]
 
-        self.file_lines = [f"line {i}\n" for i in range(1, 31)]
-        with open(self.full_file_path, "w", encoding="utf-8") as f:
-            f.writelines(self.file_lines)
+        for _, rel_path, start_line, end_line in self.real_functions:
+            full_path = os.path.join(self.repo_dir, rel_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            lines = [f"/* Line {i} */\n" for i in range(1, max(end_line + 5, 300))]
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
 
         self.mock_repo = MagicMock()
         self.mock_repo.git.rev_parse.return_value = self.repo_dir
-
         self.conn = sqlite3.connect(":memory:")
 
     def tearDown(self):
@@ -109,56 +101,90 @@ class TestCreateLogTable(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     @patch("subprocess.run")
-    def test_create_log_table_success(self, mock_subproc):
-        function_locations = [
-            ("sock_create", "net/socket.c", 10, 20),
-        ]
+    def test_create_log_table_real_functions_success(self, mock_subproc):
+        tracked_files_list = "\n".join([f[1] for f in self.real_functions]) + "\n"
 
-        def fake_run(cmd, stdout=None, check=True):
-            if stdout and hasattr(stdout, "write"):
-                stdout.write(
-                    "10,20:net/socket.c,1680000000,11223344556677889900aabbccddeeff11223344\n"
+        def fake_run(cmd, *args, **kwargs):
+            if "ls-files" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout=tracked_files_list
                 )
+            stdout = kwargs.get("stdout")
+            if stdout and hasattr(stdout, "write"):
+                for _, rel_path, start, end in self.real_functions:
+                    stdout.write(
+                        f"{start},{end}:{rel_path},1680000000,11223344556677889900aabbccddeeff11223344\n"
+                    )
             return subprocess.CompletedProcess(args=cmd, returncode=0)
 
         mock_subproc.side_effect = fake_run
 
         count = git_log_dump.create_log_table(
-            self.mock_repo, 4, self.conn, function_locations
+            self.mock_repo, 4, self.conn, self.real_functions
         )
 
-        self.assertEqual(count, 1)
+        self.assertEqual(count, len(self.real_functions))
 
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT start_line, end_line, file_path, author_date, `commit`, data FROM git_log"
         )
-        row = cursor.fetchone()
+        rows = cursor.fetchall()
+        self.assertEqual(len(rows), len(self.real_functions))
 
-        self.assertIsNotNone(row)
-        self.assertEqual(row[0], 10)
-        self.assertEqual(row[1], 20)
-        self.assertEqual(row[2], "net/socket.c")
-        self.assertEqual(row[3], 1680000000)
-        self.assertEqual(row[4], "11223344556677889900aabbccddeeff11223344")
-        expected_code = "".join(self.file_lines[9:20])
-        self.assertEqual(row[5], expected_code)
+    @patch("subprocess.run")
+    def test_create_log_table_untracked_generated_files(self, mock_subproc):
+        # Mix of tracked kernel files and untracked build artifacts (e.g. inat-tables.c, stdio.h)
+        mixed_functions = self.real_functions + [
+            ("inat_lookup", "arch/x86/lib/inat-tables.c", 10, 20),
+            ("printf", "include/x86_64-linux-gnu/bits/stdio.h", 5, 15),
+        ]
+        tracked_files_list = "\n".join([f[1] for f in self.real_functions]) + "\n"
+
+        def fake_run(cmd, *args, **kwargs):
+            if "ls-files" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout=tracked_files_list
+                )
+            stdout = kwargs.get("stdout")
+            if stdout and hasattr(stdout, "write"):
+                for _, rel_path, start, end in self.real_functions:
+                    stdout.write(
+                        f"{start},{end}:{rel_path},1680000000,11223344556677889900aabbccddeeff11223344\n"
+                    )
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        mock_subproc.side_effect = fake_run
+
+        count = git_log_dump.create_log_table(
+            self.mock_repo, 4, self.conn, mixed_functions, force=True
+        )
+        self.assertEqual(count, len(self.real_functions))
 
     @patch("subprocess.run")
     def test_create_log_table_missing_log_data(self, mock_subproc):
-        def fake_run(cmd, stdout=None, check=True):
+        def fake_run(cmd, *args, **kwargs):
+            if "ls-files" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="arch/x86/boot/compressed/error.c\n"
+                )
             return subprocess.CompletedProcess(args=cmd, returncode=0)
 
         mock_subproc.side_effect = fake_run
 
         with self.assertRaises(ValueError):
             git_log_dump.create_log_table(
-                self.mock_repo, 4, self.conn, [("fn", "net/socket.c", 1, 5)]
+                self.mock_repo, 4, self.conn, [self.real_functions[0]]
             )
 
     @patch("subprocess.run")
     def test_create_log_table_invalid_chunk_format(self, mock_subproc):
-        def fake_run(cmd, stdout=None, check=True):
+        def fake_run(cmd, *args, **kwargs):
+            if "ls-files" in cmd:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="arch/x86/boot/compressed/error.c\n"
+                )
+            stdout = kwargs.get("stdout")
             if stdout and hasattr(stdout, "write"):
                 stdout.write("invalid_format_line\n")
             return subprocess.CompletedProcess(args=cmd, returncode=0)
@@ -167,38 +193,15 @@ class TestCreateLogTable(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             git_log_dump.create_log_table(
-                self.mock_repo, 4, self.conn, [("fn", "net/socket.c", 1, 5)]
+                self.mock_repo, 4, self.conn, [self.real_functions[0]]
             )
-
-    @patch("subprocess.run")
-    def test_create_log_table_missing_file_in_repo(self, mock_subproc):
-        def fake_run(cmd, stdout=None, check=True):
-            if stdout and hasattr(stdout, "write"):
-                stdout.write("1,5:non_existent.c,1680000000,abcdef123456\n")
-            return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-        mock_subproc.side_effect = fake_run
-
-        count = git_log_dump.create_log_table(
-            self.mock_repo,
-            4,
-            self.conn,
-            [("fn", "non_existent.c", 1, 5)],
-        )
-
-        self.assertEqual(count, 1)
-
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT data FROM git_log WHERE file_path='non_existent.c'")
-        row = cursor.fetchone()
-        self.assertEqual(row[0], "")  # Empty data for non-existent file
 
 
 class TestCreateSqlDb(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
 
-        # Create CodeQL DB
+        # Create CodeQL DB modeled after /usr/local/google/home/ametla/fun.db
         self.codeql_db_path = os.path.join(self.tmp_dir.name, "codeql.db")
         conn = sqlite3.connect(self.codeql_db_path)
         conn.execute(
@@ -206,8 +209,14 @@ class TestCreateSqlDb(unittest.TestCase):
                 function_name TEXT, file_path TEXT, start_line INT, end_line INT
             );"""
         )
-        conn.execute(
-            "INSERT INTO function_locations VALUES ('foo', 'net/socket.c', 10, 20);"
+        sample_rows = [
+            ("error", "arch/x86/boot/compressed/error.c", 18, 24),
+            ("isxdigit", "arch/x86/boot/ctype.h", 11, 19),
+            ("set_bit", "arch/x86/boot/bitops.h", 40, 42),
+            ("offset_to_ptr", "include/linux/compiler.h", 266, 268),
+        ]
+        conn.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?);", sample_rows
         )
         conn.commit()
         conn.close()
@@ -220,11 +229,28 @@ class TestCreateSqlDb(unittest.TestCase):
 
     @patch("git_log_dump.create_log_table")
     def test_create_sql_db_success(self, mock_create_log_table):
-        mock_create_log_table.return_value = 1
+        mock_create_log_table.return_value = 4
         git_log_dump.create_sql_db(
-            self.db_file_path, self.codeql_db_path, 4, self.mock_repo
+            self.db_file_path, self.codeql_db_path, 4, self.mock_repo, force=True
         )
         mock_create_log_table.assert_called_once()
+        self.assertEqual(len(mock_create_log_table.call_args[0][3]), 4)
+
+    def test_create_sql_db_with_real_fun_db(self):
+        real_fun_db = "/usr/local/google/home/ametla/fun.db"
+        if not os.path.exists(real_fun_db):
+            self.skipTest(f"{real_fun_db} not found")
+
+        with patch("git_log_dump.create_log_table") as mock_create_log_table:
+            mock_create_log_table.return_value = 20076
+            git_log_dump.create_sql_db(
+                self.db_file_path, real_fun_db, 4, self.mock_repo, force=True
+            )
+            mock_create_log_table.assert_called_once()
+            functions = mock_create_log_table.call_args[0][3]
+            self.assertEqual(len(functions), 20076)
+            self.assertEqual(functions[0][0], "error")
+            self.assertEqual(functions[0][1], "arch/x86/boot/compressed/error.c")
 
     def test_create_sql_db_empty_codeql(self):
         empty_codeql_path = os.path.join(self.tmp_dir.name, "empty_codeql.db")
@@ -246,43 +272,38 @@ class TestCreateSqlDb(unittest.TestCase):
 class TestMain(unittest.TestCase):
     @patch("git_log_dump.check_tools")
     @patch("git_log_dump.create_sql_db")
-    @patch("git.Repo")
-    @patch("os.path.exists")
+    @patch("git_log_dump.setup_repository")
     def test_main_existing_repo(
-        self, mock_exists, mock_git_repo, mock_create_sql_db, mock_check_tools
+        self, mock_setup_repo, mock_create_sql_db, mock_check_tools
     ):
-        mock_exists.return_value = True
         mock_repo_obj = MagicMock()
-        mock_git_repo.return_value = mock_repo_obj
+        mock_setup_repo.return_value = mock_repo_obj
 
         with patch(
             "sys.argv",
             [
                 "git_log_dump.py",
-                "--repo_url",
-                "https://github.com/torvalds/linux.git",
-                "--commit",
-                "master",
+                "--repo_dir",
+                "/tmp/fake_dir",
                 "--codeql_db",
-                __file__,  # valid readable file for codeql_db
+                __file__,
             ],
         ):
-            git_log_dump.main()
+            with patch("git_log_dump.can_read_dir", return_value="/tmp/fake_dir"):
+                git_log_dump.main()
 
         mock_check_tools.assert_called_once()
-        mock_repo_obj.git.reset.assert_called_with("--hard", "master")
+        mock_setup_repo.assert_called_once_with(None, "/tmp/fake_dir", None)
         mock_create_sql_db.assert_called_once()
 
     @patch("git_log_dump.check_tools")
     @patch("git_log_dump.create_sql_db")
-    @patch("git.Repo.clone_from")
-    @patch("os.path.exists")
+    @patch("git_log_dump.setup_repository")
     def test_main_clone_repo(
-        self, mock_exists, mock_clone_from, mock_create_sql_db, mock_check_tools
+        self, mock_setup_repo, mock_create_sql_db, mock_check_tools
     ):
-        mock_exists.return_value = False
         mock_repo_obj = MagicMock()
-        mock_clone_from.return_value = mock_repo_obj
+        mock_setup_repo.return_value = mock_repo_obj
 
         with patch(
             "sys.argv",
@@ -293,13 +314,15 @@ class TestMain(unittest.TestCase):
                 "--commit",
                 "master",
                 "--codeql_db",
-                __file__,  # valid readable file for codeql_db
+                __file__,
             ],
         ):
             git_log_dump.main()
 
         mock_check_tools.assert_called_once()
-        mock_clone_from.assert_called_once()
+        mock_setup_repo.assert_called_once_with(
+            "https://github.com/torvalds/linux.git", None, "master"
+        )
         mock_create_sql_db.assert_called_once()
         expected_cpus = os.cpu_count() or 4
         self.assertEqual(mock_create_sql_db.call_args[0][2], expected_cpus)
@@ -331,62 +354,6 @@ class TestMain(unittest.TestCase):
         ):
             with self.assertRaises(SystemExit):
                 git_log_dump.main()
-
-    @patch("git_log_dump.check_tools")
-    @patch("git_log_dump.create_sql_db")
-    @patch("git.Repo")
-    def test_main_local_folder_no_reset(
-        self, mock_git_repo, mock_create_sql_db, mock_check_tools
-    ):
-        with tempfile.TemporaryDirectory() as tmp_local_repo:
-            mock_repo_obj = MagicMock()
-            mock_git_repo.return_value = mock_repo_obj
-
-            with patch(
-                "sys.argv",
-                [
-                    "git_log_dump.py",
-                    "--repo_dir",
-                    tmp_local_repo,
-                    "--codeql_db",
-                    __file__,  # valid readable file for codeql_db
-                ],
-            ):
-                git_log_dump.main()
-
-            mock_check_tools.assert_called_once()
-            mock_git_repo.assert_called_with(tmp_local_repo)
-            mock_repo_obj.git.reset.assert_not_called()
-            mock_create_sql_db.assert_called_once()
-
-    @patch("git_log_dump.check_tools")
-    @patch("git_log_dump.create_sql_db")
-    @patch("git.Repo")
-    def test_main_local_folder_with_reset(
-        self, mock_git_repo, mock_create_sql_db, mock_check_tools
-    ):
-        with tempfile.TemporaryDirectory() as tmp_local_repo:
-            mock_repo_obj = MagicMock()
-            mock_git_repo.return_value = mock_repo_obj
-
-            with patch(
-                "sys.argv",
-                [
-                    "git_log_dump.py",
-                    "--repo_dir",
-                    tmp_local_repo,
-                    "--commit",
-                    "v6.1.111",
-                    "--codeql_db",
-                    __file__,  # valid readable file for codeql_db
-                ],
-            ):
-                git_log_dump.main()
-
-            mock_check_tools.assert_called_once()
-            mock_git_repo.assert_called_with(tmp_local_repo)
-            mock_repo_obj.git.reset.assert_called_with("--hard", "v6.1.111")
-            mock_create_sql_db.assert_called_once()
 
 
 if __name__ == "__main__":

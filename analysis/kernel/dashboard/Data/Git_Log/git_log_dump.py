@@ -21,6 +21,7 @@ class CloneProgress(git.RemoteProgress):
     """Progress bar callback for Git clone operations."""
 
     def update(self, op_code, cur_count, max_count=None, message=""):
+        """Updates the tqdm progress bar for Git operations."""
         pbar = tqdm(total=max_count)
         pbar.update(cur_count)
 
@@ -66,17 +67,11 @@ def can_read_file(filename: str) -> str:
     raise ValueError
 
 
-def create_log_table(
-    repo: git.repo.base.Repo,
-    no_cpu: int,
-    con: sqlite3.Connection,
-    function_locations: list,
-) -> int:
-    """Executes parallel git log for function locations and populates the git_log table."""
+def setup_git_log_schema(con: sqlite3.Connection) -> None:
+    """Sets up the git_log table schema in SQLite database."""
     con.execute("PRAGMA journal_mode = OFF;")
     con.execute("PRAGMA synchronous = OFF;")
     con.execute("DROP TABLE IF EXISTS git_log;")
-
     con.execute(
         """CREATE TABLE git_log (
                 start_line UNSIGNED BIG INT NOT NULL,
@@ -90,26 +85,73 @@ def create_log_table(
     )
     logging.info("Git Log table created in DB.")
 
-    data = []
-    tmp = tempfile.NamedTemporaryFile()
 
-    repo_folder = repo.git.rev_parse("--show-toplevel")
+def filter_tracked_locations(
+    repo_folder: str, function_locations: list, force: bool
+) -> list:
+    """Filters function locations to those tracked in git and checks for mismatches."""
+    res = subprocess.run(
+        [GIT, "-C", repo_folder, "ls-files"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    tracked_files = (
+        set(res.stdout.splitlines())
+        if (res.returncode == 0 and res.stdout)
+        else set()
+    )
 
-    with tempfile.NamedTemporaryFile(delete_on_close=False) as tmp2:
-        for function_data in function_locations:
-            tmp2.write(
-                (
-                    "%d,%d:%s\n"
-                    % (function_data[2], function_data[3], function_data[1])
-                ).encode("utf-8")
+    valid_locations = (
+        [loc for loc in function_locations if loc[1] in tracked_files]
+        if tracked_files
+        else function_locations
+    )
+
+    total_count = len(function_locations)
+    matched_count = len(valid_locations)
+    match_percentage = (matched_count / total_count * 100) if total_count > 0 else 0.0
+
+    logging.info(
+        "Functions in CodeQL DB: %d, Functions matched in Git repository: %d (%.2f%%)"
+        % (total_count, matched_count, match_percentage)
+    )
+
+    if matched_count < total_count and not force:
+        unmatched_count = total_count - matched_count
+        logging.warning(
+            "CodeQL database may have been generated against a different commit! "
+            "%d functions could not be found in the repository." % unmatched_count
+        )
+        if sys.stdin.isatty():
+            ans = input("Do you want to continue anyway? [y/N]: ").strip().lower()
+            if ans not in ("y", "yes"):
+                logging.error("Aborting due to repository commit mismatch.")
+                sys.exit(1)
+        elif match_percentage < 95.0:
+            logging.error(
+                "Match percentage (%.2f%%) is below 95%% and --force was not specified. Aborting."
+                % match_percentage
             )
+            sys.exit(1)
+
+    return valid_locations
+
+
+def run_parallel_git_log(
+    repo_folder: str, function_locations: list, no_cpu: int
+) -> list[str]:
+    """Runs parallel git log for function locations and returns output lines."""
+    tmp = tempfile.NamedTemporaryFile()
+    with tempfile.NamedTemporaryFile(delete_on_close=False) as tmp2:
+        for loc in function_locations:
+            tmp2.write(("%d,%d:%s\n" % (loc[2], loc[3], loc[1])).encode("utf-8"))
         tmp2.close()
 
         cmd = [
             PARALLEL,
             "--workdir",
             repo_folder,
-            "--bar",
             "--group",
             "-P",
             str(no_cpu),
@@ -129,58 +171,56 @@ def create_log_table(
 
         logging.info("Command that we're running: %s" % " ".join(cmd))
         with open(tmp.name, "w", encoding="utf-8") as out_f:
-            subprocess.run(cmd, stdout=out_f, check=True)
+            res = subprocess.run(cmd, stdout=out_f, check=False)
+            if res.returncode != 0:
+                logging.warning(
+                    "GNU parallel completed with exit status %d (%d sub-jobs failed)."
+                    % (res.returncode, res.returncode)
+                )
         logging.info("Command execution complete!")
 
-    log_data = ""
     with open(tmp.name, "r", encoding="utf-8", errors="ignore") as f:
         log_data = f.readlines()
 
     logging.info("TMP file contained: %d lines" % len(log_data))
 
     if not log_data:
-        logging.critical(
-            "Log data is missing. Something wrong with command execution!"
-        )
+        logging.critical("Log data is missing. Something wrong with command execution!")
         raise ValueError
 
+    return log_data
+
+
+def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
+    """Parses raw git log output lines into database row tuples."""
+    data = []
     file_cache = {}
 
-    def get_file_lines(file_rel_path: str):
-        if file_rel_path not in file_cache:
-            full_path = os.path.join(repo_folder, file_rel_path)
-            if os.path.isfile(full_path):
-                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                    file_cache[file_rel_path] = f.readlines()
-            else:
-                file_cache[file_rel_path] = []
-        return file_cache[file_rel_path]
-
     for log_entry in log_data:
-        log_entry_chunks = log_entry.replace(":", ",").split(",")
-
-        if (not log_entry_chunks) or (len(log_entry_chunks) < 5):
+        chunks = log_entry.replace(":", ",").split(",")
+        if len(chunks) < 5:
             logging.critical("Can't get log entry parsed: %s" % log_entry)
             raise ValueError
 
-        start_line = int(log_entry_chunks[0].strip())
-        end_line = int(log_entry_chunks[1].strip())
-        file_path = log_entry_chunks[2].strip()
-        author_date = int(log_entry_chunks[3].strip())
-        commit = log_entry_chunks[4].strip()
+        start_line = int(chunks[0].strip())
+        end_line = int(chunks[1].strip())
+        file_path = chunks[2].strip()
+        author_date = int(chunks[3].strip())
+        commit = chunks[4].strip()
 
-        file_lines = get_file_lines(file_path)
+        if file_path not in file_cache:
+            full_path = os.path.join(repo_folder, file_path)
+            if os.path.isfile(full_path):
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    file_cache[file_path] = f.readlines()
+            else:
+                file_cache[file_path] = []
+
+        file_lines = file_cache[file_path]
         function_code = "".join(file_lines[start_line - 1 : end_line])
 
         data.append(
-            (
-                start_line,
-                end_line,
-                file_path,
-                author_date,
-                commit,
-                function_code,
-            )
+            (start_line, end_line, file_path, author_date, commit, function_code)
         )
 
     logging.info("Git data processing for specified commit is complete")
@@ -191,17 +231,33 @@ def create_log_table(
         )
         raise ValueError
 
-    con.executemany(
-        """INSERT OR IGNORE INTO git_log
-                    VALUES(?, ?, ?, ?, ?, ?)""",
-        data,
-    )
+    return data
 
-    return len(data)
+
+def create_log_table(
+    repo: git.repo.base.Repo,
+    no_cpu: int,
+    con: sqlite3.Connection,
+    function_locations: list,
+    force: bool = False,
+) -> int:
+    """Executes parallel git log for function locations and populates the git_log table."""
+    setup_git_log_schema(con)
+    repo_folder = repo.git.rev_parse("--show-toplevel")
+
+    valid_locations = filter_tracked_locations(repo_folder, function_locations, force)
+    log_data = run_parallel_git_log(repo_folder, valid_locations, no_cpu)
+    records = parse_git_log_records(repo_folder, log_data)
+
+    con.executemany(
+        """INSERT OR IGNORE INTO git_log VALUES(?, ?, ?, ?, ?, ?)""",
+        records,
+    )
+    return len(records)
 
 
 def create_sql_db(
-    db_file: str, codeql_db: str, no_cpu: int, repo: git.repo.base.Repo
+    db_file: str, codeql_db: str, no_cpu: int, repo: git.repo.base.Repo, force: bool = False
 ) -> None:
     """Reads function locations from CodeQL database and creates the git_log table."""
     function_locations = []
@@ -225,7 +281,7 @@ def create_sql_db(
 
     with closing(sqlite3.connect(db_file)) as conn:
         with conn as con:
-            res = create_log_table(repo, no_cpu, con, function_locations)
+            res = create_log_table(repo, no_cpu, con, function_locations, force=force)
             print(
                 "GIT Log data saved into SQLite DB. Number of lines: %d" % res
             )
@@ -239,9 +295,47 @@ def check_tools() -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )
-    if not (os.path.exists(PARALLEL) and os.access(PARALLEL, os.X_OK)):
-        logging.critical("Parallel binary not found or not executable: %s" % PARALLEL)
-        raise ValueError("Parallel binary not found: %s" % PARALLEL)
+    subprocess.run(
+        [PARALLEL, "--version"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def setup_repository(
+    repo_url_val: str | None, repo_dir_val: str | None, commit: str | None
+) -> git.repo.base.Repo:
+    """Sets up local or remote Git repository and checks out target commit if specified."""
+    if repo_dir_val:
+        logging.info("Using local Linux repository folder: %s" % repo_dir_val)
+        repo = git.Repo(repo_dir_val)
+        if commit:
+            logging.info("Making hard reset to commit: %s" % commit)
+            repo.git.reset("--hard", commit)
+        else:
+            logging.info(
+                "Skipping reset and using current repository commit: %s"
+                % repo.head.commit.hexsha
+            )
+        return repo
+
+    if not os.path.exists("linux"):
+        logging.info(
+            "Cloning the Git repo as linux folder is empty: %s" % repo_url_val
+        )
+        repo = git.Repo.clone_from(
+            repo_url_val, "linux", branch="master", progress=CloneProgress()
+        )
+    else:
+        logging.info("Reusing source code in Linux folder")
+        repo = git.Repo("linux")
+        repo.git.reset("--hard", "origin")
+        repo.remotes.origin.pull()
+
+    logging.info("Making hard reset to commit: %s" % commit)
+    repo.git.reset("--hard", commit)
+    return repo
 
 
 def main():
@@ -290,40 +384,20 @@ def main():
         type=int,
         default=default_cpu_count,
     )
+    parser.add_argument(
+        "--force",
+        "-f",
+        help="Force execution even if CodeQL DB function count mismatches repository.",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.repo_url and not args.commit:
         parser.error("--commit is required when using --repo_url")
 
     check_tools()
-
-    repo = None
-    if args.repo_dir:
-        logging.info("Using local Linux repository folder: %s" % args.repo_dir)
-        repo = git.Repo(args.repo_dir)
-        if args.commit:
-            logging.info("Making hard reset to commit: %s" % args.commit)
-            repo.git.reset("--hard", args.commit)
-        else:
-            logging.info("Skipping reset and using current repository state.")
-    else:
-        if not os.path.exists("linux"):
-            logging.info(
-                "Cloning the Git repo as linux folder is empty: %s" % args.repo_url
-            )
-            repo = git.Repo.clone_from(
-                args.repo_url, "linux", branch="master", progress=CloneProgress()
-            )
-        else:
-            logging.info("Reusing source code in Linux folder")
-            repo = git.Repo("linux")
-            repo.git.reset("--hard", "origin")
-            repo.remotes.origin.pull()
-
-        logging.info("Making hard reset to commit: %s" % args.commit)
-        repo.git.reset("--hard", args.commit)
-
-    create_sql_db(args.db_file, args.codeql_db, args.no_cpu, repo)
+    repo = setup_repository(args.repo_url, args.repo_dir, args.commit)
+    create_sql_db(args.db_file, args.codeql_db, args.no_cpu, repo, force=args.force)
 
 
 if __name__ == "__main__":
