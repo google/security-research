@@ -235,34 +235,11 @@ build_and_package() {
 
 if [ "$TARGET" == "lts2" ]; then
     build_and_package "$RELEASE_NAME" "$RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config"
-
-    if [ $IS_KASAN -eq 0 ]; then
-        MITIGATION_RELEASE_NAME="${RELEASE_NAME}_mitigation"
-        MITIGATION_RELEASE_DIR="$BASEDIR/releases/$MITIGATION_RELEASE_NAME"
-
-        echo "=========================================================="
-        echo "  Building LTS2 Mitigation Release ($MITIGATION_RELEASE_NAME)"
-        echo "=========================================================="
-
-        if [ -d "$MITIGATION_RELEASE_DIR" ]; then
-            echo "Mitigation release directory already exists ($MITIGATION_RELEASE_DIR). Stopping."
-            exit 1
-        fi
-
-        mkdir -p kernel/configs
-        cp "$CONFIGS_DIR/lts2-mitigation.config" kernel/configs/mitigation.config
-        make mitigation.config
-
-        build_and_package "$MITIGATION_RELEASE_NAME" "$MITIGATION_RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config" "$CONFIGS_DIR/lts2-mitigation.config"
-    fi
 else
     build_and_package "$RELEASE_NAME" "$RELEASE_DIR"
 fi
 
 echo "=========================================================="
 echo "  Release build completed successfully!"
-echo "  Primary release: $RELEASE_DIR"
-if [ "$TARGET" == "lts2" ] && [ $IS_KASAN -eq 0 ]; then
-    echo "  Mitigation release: $MITIGATION_RELEASE_DIR"
-fi
+echo "  Release: $RELEASE_DIR"
 echo "=========================================================="
