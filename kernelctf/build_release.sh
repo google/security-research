@@ -24,7 +24,7 @@ case $TARGET in
     REPO="https://github.com/gregkh/linux"
     DEFAULT_BRANCH="v${VERSION}"
     case $VERSION in
-        6.12.*) CONFIG_FN="${TARGET}-6.12.config" ;;
+        6.12.*) CONFIG_FN="${TARGET}-6.12-v2.config" ;;
         6.6.*) CONFIG_FN="${TARGET}-6.6.config" ;;
         6.1.*) CONFIG_FN="${TARGET}-6.1.config" ;;
     esac
@@ -97,6 +97,20 @@ if ! git checkout $BRANCH; then
     git fetch --depth 1 origin $BRANCH:$BRANCH || true # TODO: hack, solve it better
     git checkout $BRANCH
 fi
+
+make_kconfig_option_configurable() {
+    local KCONFIG_FILE="$1"
+    local OPTION="$2"
+
+    if [ ! -f "$KCONFIG_FILE" ]; then
+        echo "Error: Kconfig file '$KCONFIG_FILE' not found."
+        exit 1
+    fi
+
+    sed -i -E "/config[[:space:]]+${OPTION}/,/^[[:space:]]*(config|help|$)/ s/^[[:space:]]*bool$/\tbool \"${OPTION}\"/" "$KCONFIG_FILE"
+}
+
+make_kconfig_option_configurable "net/unix/Kconfig" "AF_UNIX_OOB"
 
 # not necessary for the build itself, but it can be useful for comparing the config changes
 if [ "$TARGET" == "lts" ]; then
