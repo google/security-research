@@ -24,7 +24,7 @@ for lts_version in LTS_VERSIONS:
     latest_lts = run(f"git ls-remote --tags --sort='-v:refname' https://github.com/gregkh/linux 'v{lts_version}.*[0-9]'")[0].split("refs/tags/")[1]
     print(f"Latest LTS {lts_version}: {latest_lts}")
     add_release(f"lts-{latest_lts[1:]}")
-    add_release(f"lts2-{latest_lts[1:]}")
+    add_release(f"lts-{latest_lts[1:]}-kasan")
 
 for cos_milestone in COS_MILESTONES:
     release_notes = fetch(f"https://cloud.google.com/feeds/cos-{cos_milestone}-release-notes.xml")

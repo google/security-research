@@ -2,7 +2,7 @@
 set -ex
 
 usage() {
-    echo "Usage: $0 (lts|lts2|cos|mitigation)-<version> [<branch-tag-or-commit>]";
+    echo "Usage: $0 (lts|lts2|cos|mitigation)-<version>[-kasan] [<branch-tag-or-commit>]";
     exit 1;
 }
 
@@ -12,6 +12,12 @@ BRANCH="$2"
 if [[ ! "$RELEASE_NAME" =~ ^(lts|lts2|cos|mitigation)-(.*) ]]; then usage; fi
 TARGET="${BASH_REMATCH[1]}"
 VERSION="${BASH_REMATCH[2]}"
+
+IS_KASAN=0
+if [[ "$VERSION" =~ (.*)-kasan$ ]]; then
+    IS_KASAN=1
+    VERSION="${BASH_REMATCH[1]}"
+fi
 
 case $TARGET in
   lts | lts2)
@@ -122,6 +128,10 @@ if [ ! -z "$CONFIG_FN" ]; then
     make $CONFIG_FN
 fi
 
+if [ $IS_KASAN -eq 1 ]; then
+    ./scripts/config -e KASAN
+fi
+
 make olddefconfig
 
 if [ "$TARGET" != "lts2" ] && [ ! -z "$CONFIG_FN" ]; then
@@ -131,7 +141,12 @@ if [ "$TARGET" != "lts2" ] && [ ! -z "$CONFIG_FN" ]; then
     fi
 fi
 
-if [ ! -z "$CONFIG_FULL_FN" ]; then
+if [ $IS_KASAN -eq 1 ] && ! grep -q "^CONFIG_KASAN=y" .config; then
+    echo "KASAN config did not apply cleanly."
+    exit 1
+fi
+
+if [ ! -z "$CONFIG_FULL_FN" ] && [ $IS_KASAN -eq 0 ]; then
     if scripts/diffconfig $CONFIGS_DIR/$CONFIG_FULL_FN .config|grep "^[^+]"; then
         echo "The full config has differences compared to the applied config. Check if the base config changed since custom config was created."
         exit 1
@@ -207,23 +222,25 @@ build_and_package() {
 if [ "$TARGET" == "lts2" ]; then
     build_and_package "$RELEASE_NAME" "$RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config"
 
-    MITIGATION_RELEASE_NAME="${RELEASE_NAME}_mitigation"
-    MITIGATION_RELEASE_DIR="$BASEDIR/releases/$MITIGATION_RELEASE_NAME"
+    if [ $IS_KASAN -eq 0 ]; then
+        MITIGATION_RELEASE_NAME="${RELEASE_NAME}_mitigation"
+        MITIGATION_RELEASE_DIR="$BASEDIR/releases/$MITIGATION_RELEASE_NAME"
 
-    echo "=========================================================="
-    echo "  Building LTS2 Mitigation Release ($MITIGATION_RELEASE_NAME)"
-    echo "=========================================================="
+        echo "=========================================================="
+        echo "  Building LTS2 Mitigation Release ($MITIGATION_RELEASE_NAME)"
+        echo "=========================================================="
 
-    if [ -d "$MITIGATION_RELEASE_DIR" ]; then
-        echo "Mitigation release directory already exists ($MITIGATION_RELEASE_DIR). Stopping."
-        exit 1
+        if [ -d "$MITIGATION_RELEASE_DIR" ]; then
+            echo "Mitigation release directory already exists ($MITIGATION_RELEASE_DIR). Stopping."
+            exit 1
+        fi
+
+        mkdir -p kernel/configs
+        cp "$CONFIGS_DIR/lts2-mitigation.config" kernel/configs/mitigation.config
+        make mitigation.config
+
+        build_and_package "$MITIGATION_RELEASE_NAME" "$MITIGATION_RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config" "$CONFIGS_DIR/lts2-mitigation.config"
     fi
-
-    mkdir -p kernel/configs
-    cp "$CONFIGS_DIR/lts2-mitigation.config" kernel/configs/mitigation.config
-    make mitigation.config
-
-    build_and_package "$MITIGATION_RELEASE_NAME" "$MITIGATION_RELEASE_DIR" "$CONFIGS_DIR/lts2-required.config" "$CONFIGS_DIR/lts2-mitigation.config"
 else
     build_and_package "$RELEASE_NAME" "$RELEASE_DIR"
 fi
@@ -231,7 +248,7 @@ fi
 echo "=========================================================="
 echo "  Release build completed successfully!"
 echo "  Primary release: $RELEASE_DIR"
-if [ "$TARGET" == "lts2" ]; then
+if [ "$TARGET" == "lts2" ] && [ $IS_KASAN -eq 0 ]; then
     echo "  Mitigation release: $MITIGATION_RELEASE_DIR"
 fi
 echo "=========================================================="
