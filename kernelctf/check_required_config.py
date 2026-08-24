@@ -21,10 +21,8 @@ def parse_config(filepath, strict=False):
             if not line:
                 continue
 
-            if line.startswith('###'):
-                continue
-
-            if not strict and line.startswith('#') and not line.startswith('# CONFIG_'):
+            # Skip comment lines (lines starting with #, but not # CONFIG_...)
+            if line.startswith('#') and not re.match(r'^#\s*CONFIG_\w+', line):
                 continue
 
             # Disabled: # CONFIG_FOO is not set  OR  CONFIG_FOO=n
@@ -69,7 +67,11 @@ def main():
 
     all_ok = True
     for key, want in required.items():
-        got = target.get(key, 'n') # Default missing target configs to 'n'
+        if key not in target:
+            print(f"❌ [FAIL] {key}: unknown option (not found in target config, expected '{want}')")
+            all_ok = False
+            continue
+        got = target[key]
         if got == want:
             print(f"✅ [OK]   {key} = {got}")
         else:
