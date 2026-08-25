@@ -7,7 +7,7 @@ usage() {
 }
 
 RELEASE_NAME="$1"
-BRANCH="$2"
+BRANCH="${2:-}"
 
 if [[ ! "$RELEASE_NAME" =~ ^(lts|lts2|cos|mitigation|hardened)-(.*) ]]; then usage; fi
 TARGET="${BASH_REMATCH[1]}"
@@ -18,6 +18,10 @@ if [[ "$VERSION" =~ (.*)-kasan$ ]]; then
     IS_KASAN=1
     VERSION="${BASH_REMATCH[1]}"
 fi
+
+CONFIG_FN=""
+CONFIG_FULL_FN=""
+DEFAULT_BRANCH=""
 
 case $TARGET in
   lts | lts2)
@@ -91,7 +95,7 @@ CONFIGS_DIR="$BASEDIR/kernel_configs"
 if [ -d "$RELEASE_DIR" ]; then echo "Release directory already exists. Stopping."; exit 1; fi
 
 if [ "$TARGET" == "hardened" ]; then
-    source "$BASEDIR/ensure_llvm.sh"
+    "$BASEDIR/ensure_llvm.sh"
 fi
 
 echo "GCC version"
@@ -156,32 +160,32 @@ if [ "$TARGET" != "lts2" ]; then
     sed -i s/=m/=y/g .config
 fi
 
-if [ ! -z "$CONFIG_FN" ]; then
+if [ -n "$CONFIG_FN" ]; then
     mkdir -p kernel/configs
     cp "$CONFIGS_DIR/$CONFIG_FN" kernel/configs/
     make "$CONFIG_FN"
 fi
 
-if [ $IS_KASAN -eq 1 ]; then
+if [ "$IS_KASAN" -eq 1 ]; then
     ./scripts/config -e KASAN
 fi
 
 make olddefconfig
 
-if [ "$TARGET" != "lts2" ] && [ ! -z "$CONFIG_FN" ]; then
-    if scripts/diffconfig $CONFIGS_DIR/$CONFIG_FN .config|grep "^[^+]"; then
+if [ "$TARGET" != "lts2" ] && [ -n "$CONFIG_FN" ]; then
+    if scripts/diffconfig "$CONFIGS_DIR/$CONFIG_FN" .config | grep "^[^+]"; then
         echo "Config did not apply cleanly."
         exit 1
     fi
 fi
 
-if [ $IS_KASAN -eq 1 ] && ! grep -q "^CONFIG_KASAN=y" .config; then
+if [ "$IS_KASAN" -eq 1 ] && ! grep -q "^CONFIG_KASAN=y" .config; then
     echo "KASAN config did not apply cleanly."
     exit 1
 fi
 
-if [ ! -z "$CONFIG_FULL_FN" ] && [ $IS_KASAN -eq 0 ]; then
-    if scripts/diffconfig $CONFIGS_DIR/$CONFIG_FULL_FN .config|grep "^[^+]"; then
+if [ -n "$CONFIG_FULL_FN" ] && [ "$IS_KASAN" -eq 0 ]; then
+    if scripts/diffconfig "$CONFIGS_DIR/$CONFIG_FULL_FN" .config | grep "^[^+]"; then
         echo "The full config has differences compared to the applied config. Check if the base config changed since custom config was created."
         exit 1
     fi
