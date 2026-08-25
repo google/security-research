@@ -74,8 +74,8 @@ jobs:
         if: steps.detect.outputs.type == 'linux'
         run: |
           sudo apt-get update
-          sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole clang llvm lld
-          
+          sudo apt install -yq --no-install-recommends build-essential flex bison bc ca-certificates libelf-dev libssl-dev cpio pahole wget curl gnupg lsb-release software-properties-common
+          ./ensure_llvm.sh
           sudo apt-get clean
       
       - name: Install Android build prerequisites

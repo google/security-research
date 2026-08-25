@@ -83,7 +83,7 @@ echo "BRANCH=$BRANCH"
 echo "CONFIG_FN=$CONFIG_FN"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASEDIR=`pwd`
+BASEDIR="$SCRIPT_DIR"
 BUILD_DIR="$BASEDIR/builds/$RELEASE_NAME"
 RELEASE_DIR="$BASEDIR/releases/$RELEASE_NAME"
 CONFIGS_DIR="$BASEDIR/kernel_configs"
@@ -105,13 +105,13 @@ clang --version || true
 echo "================="
 echo
 
-mkdir -p $BUILD_DIR 2>/dev/null || true
-cd $BUILD_DIR
-if [ ! -d ".git" ]; then git init && git remote add origin $REPO; fi
+mkdir -p "$BUILD_DIR" 2>/dev/null || true
+cd "$BUILD_DIR"
+if [ ! -d ".git" ]; then git init && git remote add origin "$REPO"; fi
 
-if ! git checkout $BRANCH; then
-    git fetch --depth 1 origin $BRANCH:$BRANCH || true # TODO: hack, solve it better
-    git checkout $BRANCH
+if ! git checkout "$BRANCH"; then
+    git fetch --depth 1 origin "$BRANCH:$BRANCH" || git fetch --depth 1 origin "$BRANCH" || git fetch --depth 1 origin "refs/tags/$BRANCH:refs/tags/$BRANCH" || true
+    git checkout "$BRANCH" || git checkout FETCH_HEAD
 fi
 
 make_kconfig_option_configurable() {

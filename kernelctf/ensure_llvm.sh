@@ -2,69 +2,114 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR"
-
-LLVM_SRC_DIR="$BUILD_DIR/llvm-22"
-LLVM_BUILD_DIR="$LLVM_SRC_DIR/build"
-LLVM_BIN_DIR="$LLVM_BUILD_DIR/bin"
-LLVM_REPO_URL="https://github.com/llvm/llvm-project.git"
-LLVM_BRANCH="release/22.x"
 
 get_clang_major_version() {
     local clang_bin="$1"
     "$clang_bin" --version 2>/dev/null | grep -oP 'clang version \K[0-9]+' | head -n1 || true
 }
 
-# 1. Check if system clang in PATH is >= 22
-SYSTEM_CLANG="$(which clang 2>/dev/null || true)"
-if [ -n "$SYSTEM_CLANG" ]; then
-    SYS_MAJOR="$(get_clang_major_version "$SYSTEM_CLANG")"
-    if [ -n "$SYS_MAJOR" ] && [ "$SYS_MAJOR" -ge 22 ]; then
-        echo "--> [LLVM] System clang ($SYSTEM_CLANG) version $SYS_MAJOR is >= 22. Skipping LLVM build."
-        "$SYSTEM_CLANG" --version
-        export PATH="$(dirname "$SYSTEM_CLANG"):$PATH"
-        return 0 2>/dev/null || exit 0
+ensure_llvm22() {
+    local sudo_cmd=""
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo_cmd="sudo"
+        else
+            echo "--> [LLVM] Warning: not running as root and sudo not found."
+        fi
     fi
-fi
 
-# 2. Check if cached local LLVM 22 build exists
-if [ -x "$LLVM_BIN_DIR/clang" ]; then
-    LOCAL_MAJOR="$(get_clang_major_version "$LLVM_BIN_DIR/clang")"
-    if [ -n "$LOCAL_MAJOR" ] && [ "$LOCAL_MAJOR" -ge 22 ]; then
-        echo "--> [LLVM] LLVM 22 already built at $LLVM_BIN_DIR. Reusing cached build."
-        export PATH="$LLVM_BIN_DIR:$PATH"
-        "$LLVM_BIN_DIR/clang" --version
-        return 0 2>/dev/null || exit 0
+    # 1. Check if system clang in PATH is >= 22
+    local system_clang
+    system_clang="$(command -v clang 2>/dev/null || true)"
+    if [ -n "$system_clang" ]; then
+        local sys_major
+        sys_major="$(get_clang_major_version "$system_clang")"
+        if [ -n "$sys_major" ] && [ "$sys_major" -ge 22 ]; then
+            echo "--> [LLVM] System clang ($system_clang) version $sys_major is >= 22. Skipping LLVM installation."
+            "$system_clang" --version
+            return 0
+        fi
     fi
-fi
 
-# 3. Download and build LLVM 22
-echo "--> [LLVM] LLVM >= 22 not found on system or cache. Building LLVM 22..."
+    # 2. Check if clang-22 is already installed
+    if ! command -v clang-22 >/dev/null 2>&1 && [ ! -x "/usr/bin/clang-22" ] && [ ! -x "/usr/lib/llvm-22/bin/clang" ]; then
+        echo "--> [LLVM] LLVM >= 22 not found on system. Installing LLVM 22 from PPA (apt.llvm.org)..."
 
-if [ ! -d "$LLVM_SRC_DIR/.git" ]; then
-    echo "--> [LLVM] Downloading LLVM 22 (shallow clone)..."
-    git clone --depth 1 --branch "$LLVM_BRANCH" "$LLVM_REPO_URL" "$LLVM_SRC_DIR"
-fi
+        # Ensure prerequisites for repository setup
+        $sudo_cmd apt-get update
+        $sudo_cmd apt-get install -yq --no-install-recommends \
+            wget curl gnupg lsb-release software-properties-common ca-certificates
 
-mkdir -p "$LLVM_BUILD_DIR"
+        # Try installing via apt.llvm.org setup script
+        local llvm_script="/tmp/llvm.sh"
+        local installed=0
+        if wget -qO "$llvm_script" https://apt.llvm.org/llvm.sh || curl -sSf -o "$llvm_script" https://apt.llvm.org/llvm.sh; then
+            chmod +x "$llvm_script"
+            if $sudo_cmd "$llvm_script" 22; then
+                installed=1
+            fi
+            rm -f "$llvm_script"
+        fi
 
-if [ ! -f "$LLVM_BUILD_DIR/build.ninja" ]; then
-    echo "--> [LLVM] Configuring CMake..."
-    cmake -G Ninja -S "$LLVM_SRC_DIR/llvm" -B "$LLVM_BUILD_DIR" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLLVM_ENABLE_PROJECTS="clang;lld" \
-        -DLLVM_TARGETS_TO_BUILD="X86" \
-        -DLLVM_ENABLE_ASSERTIONS=OFF \
-        -DLLVM_ENABLE_BINDINGS=OFF \
-        -DLLVM_INCLUDE_TESTS=OFF \
-        -DLLVM_INCLUDE_EXAMPLES=OFF \
-        -DLLVM_INCLUDE_BENCHMARKS=OFF \
-        -DLLVM_INCLUDE_DOCS=OFF
-fi
+        # Fallback if script failed
+        if [ "$installed" -eq 0 ]; then
+            echo "--> [LLVM] llvm.sh script failed, attempting manual repository configuration..."
+            local codename
+            codename="$(lsb_release -cs 2>/dev/null || (. /etc/os-release && echo "$VERSION_CODENAME"))"
+            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | $sudo_cmd tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+            $sudo_cmd add-apt-repository -y "deb http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-22 main"
+            $sudo_cmd apt-get update
+            $sudo_cmd apt-get install -yq clang-22 lld-22 llvm-22
+        fi
 
-echo "--> [LLVM] Compiling clang, lld, and llvm tools with Ninja..."
-ninja -C "$LLVM_BUILD_DIR" clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip
+        # Ensure tools like llvm-ar, llvm-nm, llvm-objcopy, etc. are installed
+        $sudo_cmd apt-get install -yq clang-22 lld-22 llvm-22 llvm-22-tools || true
+    fi
 
-export PATH="$LLVM_BIN_DIR:$PATH"
-echo "--> [LLVM] LLVM 22 build complete."
-"$LLVM_BIN_DIR/clang" --version
+    # 3. Configure alternatives / symlinks for LLVM 22 tools
+    echo "--> [LLVM] Configuring LLVM 22 alternatives and links..."
+    local llvm_version=22
+    local llvm_tools=(clang clang++ lld ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip)
+    local tool
+    for tool in "${llvm_tools[@]}"; do
+        local tool_bin=""
+        if [ -x "/usr/bin/${tool}-${llvm_version}" ]; then
+            tool_bin="/usr/bin/${tool}-${llvm_version}"
+        elif [ -x "/usr/lib/llvm-${llvm_version}/bin/${tool}" ]; then
+            tool_bin="/usr/lib/llvm-${llvm_version}/bin/${tool}"
+        elif command -v "${tool}-${llvm_version}" >/dev/null 2>&1; then
+            tool_bin="$(command -v "${tool}-${llvm_version}")"
+        fi
+
+        if [ -n "$tool_bin" ]; then
+            $sudo_cmd update-alternatives --install "/usr/bin/${tool}" "${tool}" "$tool_bin" 100 2>/dev/null || true
+            $sudo_cmd update-alternatives --set "${tool}" "$tool_bin" 2>/dev/null || true
+            if ! command -v "${tool}" >/dev/null 2>&1 || [ "$(command -v "${tool}")" != "/usr/bin/${tool}" ]; then
+                $sudo_cmd ln -sf "$tool_bin" "/usr/bin/${tool}" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    # Handle ld.lld if not present but lld-22 is present
+    if ! command -v ld.lld >/dev/null 2>&1; then
+        if [ -x "/usr/bin/lld-${llvm_version}" ]; then
+            $sudo_cmd ln -sf "/usr/bin/lld-${llvm_version}" "/usr/bin/ld.lld" 2>/dev/null || true
+        elif [ -x "/usr/bin/lld" ]; then
+            $sudo_cmd ln -sf "/usr/bin/lld" "/usr/bin/ld.lld" 2>/dev/null || true
+        fi
+    fi
+
+    if [ -d "/usr/lib/llvm-${llvm_version}/bin" ]; then
+        export PATH="/usr/lib/llvm-${llvm_version}/bin:$PATH"
+    fi
+
+    if command -v clang >/dev/null 2>&1; then
+        echo "--> [LLVM] LLVM 22 setup complete."
+        clang --version
+    else
+        echo "--> [LLVM] Error: clang not found after setup."
+        return 1
+    fi
+}
+
+ensure_llvm22 "$@"
