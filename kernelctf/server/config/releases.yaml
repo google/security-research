@@ -1,3 +1,40 @@
+lts-6.12.104:
+  release-date: 2026-08-26T12:00:00Z
+
+lts-6.12.101:
+  release-date: 2026-08-21T12:00:00Z
+
+lts-6.12.96:
+  release-date: 2026-08-07T12:00:00Z
+
+lts-6.12.95:
+  release-date: 2026-07-24T12:00:00Z
+
+lts-6.12.94:
+  release-date: 2026-07-10T12:00:00Z
+
+lts-6.12.93:
+  release-date: 2026-06-26T12:00:00Z
+
+lts-6.12.91:
+  release-date: 2026-06-12T12:00:00Z
+
+lts-6.12.89:
+  release-date: 2026-05-29T12:00:00Z
+
+lts-6.12.85:
+  release-date: 2026-05-15T12:00:00Z
+
+lts-6.12.82:
+  release-date: 2026-05-04T12:00:00Z
+
+lts-6.12.80:
+  release-date: 2026-04-17T12:00:00Z
+cos-121-18867.381.56:
+  release-date: 2026-04-17T12:00:00Z
+cos-113-18244.582.55:
+  release-date: 2026-04-17T12:00:00Z
+
 lts-6.12.79:
   release-date: 2026-04-07T12:00:00Z
 cos-121-18867.381.45:
@@ -70,6 +107,7 @@ cos-113-18244.521.7:
 
 mitigation-v4-6.12:
   release-date: 2025-12-03T12:00:00Z
+  available-until: 2026-04-30T12:00:00Z
 
 lts-6.12.54:
   release-date: 2025-10-31T12:00:00Z

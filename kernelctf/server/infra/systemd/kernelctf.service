@@ -1,0 +1,15 @@
+[Unit]
+Description=kernelCTF Service Daemon
+After=network.target
+
+[Service]
+WorkingDirectory=/home/kernelctf
+ExecStart=/home/kernelctf/server/service.sh
+User=kernelctf
+Group=kernelctf
+LimitMEMLOCK=infinity
+LimitNOFILE=65536
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

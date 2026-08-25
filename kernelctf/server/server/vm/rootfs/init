@@ -1,0 +1,104 @@
+#!/busybox sh
+if [ ! -d /bin ]; then
+    /busybox mkdir /bin
+    /busybox --install -s /bin
+fi
+
+mkdir -p /dev
+mount -t devtmpfs none /dev
+
+mkdir -p /proc
+mount proc /proc -t proc
+
+mkdir -p /sys
+mount -t sysfs sysfs /sys
+
+mkdir -p /tmp
+mount -t tmpfs tmpfs /tmp
+
+if [ ! -e /output ]; then
+    ln -s /dev/ttyS1 /output
+    chmod a+w /output
+fi
+
+# Verify Intel IBT / CET support
+if [ "$IGNORE_IBT" != "1" ] && ! grep -q -w 'ibt' /proc/cpuinfo; then
+    echo "[-] ERROR: Intel IBT / CET is not available on this CPU!" >&2
+    poweroff -f
+fi
+
+if [ ! -z "$MOUNT_MODULES" ]; then
+    echo "Mounting modules..."
+    mkdir -p /mnt/modules
+    mount -t ext4 "$MOUNT_MODULES" /mnt/modules
+    chmod -R a+rx /mnt/modules
+
+    mkdir -p /lib
+    if [ -d /mnt/modules/lib/modprobe.d ]; then ln -s /mnt/modules/lib/modprobe.d /lib/; fi
+    if [ -d /mnt/modules/lib/modules ]; then
+        ln -s /mnt/modules/lib/modules /lib/
+        if [ ! -f /lib/modules/*/modules.dep ]; then
+            echo "Running depmod (as modules.dep is missing)..."
+            depmod
+            sync # save file changes
+        fi
+    fi
+fi
+
+if [ ! -z "$MOUNT_CUSTOM_MODULES" ]; then
+    echo "Extracting custom modules from $MOUNT_CUSTOM_MODULES:"
+    mkdir -p /custom_modules
+    tar -xvf "$MOUNT_CUSTOM_MODULES" -C /custom_modules
+fi
+
+# disable LoadPin
+for name in "enforce" "enabled"; do
+    if [ -e "/proc/sys/kernel/loadpin/$name" ] && [ "$(cat /proc/sys/kernel/loadpin/$name)" != "0" ]; then
+        echo 0 > "/proc/sys/kernel/loadpin/$name";
+    fi
+done
+
+if [ ! -z "$MOUNT_PATHS" ]; then
+    for item in $(echo "$MOUNT_PATHS" | tr ',' ' '); do
+        DEV="$(echo "$item" | cut -d: -f1)"
+        DEST="$(echo "$item" | cut -d: -f2)"
+        OPT="$(echo "$item" | cut -d: -f3)"
+        echo "Mounting $DEV at $DEST..."
+        if [ ! -e "$DEV" ]; then
+            echo "Error: device $DEV not found"
+            exit 1
+        fi
+        if [ "$OPT" = "copy" ]; then
+            cp "$DEV" "$DEST"
+        else
+            ln -s "$DEV" "$DEST"
+        fi
+    done
+fi
+
+chmod a+rx / /cmd_wrapper.sh /exploit
+chmod -R a+rx /bin /etc
+
+if [ "$1" = "--" ]; then
+    shift;
+fi
+
+if [ $# -gt 0 ]; then
+    if [ "$AS_ROOT" = "1" ]; then
+        echo "Running command: $*"
+        eval "$*"
+    else
+        echo "Running command as user: $*"
+        su user -s /bin/sh -c "exec $*"
+    fi
+else
+    echo "No commands were specified as init arguments. Opening a shell..."
+    if [ "$AS_ROOT" = "1" ]; then
+        sh
+    else
+        su user -s /bin/sh
+    fi
+fi
+
+echo "User-space finished execution. Shutting down..."
+poweroff -f

@@ -59,24 +59,26 @@ $$\text{Score} = 2 \times (\text{Stability \%}) + \max(100 - \text{AVG}(\text{ti
 
 ### Connecting to the evaluation system
 
-You can connect to the target with `socat - ssl:kernelctf.vrp.ctfcompetition.com:1337,cafile=server_cert.pem`
+You can interact with the evaluation server using `client/cli.py` (from the `server/` directory):
 
-`server_cert.pem`:
-
-```
------BEGIN CERTIFICATE-----
-MIIBazCCAR2gAwIBAgIUSXiRksvnzRI2WYqh7nDZVoZydOIwBQYDK2VwMCsxKTAn
-BgNVBAMMIGtlcm5lbGN0Zi52cnAuY3RmY29tcGV0aXRpb24uY29tMB4XDTIzMDYw
-ODIyNDA0MFoXDTMzMDYwNTIyNDA0MFowKzEpMCcGA1UEAwwga2VybmVsY3RmLnZy
-cC5jdGZjb21wZXRpdGlvbi5jb20wKjAFBgMrZXADIQCTg2ayrs3BsxUocgbd1eWj
-WWVzQQmORR5LT3unlZCzFaNTMFEwHQYDVR0OBBYEFCSsjYgVH8funXWPApo32zpS
-NhPgMB8GA1UdIwQYMBaAFCSsjYgVH8funXWPApo32zpSNhPgMA8GA1UdEwEB/wQF
-MAMBAf8wBQYDK2VwA0EAxJ+NlnvVYZKj/ctSIzcuPm7+4SlziIHDRW43SrLks15v
-KQVTtek3sAifw5NuaXWZrGrX7JAqNqci3QPCMHFEDA==
------END CERTIFICATE-----
+```bash
+# Evaluate exploit against remote server (default target)
+python3 client/cli.py exploit_binary --action evaluate
 ```
 
-You can use a maximum of two connections per IPv4 address and the connection will be closed after 30 minutes.
+If you do not want to run a full evaluation and only want to test a part of the exploit, you can use:
+* `--action lpe-test`: Test local privilege escalation and flag retrieval on the hardened target.
+* `--action vuln-test`: Test triggering the vulnerability (kernel crash) on the LTS target.
+
+For a raw interactive connection to the service menu, you can use `client/connect.sh`:
+
+```bash
+./client/connect.sh
+```
+
+For the full guide and options (such as local testing), see the [`server/README.md` ("Using `client/cli.py`" section)](server/README.md#using-clientclipy).
+
+You can use a maximum of two connections per IPv4 address and the connection will be closed after 60 minutes.
 
 The source code running on the server is available [on our Github](https://github.com/google/security-research/tree/master/kernelctf/server).
 

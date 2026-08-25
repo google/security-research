@@ -1,0 +1,1 @@
+0 12 * * * cd /home/kernelctf && python3 tools/auto_release.py >> auto_release.log 2>&1

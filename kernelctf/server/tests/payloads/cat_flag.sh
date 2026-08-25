@@ -1,0 +1,2 @@
+ls -al /
+cat /flag

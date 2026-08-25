@@ -1,0 +1,13 @@
+releases/
+bzImage*
+vmlinu*
+*.img
+*.tar
+*.deb
+*.qcow2
+output
+**/busybox
+*.cpio
+*.ko
+logs/
+test/stability_test_outputs/
