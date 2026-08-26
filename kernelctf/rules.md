@@ -128,7 +128,7 @@ The submission process has two stages to make sure the vulnerability details are
 
   1. Upload the compressed file to the evaluation system, which will provide a flag upon successful exploitation.
 
-  2. Submit the flag on [this form](https://forms.gle/JA3XVBdmSbFmhgZQ9) with the additional details requested.
+  2. Submit the flag on [this form](https://forms.gle/cjA9M1ZNUSc6adGE6) with the additional details requested.
 
      * Save the link as you’ll have to edit this form later.
 
