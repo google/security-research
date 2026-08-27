@@ -7,7 +7,7 @@ import hashlib
 import re
 from utils import *
 
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
+PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true&gid=2095368189"
 POC_FOLDER = "pocs/linux/kernelctf/"
 EXPLOIT_DIR = "exploit/"
 MIN_SCHEMA_VERSION = 2
