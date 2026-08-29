@@ -7,7 +7,7 @@ VERSION=0.01
 # List of all required dependencies in pkg-config format.
 PKGDEPS=openssl,gmp,json-c
 
-.PHONY: clean distclean sync check template.bin
+.PHONY: all clean distclean sync check template.bin
 
 all: check zentool mcop mcas opcodes mtalk dumper
 
@@ -44,10 +44,14 @@ sync:
 %.o: %.asm
 	nasm $(NFLAGS) -felf64 -o $@ $^
 
+.INTERMEDIATE: %_fields.h.pahole
+%_fields.h.pahole: CLASS=$(patsubst %_fields.h.pahole,%,$@)
+%_fields.h.pahole: structs.o ucode.h risc86.h
+	pahole -C $(CLASS) $< > $@
+
 .ONESHELL:
-%_fields.h: CLASS=$(patsubst %_fields.h,%,$@)
-%_fields.h: structs.o ucode.h risc86.h
-	pahole -C $(CLASS) $<  | awk 'BEGIN {
+%_fields.h: %_fields.h.pahole
+	awk < $< 'BEGIN {
 		print "/* This file was automatically generated */"
 	}	/unsigned int/ && $$3 !~ /^_/ {
 			printf("REGISTER_BITFIELD($(CLASS), %s);\n",gensub(/:.*/, "", 1, $$3))
@@ -83,7 +87,7 @@ template.bin: zentool
 	./zentool resign $@
 
 clean:
-	rm -f *.o zentool mcas mcop mtalk opcodes dumper template.bin
+	rm -f *.o *.h.pahole zentool mcas mcop mtalk opcodes dumper template.bin
 	rm -f zentool-$(VERSION).tar.gz
 
 distclean: clean
