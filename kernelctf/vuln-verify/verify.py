@@ -65,7 +65,7 @@ if not GITHUB_TOKEN and not args.no_gh_auth:
 GH_HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN and not args.no_gh_auth else {}
 
 CACHE_DB_FN = "cache.json"
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv"
+PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&gid=2095368189"
 KERNEL_DANCE_SQL_URL = "https://linux-mirror-db.storage.googleapis.com/mirror.sl3"
 KERNEL_DANCE_SQL_FN = "kernel-dance.sqlite3"
 KERNELCTF_RELEASES_URL = "https://storage.googleapis.com/kernelctf-build/releases"
