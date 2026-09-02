@@ -54,8 +54,8 @@ $$\text{Score} = 2 \times (\text{Stability \%}) + \max(100 - \text{AVG}(\text{ti
 
 * **Maximum Possible Score:** 300 pts (100% stability, 0-second runtime).
 * **Minimum Passing Score:** 140 pts (70% stability, $\ge 100$-second runtime).
-* **Winning Criterion:** The submission with the highest overall score wins the reward.
-* **Submission Limits:** Only one submission per researcher is eligible per slot. Researchers may test and submit multiple times during the open window, but only their latest submission before the Friday 12:00 UTC deadline will be used.
+* **Winning Criterion:** The submission with the highest overall score wins the reward. If there is a tie, the submission with the earlier flag capture time (the timestamp recorded in the flag) wins. If there is still a tie, the earlier form submission time will be used.
+* **Submission Limits:** Only one submission per researcher is eligible per slot. Researchers may evaluate on the server up to 10 times per slot based on their email address (you can get your researcher token via [this form](https://forms.gle/Dd8pk7AXW843eDGP6)), but only their latest submission before the Friday 12:00 UTC deadline will be used. Please do not use different email addresses to bypass this requirement as payment providers will flag this and it will block the reward payment.
 
 ### Connecting to the evaluation system
 
@@ -63,8 +63,10 @@ You can interact with the evaluation server using `client/cli.py` (from the `ser
 
 ```bash
 # Evaluate exploit against remote server (default target)
-python3 client/cli.py exploit_binary --action evaluate
+python3 client/cli.py exploit_binary --action evaluate --researcher-token <token>
 ```
+
+You can get your researcher token via [this form](https://forms.gle/Dd8pk7AXW843eDGP6).
 
 If you do not want to run a full evaluation and only want to test a part of the exploit, you can use:
 * `--action lpe-test`: Test local privilege escalation and flag retrieval on the hardened target.
@@ -78,7 +80,7 @@ For a raw interactive connection to the service menu, you can use `client/connec
 
 For the full guide and options (such as local testing), see the [`server/README.md` ("Using `client/cli.py`" section)](server/README.md#using-clientclipy).
 
-You can use a maximum of two connections per IPv4 address and the connection will be closed after 60 minutes.
+You can use a maximum of two connections per IPv4 address and the connection will be closed after 60 minutes. Evaluation runs are limited to 10 attempts per researcher per open slot based on your email address.
 
 The source code running on the server is available [on our Github](https://github.com/google/security-research/tree/master/kernelctf/server).
 
@@ -134,7 +136,7 @@ The submission process has two stages to make sure the vulnerability details are
 
   3. Check the [public spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pubhtml) after submitting the form and confirm that your submission was added and your score is correct.
 
-  4. Wait until Friday at 12:00 UTC and verify that your submission won the current slot. If there are multiple submissions for the same slot, another submission with a higher score may take the slot. If your submission does not win, you must wait for a new, empty slot to be released (start from Step 1).
+  4. Wait until Friday at 12:00 UTC and verify that your submission won the current slot. If there are multiple submissions for the same slot, another submission with a higher score may take the slot (in case of a tie, the earlier flag capture time, and then the earlier form submission time wins). If your submission does not win, you must wait for a new, empty slot to be released (start from Step 1).
 
   5. Report the vulnerability to security@kernel.org within 7 days of winning the slot.
 
