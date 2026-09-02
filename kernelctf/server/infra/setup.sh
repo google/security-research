@@ -77,8 +77,15 @@ add_ssh_keys "/root" "root"
 # Copy files to /home/kernelctf if executed from another directory (e.g. staging)
 if [ "$SCRIPT_SRC_DIR" != "$INSTALL_DIR" ]; then
     echo "Copying files from $SCRIPT_SRC_DIR to $INSTALL_DIR..."
-    mkdir -p "$INSTALL_DIR"
-    cp -r "$SCRIPT_SRC_DIR"/* "$INSTALL_DIR/"
+
+    # Copy config files without overwriting existing files on the host (-n / --no-clobber)
+    mkdir -p "$INSTALL_DIR/config"
+    cp -n "$SCRIPT_SRC_DIR/config"/* "$INSTALL_DIR/config/" 2>/dev/null || true
+
+    # Overwrite and update application code, tooling, infra, and secrets
+    for item in server tools infra secrets; do
+        cp -r "$SCRIPT_SRC_DIR/$item" "$INSTALL_DIR/"
+    done
 fi
 
 cd "$INSTALL_DIR"
@@ -156,10 +163,18 @@ chmod -R a+rX data/ config/
 
 chown -R kernelctf:kernelctf "$INSTALL_DIR"
 
-# Allow members of kernelctf group (e.g. $USER) read/write access and inherit group ownership via setgid
-chmod 775 "$INSTALL_DIR"
-chmod g+s "$INSTALL_DIR"
+# Allow members of kernelctf group (e.g. $USER) read/write access to subdirectories and files
 chmod -R g+rwX "$INSTALL_DIR"
+
+# Home directory (/home/kernelctf) itself must be 755 (not group-writable) for OpenSSH StrictModes
+chmod 755 "$INSTALL_DIR"
+
+# Ensure SSH strict modes are preserved on .ssh directory and authorized_keys
+if [ -d "$INSTALL_DIR/.ssh" ]; then
+    chmod 700 "$INSTALL_DIR/.ssh"
+    chmod 600 "$INSTALL_DIR/.ssh/authorized_keys" 2>/dev/null || true
+    chown -R kernelctf:kernelctf "$INSTALL_DIR/.ssh"
+fi
 
 # Restrict sensitive secrets to owner and group only
 if [ -d secrets ]; then

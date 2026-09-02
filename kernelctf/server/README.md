@@ -97,19 +97,20 @@ kernelCTF Service v5 is the remote evaluation and verification backend for Googl
 | **`info`** | All active targets | Prints direct download links for target `bzImage`, `vmlinux.gz`, `.config`, `lakitu_defconfig`, and `COMMIT_INFO`. |
 | **`lpe-test`** | Hardened Target (`hardened-v1-*`) | Single-run exploit test. Executes `/exploit` and checks if the participant can read and leak `/flag`. |
 | **`vuln-test`** | LTS & LTS-KASAN Targets (`lts-*`, `lts-*-kasan`) | Runs `/exploit --vuln-trigger`. Verifies if the exploit triggers a genuine kernel panic or KASAN report in kernel `dmesg`. |
-| **`evaluate`** | All Targets (LTS, LTS-KASAN, Hardened) | Full official evaluation workflow: <br>1. **Phase 1**: Runs `--vuln-trigger` up to 3 times on LTS-KASAN and LTS to confirm kernel crash.<br>2. **Phase 2**: Runs exploit 20 times on Hardened target to benchmark reliability and execution time.<br>3. **Phase 3**: If eligible and within the submission window, computes statistics and prints signed flag. |
+| **`evaluate`** | All Targets (LTS, LTS-KASAN, Hardened) | Full official evaluation workflow (rate-limited to 10 evaluation runs per researcher per open slot): <br>1. **Phase 1**: Runs `--vuln-trigger` up to 3 times on LTS-KASAN and LTS to confirm kernel crash.<br>2. **Phase 2**: Runs exploit 20 times on Hardened target to benchmark reliability and execution time.<br>3. **Phase 3**: If eligible and within the submission window, computes statistics and prints signed flag. |
 
 ### 4. Flag Generation & Signing
 
 Verification flags are signed with HMAC-SHA1 using a secret key configured in `secrets/server_secrets.py`:
 
 ```
-kernelCTF{v5:<hardened_target>+<lts_target>:<flag_id>:<attributes>:<timestamp>:<binary_hash>:<hmac_signature>}
+kernelCTF{v5:<hardened_target>+<lts_target>:<flag_id>:<attributes>:<timestamp>:<binary_hash>:<researcher_hash>:<hmac_signature>}
 ```
 
-* `attributes`: Tracks execution metrics across the 20 hardened runs (e.g. `time=1.23/1.18/-/0.95/...`).
+* `attributes`: Tracks execution metrics across the 20 hardened runs with 4 decimal places (e.g. `time=1.2345/1.1820/-/0.9511/...`).
+* `timestamp`: UTC timestamp (in milliseconds) of the evaluation.
 * `binary_hash`: The SHA256 hash of the evaluated exploit binary.
-* `timestamp`: UTC timestamp of the evaluation.
+* `researcher_hash`: The 20-character hex hash part of the verified researcher token.
 
 ---
 

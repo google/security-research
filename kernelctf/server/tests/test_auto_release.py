@@ -151,5 +151,39 @@ class TestAutoReleaseCron(unittest.TestCase):
         self.assertFalse(success)
         self.assertFalse(failed)
 
+    def test_auto_release_advances_after_time_gap(self):
+        schedules = [
+            {
+                "prepare-date": "2026-07-13T12:00:00Z",
+                "release-date": "2026-07-24T12:00:00Z",
+                "downloaded": True,
+                "activated": True,
+                "discord_msg": "test"
+            }
+        ]
+        added_yaml = []
+        downloads = []
+        messages = []
+
+        deps = {
+            "get_kernelctf_releases": lambda: ["lts-6.12.105", "lts-6.12.105-kasan"],
+            "activate_releases": lambda *args, **kwargs: (True, "There were no errors."),
+            "download_release": lambda rel: downloads.append(rel),
+            "discord_msg": lambda msg: None,
+            "get_scheduled_releases": lambda: "",
+            "add_new_releases": lambda y: added_yaml.extend(y.values()),
+            "chat_msg": lambda msg: messages.append(msg)
+        }
+
+        # 6 weeks after 2026-07-13 (2026-08-24): should advance across multiple 14-day intervals to 2026-08-24
+        now_aug24 = datetime(2026, 8, 24, 12, 0, 0, tzinfo=timezone.utc)
+        success = kernelctf_release(schedules, now_aug24, deps)
+        self.assertTrue(success)
+        self.assertEqual(len(downloads), 2)
+        self.assertEqual(len(added_yaml), 1)
+        self.assertIn("2026-08-26T12:00:00Z", added_yaml[0])
+        self.assertIn("lts-6.12.105", added_yaml[0])
+        self.assertEqual(schedules[-1]["prepare-date"], "2026-08-24T12:00:00Z")
+
 if __name__ == "__main__":
     unittest.main()

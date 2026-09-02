@@ -18,7 +18,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 import traceback
 from datetime import datetime, timedelta, timezone
 from httplib2 import Http
@@ -109,11 +108,14 @@ def save_state(state):
 
 def get_next_prep_monday(schedules, now):
     if not schedules:
-        return datetime(2026, 4, 6, 12, 0, 0, tzinfo=timezone.utc)
-    last_prep = datetime.fromisoformat(schedules[-1]['prepare-date'].replace('Z', '+00:00'))
-    if (now - last_prep).total_seconds() < 14 * 24 * 3600:
-        return last_prep
-    return last_prep + timedelta(days=14)
+        prep_date = datetime(2026, 4, 6, 12, 0, 0, tzinfo=timezone.utc)
+    else:
+        prep_date = datetime.fromisoformat(schedules[-1]['prepare-date'].replace('Z', '+00:00'))
+
+    while (now - prep_date).total_seconds() >= 14 * 24 * 3600:
+        prep_date += timedelta(days=14)
+
+    return prep_date
 
 def version_tuple(v):
     try:
@@ -149,7 +151,6 @@ def kernelctf_release(schedules, now, deps):
     if not has_entry:
         new_entry = {
             "prepare-date": fmt_date(prep_monday),
-            "activate-date": fmt_date(activate_wednesday),
             "release-date": fmt_date(activate_wednesday),
             "slot-start": fmt_date(slot_monday),
             "slot-end": fmt_date(slot_friday),

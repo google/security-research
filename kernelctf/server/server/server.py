@@ -24,7 +24,7 @@ import sys
 import tempfile
 import time
 import traceback
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from httplib2 import Http
 import yaml
 
@@ -34,6 +34,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, 'secrets'))
 
 import server_secrets
 from utils import ProcessStreamer, BinaryMemFd
+from researcher_token import verify_researcher_token
+from rate_limit import EvaluationRateLimiter
+from slot_window import SlotWindow
 
 try:
     sys.stdout.reconfigure(line_buffering=True)
@@ -42,6 +45,7 @@ except Exception:
 
 RELEASES_YAML = os.path.join(REPO_ROOT, 'config', 'releases.yaml')
 DATA_DIR = os.path.join(REPO_ROOT, 'data')
+EVALUATIONS_DB = os.path.join(DATA_DIR, 'evaluations.db')
 RELEASES_DIR = os.path.join(DATA_DIR, 'releases')
 STAGING_DIR = os.path.join(DATA_DIR, 'staging')
 
@@ -51,6 +55,7 @@ IGNORE_OPEN_SLOTS = '--ignore-open-slots' in sys.argv
 HARDENED_TARGET = "hardened-v1-7.2-rc5"
 EVAL_RUNS = 20
 VULN_TRIGGER_RUNS = 3
+MAX_EVALUATIONS_PER_SLOT = 10
 
 isDevel = os.path.basename(__file__) == 'server_devel.py' or '--devel' in sys.argv
 now = datetime.now(timezone.utc)
@@ -102,19 +107,6 @@ def get_releases():
 
     return targets, lts_id, release_date
 
-def get_submission_window(release_date):
-    if isinstance(release_date, str):
-        release_date = datetime.fromisoformat(release_date.replace("Z", "+00:00"))
-    if release_date.tzinfo is None:
-        release_date = release_date.replace(tzinfo=timezone.utc)
-
-    # Window starts on next Monday at 12:00 UTC after the release date and ends on Friday at 12:00 UTC
-    days_until_monday = (7 - release_date.weekday()) % 7
-    window_start = (release_date + timedelta(days=days_until_monday)).replace(hour=12, minute=0, second=0, microsecond=0)
-    if window_start < release_date:
-        window_start += timedelta(days=7)
-    window_end = window_start + timedelta(days=4)
-    return window_start, window_end
 
 def is_kernel_crashed(dmesg_output):
     if not dmesg_output:
@@ -287,23 +279,34 @@ def vuln_test_action(lts_id, root):
     return run_exploit_session(_execute_trigger)
 
 def evaluate_action(lts_id, release_date, root):
-    window_start, window_end = get_submission_window(release_date)
-    is_in_window = (window_start <= now <= window_end) or IGNORE_OPEN_SLOTS
-
-    if not is_in_window:
-        print(f"[!] Warning: Current time ({now.strftime('%Y-%m-%d %H:%M:%S')} UTC) is outside the evaluation submission window:")
-        print(f"    Window: {window_start.strftime('%Y-%m-%d %H:%M:%S')} UTC to {window_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        print("[!] If evaluation succeeds, NO flag will be created or given to you.")
-        proceed = read_line("Do you want to continue anyway? (y/n) ").strip().lower()
-        print()
-        if proceed not in ('y', 'yes'):
-            print("Evaluation cancelled.")
-            return False
+    slot_window = SlotWindow(release_date, ignore_open_slots=IGNORE_OPEN_SLOTS)
+    if not slot_window.prompt_if_out_of_window(read_line):
+        return False
 
     show_output_input = read_line("Show VM output during evaluation? (y/n) ").strip().lower()
     show_vm_output = show_output_input in ('y', 'yes')
 
+    researcher_token = read_line("Researcher token: ").strip().lower()
+    try:
+        researcher_email_hash = verify_researcher_token(researcher_token, server_secrets.flag_key)
+    except ValueError as e:
+        print(f"Invalid researcher token: {e}. Get a new one via https://forms.gle/Dd8pk7AXW843eDGP6")
+        return False
+
+    rate_limiter = EvaluationRateLimiter(EVALUATIONS_DB)
+
     def _evaluate(memfd, binary_hash):
+        slot_window.wait_if_needed()
+
+        allowed, attempts_used = rate_limiter.acquire_slot(
+            lts_id, researcher_email_hash, binary_hash, max_evaluations=MAX_EVALUATIONS_PER_SLOT
+        )
+        if not allowed:
+            print(f"\n[-] Evaluation quota exceeded: You have already used {MAX_EVALUATIONS_PER_SLOT}/{MAX_EVALUATIONS_PER_SLOT} evaluation runs for slot '{lts_id}'.")
+            return True
+
+        print(f"\n[+] Evaluation run {attempts_used}/{MAX_EVALUATIONS_PER_SLOT} registered for slot '{lts_id}'.")
+
         flag_id = secrets.token_hex(4)
         run_results = []
         success_count = 0
@@ -351,9 +354,9 @@ def evaluate_action(lts_id, release_date, root):
                     HARDENED_TARGET, f"kernelCTF{{{flag_content}}}\n", f"/cmd_wrapper.sh {EXPLOIT_CMD}", memfd.fd, stream_stdout=show_vm_output, flag_to_match=flag_content, as_root=root
                 )
                 if flag_content in output:
-                    run_results.append(f"{elapsed:.2f}")
+                    run_results.append(f"{elapsed:.4f}")
                     success_count += 1
-                    print(f"Run {run_idx} SUCCESS ({elapsed:.2f}s)")
+                    print(f"Run {run_idx} SUCCESS ({elapsed:.4f}s)")
                 else:
                     run_results.append("-")
                     print(f"Run {run_idx} FAILED (flag not found in output)")
@@ -372,11 +375,11 @@ def evaluate_action(lts_id, release_date, root):
 
         # Phase 3: Overall result & Flag Generation
         print(f"\nEvaluation succeeded (crash verified on {crashed_target}, {success_count}/{EVAL_RUNS} hardened runs)!")
-        if is_in_window:
+        if slot_window.is_open():
             times_attr = "/".join(run_results)
             attributes = f"time={times_attr}"
-            timestamp = int(time.time())
-            flag_content = f"v5:{HARDENED_TARGET}+{lts_id}:{flag_id}:{attributes}:{timestamp}:{binary_hash}"
+            timestamp = time.time_ns() // 1_000_000
+            flag_content = f"v5:{HARDENED_TARGET}+{lts_id}:{flag_id}:{attributes}:{timestamp}:{binary_hash}:{researcher_email_hash}"
             flag = sign_flag(flag_content)
             print(f"Flag: {flag}")
         else:

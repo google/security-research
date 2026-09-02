@@ -81,15 +81,16 @@ class ServerSession:
             return text
         return ""
 
-    def read_until(self, prompt_substrings, timeout=60):
+    def read_until(self, prompt_substrings, timeout=5):
         start_time = time.time()
         while time.time() - start_time < timeout:
             for prompt in prompt_substrings:
                 idx = self.buffer.find(prompt)
                 if idx != -1:
+                    matched_text = self.buffer[:idx + len(prompt)]
                     self.buffer = self.buffer[idx + len(prompt):]
                     self.writer.flush()
-                    return prompt
+                    return matched_text
             res = self.read_chunk(0.1)
             if res is None:
                 break
@@ -152,6 +153,8 @@ def main():
     parser.add_argument("--root", action="store_true", default=False, help="Run server in root mode (for testing, default: False)")
     parser.add_argument("--show-vm-output", action=argparse.BooleanOptionalAction, default=True, help="Show VM output during evaluation (default: True)")
     parser.add_argument("--ignore-open-slots", action="store_true", help="Override submission window check and generate flag on evaluation")
+    parser.add_argument("--wait-for-slot", action="store_true", help="Wait for evaluation slot opening if currently before submission window")
+    parser.add_argument("--researcher-token", type=str, default=None, help="Researcher token for evaluation")
     parser.add_argument("--server-path", type=str, default=None, help="Path to local server.py executable (when using --local)")
     parser.add_argument("-k", "--insecure", action="store_true", help="Ignore TLS/SSL certificate and hostname verification")
     args = parser.parse_args()
@@ -189,6 +192,9 @@ def main():
         print(f"Loaded binary: {binary_path}")
         print(f"  Length: {length} bytes")
         print(f"  SHA256: {sha256_hash}")
+
+    if args.action == "evaluate" and not args.researcher_token:
+        parser.error("the following arguments are required: --researcher-token (for action 'evaluate')")
 
     if not args.local:
         target = args.remote
@@ -232,7 +238,7 @@ def main():
     session = ServerSession(proc)
 
     # Step 1: Wait for Actions menu
-    matched = session.read_until(["Actions:"])
+    matched = session.read_until(["Actions:"], timeout=10)  # Allow extra time for initial connection and TLS handshake
     if not matched:
         cprint("Failed to receive Actions menu from server.")
         session.close()
@@ -258,15 +264,26 @@ def main():
 
     # Step 2: Handle evaluate window warning / show vm output prompts
     if args.action == "evaluate":
-        prompt = session.read_until(["Do you want to continue anyway? (y/n)", "Show VM output during evaluation? (y/n)"])
-        if prompt and "Do you want to continue anyway" in prompt:
-            cprint("Responding 'y' to out-of-window warning...")
-            session.send_line("y")
-            session.read_until(["Show VM output during evaluation? (y/n)"])
+        prompt = session.read_until(["?"])
+        if prompt and "continue anyway" in prompt:
+            ans = "w" if (args.wait_for_slot and "wait" in prompt) else "y"
+            cprint(f"Responding '{ans}' to out-of-window warning...")
+            session.send_line(ans)
+            prompt = session.read_until(["?"])
 
-        show_output_ans = "y" if args.show_vm_output else "n"
-        cprint(f"Show VM output during evaluation: {show_output_ans}")
-        session.send_line(show_output_ans)
+        if prompt and "Show VM output" in prompt:
+            show_output_ans = "y" if args.show_vm_output else "n"
+            cprint(f"Show VM output during evaluation: {show_output_ans}")
+            session.send_line(show_output_ans)
+
+        matched = session.read_until(["Researcher token:"])
+        if not matched:
+            cprint("Failed to receive Researcher token prompt from server.")
+            session.close()
+            sys.exit(1)
+
+        cprint(f"Sending researcher token: {args.researcher_token}")
+        session.send_line(args.researcher_token)
 
     # Step 3: Wait for Binary length prompt
     matched = session.read_until(["Binary length:"])
