@@ -146,7 +146,7 @@ def run_exploit_qemu(release_id, flag_text, init_cmd, memfd_fd=None, stream_stdo
             if isDevel:
                 cmd.append("--ignore-ibt")
 
-            proc = subprocess.Popen(cmd, pass_fds=pass_fds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+            proc = subprocess.Popen(cmd, pass_fds=pass_fds, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
 
             if stream_stdout:
                 print("--- VM Output Begin ---")
@@ -298,14 +298,15 @@ def evaluate_action(lts_id, release_date, root):
     def _evaluate(memfd, binary_hash):
         slot_window.wait_if_needed()
 
-        allowed, attempts_used = rate_limiter.acquire_slot(
-            lts_id, researcher_email_hash, binary_hash, max_evaluations=MAX_EVALUATIONS_PER_SLOT
-        )
-        if not allowed:
-            print(f"\n[-] Evaluation quota exceeded: You have already used {MAX_EVALUATIONS_PER_SLOT}/{MAX_EVALUATIONS_PER_SLOT} evaluation runs for slot '{lts_id}'.")
-            return True
+        if slot_window.is_open():
+            allowed, attempts_used = rate_limiter.acquire_slot(
+                lts_id, researcher_email_hash, binary_hash, max_evaluations=MAX_EVALUATIONS_PER_SLOT
+            )
+            if not allowed:
+                print(f"\n[-] Evaluation quota exceeded: You have already used {MAX_EVALUATIONS_PER_SLOT}/{MAX_EVALUATIONS_PER_SLOT} evaluation runs for slot '{lts_id}'.")
+                return True
 
-        print(f"\n[+] Evaluation run {attempts_used}/{MAX_EVALUATIONS_PER_SLOT} registered for slot '{lts_id}'.")
+            print(f"\n[+] Evaluation run {attempts_used}/{MAX_EVALUATIONS_PER_SLOT} registered for slot '{lts_id}'.")
 
         flag_id = secrets.token_hex(4)
         run_results = []

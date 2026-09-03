@@ -35,6 +35,8 @@ for dir in "${SYNC_DIRS[@]}"; do
             --exclude='__pycache__' \
             --exclude='*.pyc' \
             --exclude='*secret*' \
+            --exclude='auto_release.yaml' \
+            --exclude='regressions' \
             "$REPO_ROOT/$dir/" "$OSS_DIR/$dir/"
     fi
 done

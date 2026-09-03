@@ -157,6 +157,7 @@ def main():
     parser.add_argument("--researcher-token", type=str, default=None, help="Researcher token for evaluation")
     parser.add_argument("--server-path", type=str, default=None, help="Path to local server.py executable (when using --local)")
     parser.add_argument("-k", "--insecure", action="store_true", help="Ignore TLS/SSL certificate and hostname verification")
+    parser.add_argument("--save-flag", nargs="?", const="flag.txt", default=None, metavar="FILE", help="Save captured flag to a file (default: flag.txt if specified without argument)")
     args = parser.parse_args()
 
     root_secret = None
@@ -328,6 +329,14 @@ def main():
     cprint("Done.")
     if flag:
         print(f"\nCaptured Flag:\n{green(flag)}")
+        if args.save_flag:
+            flag_file = args.save_flag
+            try:
+                with open(flag_file, "w", encoding="utf-8") as f:
+                    f.write(f"{flag}\n")
+                cprint(f"Flag saved to {flag_file}")
+            except Exception as e:
+                cprint(red(f"Error saving flag to {flag_file}: {e}"))
 
     if not success:
         cprint(red(f"Action '{args.action}' did not succeed."))

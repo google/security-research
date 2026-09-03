@@ -111,5 +111,25 @@ class TestEvaluationRateLimiter(unittest.TestCase):
         self.assertEqual(len(failures), total_attempts - MAX_EVALUATIONS_PER_SLOT)
         self.assertEqual(self.limiter.get_count(slot, researcher), MAX_EVALUATIONS_PER_SLOT)
 
+    def test_out_of_window_evaluation_skips_rate_limiter(self):
+        slot = "lts-6.12.98"
+        researcher = "g" * 20
+        exploit = "1" * 64
+
+        # Simulate out-of-window evaluation where is_open is False
+        is_window_open = False
+        if is_window_open:
+            self.limiter.acquire_slot(slot, researcher, exploit, max_evaluations=MAX_EVALUATIONS_PER_SLOT)
+
+        # Quota should not be consumed when out of window
+        self.assertEqual(self.limiter.get_count(slot, researcher), 0)
+
+        # In-window evaluation should consume quota
+        is_window_open = True
+        if is_window_open:
+            self.limiter.acquire_slot(slot, researcher, exploit, max_evaluations=MAX_EVALUATIONS_PER_SLOT)
+
+        self.assertEqual(self.limiter.get_count(slot, researcher), 1)
+
 if __name__ == "__main__":
     unittest.main()

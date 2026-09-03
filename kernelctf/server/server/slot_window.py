@@ -95,4 +95,4 @@ class SlotWindow:
                 print(f"Only {time_left} seconds left...")
                 prev_notification = time_left
 
-            time.sleep(0.001)
+            time.sleep(min(1.0, max(0.0, remaining)))
