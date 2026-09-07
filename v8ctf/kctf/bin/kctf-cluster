@@ -557,7 +557,7 @@ function kctf_cluster_start_gce {
   fi
 
   # Output of gcloud storage buckets describe differs from gsutil ubla get. Scripts relying on specific output text may need to be updated.
-  if gcloud storage buckets describe --format="default(iamConfiguration.uniformBucketLevelAccess)" "gs://${BUCKET_NAME}" | grep -q "Enabled: True"; then
+  if gcloud storage buckets describe "gs://${BUCKET_NAME}" --format="value(uniform_bucket_level_access)" | grep -qi "true"; then
     gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" --member="serviceAccount:${GCS_GSA_EMAIL}" --role="roles/storage.legacyBucketOwner" || return
     gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" --member="serviceAccount:${GCS_GSA_EMAIL}" --role="roles/storage.legacyObjectOwner" || return
   else
