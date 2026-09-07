@@ -25,7 +25,7 @@ mkdir -p "$STAGING_DIR"
 gcloud auth activate-service-account --key-file="secrets/kernelctf-vm-reader-sa-key.json"
 
 echo "Getting all releases..."
-gsutil ls gs://kernelctf-build/releases/ > /tmp/kernelctf_releases.txt
+gcloud storage ls gs://kernelctf-build/releases/ > /tmp/kernelctf_releases.txt
 
 DAY_OF_WEEK=$(date +%u)  # Monday is 1, Tuesday is 2, ..., Sunday is 7
 
@@ -70,7 +70,7 @@ for REL in "${DOWNLOAD_RELEASES[@]}"; do
         echo "NEW, downloading $REL..."
         echo " ================ "
         mkdir -p "$STAGING_DIR/$REL"
-        gsutil rsync -rx '.*vmlinux.gz|.*dbgsym.*' "gs://kernelctf-build/releases/$REL" "$STAGING_DIR/$REL"
+        gcloud storage rsync --recursive --exclude '.*vmlinux.gz|.*dbgsym.*' "gs://kernelctf-build/releases/$REL" "$STAGING_DIR/$REL"
         echo $' ================ \n' 
     fi
 done
