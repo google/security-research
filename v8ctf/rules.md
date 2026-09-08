@@ -25,7 +25,7 @@ The following rules apply to the eligibility of exploits:
 1. Exploit the bug and capture the flag from our v8CTF environment.
     1. The flag format is v8CTF{$unix_timestamp:$signature}. For n-day submissions, please verify that the timestamp is past the announced start time since the automation might introduce a short delay in flag updates.
 1. Create a .tar.gz archive of your exploit and calculate its sha256, e.g. with `sha256sum exploit.tar.gz`.
-    1. Provide an archive that can be verified using our reproduction setup (see [repro-chrome/README.md](repro-chrome/README.md))
+    1. Provide an archive that can be verified using our reproduction setup (see [kctf/challenge-templates/repro-chrome/README.md](kctf/challenge-templates/repro-chrome/README.md))
     1. Please double check that the exploit doesn’t have any external dependencies.
 1. Fill out [this form](https://docs.google.com/forms/d/e/1FAIpQLScoWE5-XoF85dXMjWKTIrJGTEfCybFaktsYZMCZ86iFPrW8Ew/viewform?usp=header_link) with the flag and the exploit sha256 sum.
     1. For 0-day submissions, please use the same email address you reported the bug from.
