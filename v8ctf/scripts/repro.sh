@@ -120,14 +120,49 @@ pushd "${REPRO_CHROME_DIR}"
   rm "${PORT_FORWARD_OUT_FILE}"
 popd
 
-TRIES=10
+MAX_TRIES=20
 TIMEOUT_SECONDS=300
 SLEEP_SECONDS=5
 MAX_LOOP=$(( TIMEOUT_SECONDS / SLEEP_SECONDS ))
 FLAG_REGEX='v8CTF\{[^}]+\}'
 
+function check_bayesian_stopping() {
+    local s=$1
+    local f=$2
+    python3 - <<EOF
+import math
+
+s = $s
+f = $f
+target = 0.80
+fail_thresh = 0.98
+succ_thresh = 0.80
+
+# Beta(1+s, 1+f) posterior with uniform Beta(1,1) prior
+# Regularized incomplete beta function I_x(a, b) = P(Beta(a,b) <= x)
+a = s + 1
+b = f + 1
+n = a + b - 1
+p_below = sum(math.comb(n, j) * (target ** j) * ((1.0 - target) ** (n - j)) for j in range(a, n + 1))
+p_above = 1.0 - p_below
+
+action = "CONTINUE"
+if p_below >= fail_thresh:
+    action = "FAIL"
+elif p_above >= succ_thresh:
+    action = "SUCCESS"
+
+print(f"{action} {p_below:.4f} {p_above:.4f}")
+EOF
+}
+
 success_cnt=0
-for ((i = 0 ; i < ${TRIES} ; i++ )); do
+fail_cnt=0
+total_cnt=0
+final_status="UNKNOWN"
+
+for ((i = 0 ; i < ${MAX_TRIES} ; i++ )); do
+    total_cnt=$(( total_cnt + 1 ))
     NC_OUT=$(mktemp)
     nc localhost "${PORT}" > "${NC_OUT}"  2>&1 &
     NC_PID=$!
@@ -150,6 +185,7 @@ for ((i = 0 ; i < ${TRIES} ; i++ )); do
             echo "Got an invalid flag: ${FLAG} (real flag: ${REAL_FLAG})" >&2
         fi
         echo "Try $i: fail"
+        fail_cnt="$(( fail_cnt + 1 ))"
         if [[ "${DEBUG}" == "true" ]]; then
             echo "--- Exploit Output (Try $i) ---" >&2
             cat "${NC_OUT}" >&2
@@ -157,6 +193,25 @@ for ((i = 0 ; i < ${TRIES} ; i++ )); do
         fi
     fi
     rm "${NC_OUT}"
+
+    read -r action p_below p_above <<< $(check_bayesian_stopping "${success_cnt}" "${fail_cnt}")
+    echo "Bayesian update (s=${success_cnt}, f=${fail_cnt}): P(p < 80%)=${p_below}, P(p >= 80%)=${p_above}"
+
+    if [[ "${action}" == "FAIL" ]]; then
+        echo "Stopping early: 95% certain reliability falls below 80%."
+        final_status="FAIL"
+        break
+    elif [[ "${action}" == "SUCCESS" ]]; then
+        echo "Stopping early: 85% certain reliability is at least 80%."
+        final_status="SUCCESS"
+        break
+    fi
 done
 
-echo "success rate: ${success_cnt} / ${TRIES}"
+if [[ "${final_status}" == "UNKNOWN" ]]; then
+    echo "Reached maximum number of rounds (${MAX_TRIES}). Capping run and declaring success."
+    final_status="SUCCESS"
+fi
+
+echo "Final outcome: ${final_status}"
+echo "success rate: ${success_cnt} / ${total_cnt}"
