@@ -18,13 +18,14 @@ set -e
 SCRIPT_DIR=$(dirname $(realpath "$0"))
 
 usage() {
-    echo "Usage: $0 <vmlinuz-path> [--workdir=<path>] [--mount=<outside>:<inside>[:<options>]] [--modules-path=<...>] [--custom-modules-tar=<...>] [--gdb] [--snapshot] [--no-rootfs-update] [--nokaslr] [--stdout-file=<path>] [--qemu-args=<args>] [--kernel-args=<args>] -- [<commands-to-run-in-vm>]" >&2;
+    echo "Usage: $0 <vmlinuz-path> [--workdir=<path>] [--mount=<outside>:<inside>[:<options>]] [--modules-path=<...>] [--custom-modules-tar=<...>] [--timeout=<secs>] [--gdb] [--snapshot] [--no-rootfs-update] [--nokaslr] [--stdout-file=<path>] [--qemu-args=<args>] [--kernel-args=<args>] -- [<commands-to-run-in-vm>]" >&2;
     exit 1;
 }
 
 QEMU_ARGS=""
 EXTRA_CMDLINE=""
 WORKDIR=""
+TIMEOUT_SECS=""
 MOUNTS=()
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --stdout-file=*) STDOUT_FILE="${1#*=}"; shift;;
     --qemu-args=*) QEMU_ARGS="${1#*=}"; shift;;
     --kernel-args=*) EXTRA_CMDLINE=" ${1#*=}"; shift;;
+    --timeout=*) TIMEOUT_SECS="${1#*=}"; shift;;
     --no-rootfs-update) NO_ROOTFS_UPDATE=1; shift;;
     --snapshot) SNAPSHOT=1; shift;;
     --gdb) GDB=1; shift;;
@@ -66,6 +68,12 @@ else
     WORKDIR=$(realpath "$WORKDIR")
 fi
 export WORKDIR
+
+cleanup() {
+    stty sane 2>/dev/null || true
+    if [ "$IS_TEMP_WORKDIR" = "1" ] && [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then rm -rf "$WORKDIR" 2>/dev/null || true; fi
+}
+trap cleanup EXIT INT TERM
 
 ROOTFS_DIR="$SCRIPT_DIR/rootfs"
 
@@ -145,16 +153,13 @@ if [ ! -z "$CUSTOM_MODULES_TAR" ]; then
     IDE_IDX=$((IDE_IDX+1))
 fi
 
-stdbuf -o0 qemu-system-x86_64 -m 5G -nographic -nodefaults -no-reboot \
+TIMEOUT_CMD=()
+if [ -n "$TIMEOUT_SECS" ] && [ "$TIMEOUT_SECS" -gt 0 ] 2>/dev/null; then TIMEOUT_CMD=(timeout --foreground -s KILL "${TIMEOUT_SECS}s"); fi
+
+"${TIMEOUT_CMD[@]}" stdbuf -o0 qemu-system-x86_64 -m 5G -nographic -nodefaults -no-reboot \
     -enable-kvm -cpu host,-la57 -smp cores=2 -overcommit mem-lock=on -mem-prealloc \
     -kernel $VMLINUZ \
     -initrd $WORKDIR/initramfs.cpio \
     -nic user,model=virtio-net-pci \
     $SERIAL_PORTS $QEMU_ARGS \
     -append "console=ttyS0 panic=-1 oops=panic loadpin.enable=0 loadpin.enforce=0$EXTRA_CMDLINE init=/init -- $COMMANDS_TO_RUN"
-
-stty sane 2>/dev/null || true
-
-if [ "$IS_TEMP_WORKDIR" == "1" ]; then
-    rm -rf "$WORKDIR" 2>/dev/null || true
-fi

@@ -125,7 +125,7 @@ echo ""
 echo "--------------------------------------------------------"
 echo "[Test 4/4] Running evaluate (root mode, random flaky runs, --ignore-open-slots, flag generation)..."
 echo "--------------------------------------------------------"
-TEST_RESEARCHER_TOKEN="${RESEARCHER_TOKEN:-$(python3 -c "import sys, os; sys.path.insert(0, '$REPO_ROOT/secrets'); sys.path.insert(0, '$REPO_ROOT/server'); import server_secrets, researcher_token; print(researcher_token.generate_researcher_token('test@kernelctf.org', researcher_token.derive_signing_key(server_secrets.flag_key), server_secrets.researcher_token_salt_prefix))")}"
+TEST_RESEARCHER_TOKEN="${RESEARCHER_TOKEN:-$(python3 -c "import sys, os, time; sys.path.insert(0, '$REPO_ROOT/secrets'); sys.path.insert(0, '$REPO_ROOT/server'); import server_secrets, researcher_token; print(researcher_token.generate_researcher_token(f'test_{int(time.time())}@kernelctf.org', researcher_token.derive_signing_key(server_secrets.flag_key), server_secrets.researcher_token_salt_prefix))")}"
 python3 "$CLIENT_PY" "$EXPLOIT_RANDOM_SH" --action evaluate --root --ignore-open-slots --researcher-token "$TEST_RESEARCHER_TOKEN" "${REMOTE_ARGS[@]}"
 
 echo ""

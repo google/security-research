@@ -23,8 +23,11 @@ REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, 'server'))
 
+import io
+from unittest.mock import patch
+
 from rate_limit import EvaluationRateLimiter
-from server import MAX_EVALUATIONS_PER_SLOT
+from server import MAX_EVALUATIONS_PER_SLOT, print_evaluation_stats
 
 class TestEvaluationRateLimiter(unittest.TestCase):
     def setUp(self):
@@ -130,6 +133,47 @@ class TestEvaluationRateLimiter(unittest.TestCase):
             self.limiter.acquire_slot(slot, researcher, exploit, max_evaluations=MAX_EVALUATIONS_PER_SLOT)
 
         self.assertEqual(self.limiter.get_count(slot, researcher), 1)
+
+    def test_user_declining_limit_skips_rate_limiter(self):
+        slot = "lts-6.12.98"
+        researcher = "h" * 20
+        exploit = "2" * 64
+
+        # Window open but user chose not to count against limit
+        is_window_open = True
+        count_against_limit = False
+        should_count = is_window_open and count_against_limit
+        if should_count:
+            self.limiter.acquire_slot(slot, researcher, exploit, max_evaluations=MAX_EVALUATIONS_PER_SLOT)
+
+        self.assertEqual(self.limiter.get_count(slot, researcher), 0)
+
+        # Window open and user chose to count against limit
+        count_against_limit = True
+        should_count = is_window_open and count_against_limit
+        if should_count:
+            self.limiter.acquire_slot(slot, researcher, exploit, max_evaluations=MAX_EVALUATIONS_PER_SLOT)
+
+        self.assertEqual(self.limiter.get_count(slot, researcher), 1)
+
+    def test_print_evaluation_stats(self):
+        # All runs succeed
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            print_evaluation_stats(["1.2345", "1.1234", "1.0000", "0.9876"], 4, 4)
+            output = mock_out.getvalue().strip()
+            self.assertEqual(output, "Timings average: 1.0864s, Stability: 100%")
+
+        # Mixed success and failure
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            print_evaluation_stats(["1.0000", "-", "3.0000", "-"], 2, 4)
+            output = mock_out.getvalue().strip()
+            self.assertEqual(output, "Timings average: 2.0000s, Stability: 50%")
+
+        # All runs fail
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            print_evaluation_stats(["-", "-", "-"], 0, 3)
+            output = mock_out.getvalue().strip()
+            self.assertEqual(output, "Timings average: 0.0000s, Stability: 0%")
 
 if __name__ == "__main__":
     unittest.main()

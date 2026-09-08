@@ -20,7 +20,23 @@ import mmap
 import select
 import secrets
 import hashlib
+import signal
 import subprocess
+
+def kill_process_tree(proc):
+    if not proc:
+        return
+    try:
+        if proc.pid != os.getpgrp():
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 class ProcessStreamer:
     def __init__(self, proc, stream_stdout=True, start_pattern=None, end_pattern=None):
@@ -58,7 +74,7 @@ class ProcessStreamer:
         t0 = time.time()
         while True:
             if time.time() - t0 > timeout:
-                self.proc.kill()
+                kill_process_tree(self.proc)
                 raise subprocess.TimeoutExpired(self.proc.args, timeout)
 
             r, _, _ = select.select([self.proc.stdout], [], [], 0.1)

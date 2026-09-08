@@ -122,7 +122,7 @@ class ServerSession:
                 flag = match.group(1)
 
             # Check if execution finished and menu prompt returned
-            if started and ("Actions:" in self.buffer or "Invalid action" in self.buffer):
+            if (started or "Evaluation quota exceeded" in self.buffer) and ("Actions:" in self.buffer or "Invalid action" in self.buffer):
                 break
 
         self.writer.flush()
@@ -154,6 +154,7 @@ def main():
     parser.add_argument("--show-vm-output", action=argparse.BooleanOptionalAction, default=True, help="Show VM output during evaluation (default: True)")
     parser.add_argument("--ignore-open-slots", action="store_true", help="Override submission window check and generate flag on evaluation")
     parser.add_argument("--wait-for-slot", action="store_true", help="Wait for evaluation slot opening if currently before submission window")
+    parser.add_argument("--official-run", action=argparse.BooleanOptionalAction, default=True, help="Official evaluation run that counts against quota and generates a flag (default: True)")
     parser.add_argument("--researcher-token", type=str, default=None, help="Researcher token for evaluation")
     parser.add_argument("--server-path", type=str, default=None, help="Path to local server.py executable (when using --local)")
     parser.add_argument("-k", "--insecure", action="store_true", help="Ignore TLS/SSL certificate and hostname verification")
@@ -277,8 +278,14 @@ def main():
             cprint(f"Show VM output during evaluation: {show_output_ans}")
             session.send_line(show_output_ans)
 
-        matched = session.read_until(["Researcher token:"])
-        if not matched:
+        prompt = session.read_until(["?", ":"])
+        if prompt and "Official run" in prompt:
+            official_run_ans = "y" if args.official_run else "n"
+            cprint(f"Official run (counts against quota & generates flag): {official_run_ans}")
+            session.send_line(official_run_ans)
+            prompt = session.read_until([":"])
+
+        if not prompt or "Researcher token" not in prompt:
             cprint("Failed to receive Researcher token prompt from server.")
             session.close()
             sys.exit(1)
@@ -318,7 +325,7 @@ def main():
         success = "[+] Vuln trigger execution succeeded" in output_text
     elif args.action == "evaluate":
         success = "Evaluation succeeded" in output_text
-        if args.ignore_open_slots and not flag:
+        if args.ignore_open_slots and args.official_run and not flag:
             cprint(red("Evaluation completed but no flag was captured despite --ignore-open-slots."))
             success = False
 

@@ -33,7 +33,7 @@ REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
 sys.path.insert(0, os.path.join(REPO_ROOT, 'secrets'))
 
 import server_secrets
-from utils import ProcessStreamer, BinaryMemFd
+from utils import ProcessStreamer, BinaryMemFd, kill_process_tree
 from researcher_token import verify_researcher_token
 from rate_limit import EvaluationRateLimiter
 from slot_window import SlotWindow
@@ -137,6 +137,7 @@ def run_exploit_qemu(release_id, flag_text, init_cmd, memfd_fd=None, stream_stdo
         with open(flag_fn, 'wt') as f:
             f.write(flag_text)
 
+        proc = None
         try:
             cmd = [os.path.join(SCRIPT_DIR, 'qemu.sh'), get_release_path(release_id), flag_fn, init_cmd]
             cmd.append(memfd_path if memfd_fd is not None else "")
@@ -145,8 +146,9 @@ def run_exploit_qemu(release_id, flag_text, init_cmd, memfd_fd=None, stream_stdo
                 cmd.append("--as-root")
             if isDevel:
                 cmd.append("--ignore-ibt")
+            cmd.append(f"--timeout={TIMEOUT + 15}")
 
-            proc = subprocess.Popen(cmd, pass_fds=pass_fds, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+            proc = subprocess.Popen(cmd, pass_fds=pass_fds, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, start_new_session=True)
 
             if stream_stdout:
                 print("--- VM Output Begin ---")
@@ -162,6 +164,7 @@ def run_exploit_qemu(release_id, flag_text, init_cmd, memfd_fd=None, stream_stdo
 
             return measured, output, dmesg
         finally:
+            kill_process_tree(proc)
             if stream_stdout:
                 print("--- VM Output End ---")
 
@@ -173,6 +176,8 @@ def read_line(prompt=""):
     while not line.endswith(b"\n"):
         ch = os.read(sys.stdin.fileno(), 1)
         if not ch:
+            if not line:
+                raise EOFError()
             break
         line += ch
     return line.decode("utf-8", errors="replace").rstrip('\r\n')
@@ -278,6 +283,12 @@ def vuln_test_action(lts_id, root):
 
     return run_exploit_session(_execute_trigger)
 
+def print_evaluation_stats(run_results, success_count, total_runs):
+    successful_times = [float(t) for t in run_results if t != "-"]
+    avg_time = sum(successful_times) / len(successful_times) if successful_times else 0.0
+    stability = round((success_count / total_runs) * 100) if total_runs else 0
+    print(f"Timings average: {avg_time:.4f}s, Stability: {stability}%")
+
 def evaluate_action(lts_id, release_date, root):
     slot_window = SlotWindow(release_date, ignore_open_slots=IGNORE_OPEN_SLOTS)
     if not slot_window.prompt_if_out_of_window(read_line):
@@ -285,6 +296,12 @@ def evaluate_action(lts_id, release_date, root):
 
     show_output_input = read_line("Show VM output during evaluation? (y/n) ").strip().lower()
     show_vm_output = show_output_input in ('y', 'yes')
+
+    if slot_window.is_open():
+        count_input = read_line("Official run (counts against quota & generates flag)? (y/n) ").strip().lower()
+        count_against_limit = count_input in ('y', 'yes')
+    else:
+        count_against_limit = slot_window.wait_for_slot
 
     researcher_token = read_line("Researcher token: ").strip().lower()
     try:
@@ -298,7 +315,8 @@ def evaluate_action(lts_id, release_date, root):
     def _evaluate(memfd, binary_hash):
         slot_window.wait_if_needed()
 
-        if slot_window.is_open():
+        should_count = slot_window.is_open() and count_against_limit
+        if should_count:
             allowed, attempts_used = rate_limiter.acquire_slot(
                 lts_id, researcher_email_hash, binary_hash, max_evaluations=MAX_EVALUATIONS_PER_SLOT
             )
@@ -376,7 +394,8 @@ def evaluate_action(lts_id, release_date, root):
 
         # Phase 3: Overall result & Flag Generation
         print(f"\nEvaluation succeeded (crash verified on {crashed_target}, {success_count}/{EVAL_RUNS} hardened runs)!")
-        if slot_window.is_open():
+        print_evaluation_stats(run_results, success_count, EVAL_RUNS)
+        if should_count:
             times_attr = "/".join(run_results)
             attributes = f"time={times_attr}"
             timestamp = time.time_ns() // 1_000_000
@@ -384,7 +403,8 @@ def evaluate_action(lts_id, release_date, root):
             flag = sign_flag(flag_content)
             print(f"Flag: {flag}")
         else:
-            print("[!] No flag created: Evaluation was run outside of the valid submission window.")
+            reason = "not counted against the limit" if slot_window.is_open() else "run outside of the valid submission window"
+            print(f"[!] No flag created: Evaluation was {reason}.")
         return True
 
     return run_exploit_session(_evaluate)

@@ -14,7 +14,7 @@
 # limitations under the License.
 
 if [ $# -lt 3 ]; then
-  echo "Usage: $0 <release_path> <flag_fn> <init> [<exploit_fn>] [<stdout_file>] [--as-root] [--ignore-ibt]"
+  echo "Usage: $0 <release_path> <flag_fn> <init> [<exploit_fn>] [<stdout_file>] [--as-root] [--ignore-ibt] [--timeout=<secs>]"
   exit 1
 fi
 
@@ -38,10 +38,13 @@ if [[ "$IGNORE_IBT" == "1" ]]; then
   EXTRA_KERNEL_ARGS+=" IGNORE_IBT=1"
 fi
 
+TIMEOUT_ARG="--timeout=315"
 for arg in "$@"; do
   if [[ "$arg" == "--as-root" ]]; then RUNNER_ARGS+=("--as-root"); fi
   if [[ "$arg" == "--ignore-ibt" ]]; then EXTRA_KERNEL_ARGS+=" IGNORE_IBT=1"; fi
+  if [[ "$arg" == --timeout=* ]]; then TIMEOUT_ARG="$arg"; fi
 done
+if [[ -n "$TIMEOUT_ARG" ]]; then RUNNER_ARGS+=("$TIMEOUT_ARG"); fi
 
 exec "$IMAGE_RUNNER_DIR/run_vmlinuz.sh" "$RELEASE_PATH/bzImage" \
   "${RUNNER_ARGS[@]}" \
