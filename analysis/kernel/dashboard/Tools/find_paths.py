@@ -6,7 +6,6 @@ and line number (or function name) using CodeQL callgraph data in SQLite.
 
 import argparse
 from collections import deque
-import glob
 import json
 import os
 import sqlite3
@@ -93,97 +92,7 @@ def ensure_indexes(conn: sqlite3.Connection, verbose: bool = False) -> None:
                 )
 
 
-def find_default_db() -> Optional[str]:
-    """Search standard locations for the CodeQL SQLite database."""
-    # 1. Environment variable
-    env_db = os.environ.get("CODEQL_DB")
-    if env_db and os.path.isfile(env_db):
-        return env_db
 
-    # 2. Current working directory
-    for name in ("codeql_data.db", "codeql_data-6.1.db"):
-        if os.path.isfile(name):
-            return os.path.abspath(name)
-    cwd_matches = sorted(glob.glob("codeql_data*.db"))
-    if cwd_matches and os.path.isfile(cwd_matches[0]):
-        return os.path.abspath(cwd_matches[0])
-
-    # 3. Repository root and Data/ directories relative to this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_1 = os.path.abspath(os.path.join(script_dir, ".."))
-    parent_2 = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    search_dirs = [
-        parent_1,
-        os.path.join(parent_1, "Data"),
-        os.path.join(parent_1, "Data", "CodeQL"),
-        parent_2,
-        os.path.join(parent_2, "Data"),
-        os.path.join(parent_2, "Data", "CodeQL"),
-        script_dir,
-    ]
-    for d in search_dirs:
-        for name in ("codeql_data.db", "codeql_data-6.1.db"):
-            target = os.path.join(d, name)
-            if os.path.isfile(target):
-                return target
-        matches = sorted(glob.glob(os.path.join(d, "codeql_data*.db")))
-        if matches and os.path.isfile(matches[0]):
-            return matches[0]
-
-    return None
-
-
-def find_default_syzkaller_db(
-    codeql_db_path: Optional[str] = None,
-) -> Optional[str]:
-    """Search standard locations for the Syzkaller coverage SQLite database."""
-    # 1. Environment variable
-    env_db = os.environ.get("SYZKALLER_DB")
-    if env_db and os.path.isfile(env_db):
-        return env_db
-
-    # 2. Check the directory containing the CodeQL database
-    if codeql_db_path and os.path.isfile(codeql_db_path):
-        db_dir = os.path.dirname(os.path.abspath(codeql_db_path))
-        for name in ("syzkaller.db",):
-            target = os.path.join(db_dir, name)
-            if os.path.isfile(target):
-                return target
-        matches = sorted(glob.glob(os.path.join(db_dir, "syzkaller*.db")))
-        if matches and os.path.isfile(matches[0]):
-            return matches[0]
-
-    # 3. Current working directory
-    for name in ("syzkaller.db",):
-        if os.path.isfile(name):
-            return os.path.abspath(name)
-    cwd_matches = sorted(glob.glob("syzkaller*.db"))
-    if cwd_matches and os.path.isfile(cwd_matches[0]):
-        return os.path.abspath(cwd_matches[0])
-
-    # 4. Repository root and Data/ directories relative to this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_1 = os.path.abspath(os.path.join(script_dir, ".."))
-    parent_2 = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    search_dirs = [
-        parent_1,
-        os.path.join(parent_1, "Data"),
-        os.path.join(parent_1, "Data", "Syzkaller_Coverage"),
-        parent_2,
-        os.path.join(parent_2, "Data"),
-        os.path.join(parent_2, "Data", "Syzkaller_Coverage"),
-        script_dir,
-    ]
-    for d in search_dirs:
-        for name in ("syzkaller.db",):
-            target = os.path.join(d, name)
-            if os.path.isfile(target):
-                return target
-        matches = sorted(glob.glob(os.path.join(d, "syzkaller*.db")))
-        if matches and os.path.isfile(matches[0]):
-            return matches[0]
-
-    return None
 
 
 def get_syzkaller_coverage(
@@ -409,8 +318,8 @@ def is_syscall_root(fn_name: str, target_syscall: Optional[str]) -> bool:
             .replace("__x64_sys_", "")
             .replace("__ia32_sys_", "")
         )
-        if clean_fn == clean_target:
-            return True
+        return clean_fn == clean_target
+
     return fn_name.startswith(("__do_sys_", "__se_sys_", "__x64_sys_"))
 
 
@@ -430,6 +339,7 @@ def find_shortest_path(
     cur = conn.cursor()
 
     reachable_set = None
+    prune_to_reachable = False
     if target_syscall:
         cur.execute(
             "SELECT DISTINCT function FROM syscall_node WHERE syscall = ?",
@@ -438,12 +348,12 @@ def find_shortest_path(
         reachable_set = {r[0] for r in cur.fetchall()}
         reachable_set.add(target_syscall)
 
-        base_name = target_syscall.replace("__do_sys_", "")
+        base_name = target_syscall.replace("__do_sys_", "").replace("__se_sys_", "")
         for prefix in ["__do_sys_", "__se_sys_", "__x64_sys_", "__ia32_sys_"]:
             reachable_set.add(f"{prefix}{base_name}")
 
-        if target_fn not in reachable_set:
-            return None
+        if target_fn in reachable_set:
+            prune_to_reachable = True
 
     target_syzk_cov = is_line_covered_by_syzkaller(syzk_conn, target_file, target_line)
 
@@ -478,7 +388,7 @@ def find_shortest_path(
             call_type,
             details,
         ) in callers:
-            if (reachable_set is None or caller_fn in reachable_set) and caller_fn not in visited:
+            if (not prune_to_reachable or caller_fn in reachable_set) and caller_fn not in visited:
                 visited.add(caller_fn)
                 step_cov = is_line_covered_by_syzkaller(
                     syzk_conn, caller_file, call_site_line or caller_line
@@ -677,8 +587,11 @@ def find_paths_to_line(
     conn = sqlite3.connect(db_file)
     ensure_indexes(conn, verbose=verbose)
 
-    syzk_path = syzkaller_db or find_default_syzkaller_db(codeql_db_path=db_file)
-    syzk_conn = sqlite3.connect(syzk_path) if syzk_path and os.path.isfile(syzk_path) else None
+    syzk_conn = (
+        sqlite3.connect(syzkaller_db)
+        if syzkaller_db and os.path.isfile(syzkaller_db)
+        else None
+    )
 
     fn_info = get_enclosing_function(conn, file_path, line_number)
     if not fn_info:
@@ -796,13 +709,13 @@ def main():
     )
     ap.add_argument(
         "--db",
-        default=find_default_db(),
-        help="Path to CodeQL SQLite database (default: $CODEQL_DB or codeql_data.db in current directory)",
+        required=True,
+        help="Path to CodeQL SQLite database",
     )
     ap.add_argument(
         "--syzkaller-db",
         default=None,
-        help="Path to Syzkaller coverage SQLite database (default: $SYZKALLER_DB or discovered beside CodeQL DB)",
+        help="Path to Syzkaller coverage SQLite database (optional)",
     )
     ap.add_argument("--file", "-f", help="Kernel source file (e.g. net/socket.c)")
     ap.add_argument(
@@ -856,14 +769,11 @@ def main():
 
     args = ap.parse_args()
 
-    if not args.db or not os.path.isfile(args.db):
-        sys.exit(
-            "Error: CodeQL database file not found.\n"
-            "Please specify via --db /path/to/codeql_data.db or set the CODEQL_DB environment variable."
-        )
+    if not os.path.isfile(args.db):
+        sys.exit(f"Error: Database file not found: {args.db}")
 
-    if not args.syzkaller_db:
-        args.syzkaller_db = find_default_syzkaller_db(codeql_db_path=args.db)
+    if args.syzkaller_db and not os.path.isfile(args.syzkaller_db):
+        sys.exit(f"Error: Syzkaller database file not found: {args.syzkaller_db}")
 
     if args.ensure_indexes:
         conn = sqlite3.connect(args.db)

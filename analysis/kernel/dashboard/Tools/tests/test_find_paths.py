@@ -221,25 +221,34 @@ class TestFindPaths(unittest.TestCase):
             except SystemExit as e:
                 self.assertEqual(e.code, 0)
 
-    def test_find_default_db_env(self):
-        with patch.dict(os.environ, {"CODEQL_DB": self.db_path}):
-            found = find_paths.find_default_db()
-            self.assertEqual(found, self.db_path)
+    def test_cli_missing_db(self):
+        with patch("sys.argv", [
+            "find_paths.py", "--file", "fs/internal.c", "--line", "125"
+        ]):
+            with self.assertRaises(SystemExit):
+                find_paths.main()
 
-    def test_find_default_syzkaller_db_colocated(self):
-        syzk_path = os.path.join(self.tmp_dir.name, "syzkaller-test.db")
-        with open(syzk_path, "w") as f:
-            f.write("")
-        found = find_paths.find_default_syzkaller_db(codeql_db_path=self.db_path)
-        self.assertEqual(found, syzk_path)
+    def test_syzkaller_db_param(self):
+        # Without syzkaller_db param, dynamic coverage is not configured
+        target_info, _ = find_paths.find_paths_to_line(
+            self.db_path, "fs/internal.c", 125, target_syscall="__do_sys_foo"
+        )
+        self.assertFalse(target_info["syzkaller"]["configured"])
 
-    def test_find_default_syzkaller_db_env(self):
-        fake_syzk = os.path.join(self.tmp_dir.name, "custom_syzk.db")
-        with open(fake_syzk, "w") as f:
-            f.write("")
-        with patch.dict(os.environ, {"SYZKALLER_DB": fake_syzk}):
-            found = find_paths.find_default_syzkaller_db()
-            self.assertEqual(found, fake_syzk)
+        # With syzkaller_db param pointing to valid DB
+        syzk_path = os.path.join(self.tmp_dir.name, "syzkaller_test.db")
+        syzk_conn = sqlite3.connect(syzk_path)
+        syzk_conn.execute("CREATE TABLE file_path (file_id INTEGER PRIMARY KEY, file_path TEXT)")
+        syzk_conn.execute("CREATE TABLE syzk_cov (file_id INTEGER, code_line_no INTEGER, prog_id INTEGER)")
+        syzk_conn.execute("CREATE TABLE syscalls (prog_id INTEGER, syscall TEXT)")
+        syzk_conn.execute("CREATE TABLE syzk_prog (prog_id INTEGER, prog_code TEXT)")
+        syzk_conn.commit()
+        syzk_conn.close()
+
+        target_info_syzk, _ = find_paths.find_paths_to_line(
+            self.db_path, "fs/internal.c", 125, target_syscall="__do_sys_foo", syzkaller_db=syzk_path
+        )
+        self.assertTrue(target_info_syzk["syzkaller"]["configured"])
 
 
 if __name__ == "__main__":
