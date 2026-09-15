@@ -12,8 +12,8 @@ All other exploits are considered n-day submissions.
 The following rules apply to the eligibility of exploits:
 * Your exploit needs to exfiltrate the flag from our v8CTF infrastructure.
 * Only the first submission for a given bug that leads to the initial memory corruption is eligible.
-* Only the first submission per deployed V8 version in v8CTF is eligible based on the timestamp of the form submission.
-  * 0-day submissions are exempt from this limit.
+* N-day submissions are only eligible if no exploit of any kind (0-day or n-day) has been submitted yet for the currently deployed V8 version.
+  * Once the first submission for a deployed version has been received, all subsequent submissions for that version must be 0-days.
 * N-day submissions will only be accepted after the officially announced time, based on the timestamp embedded in the flag. Flags are updated automatically every hour on the hour.
 * Exploits need to be reasonably fast and stable. We accept submissions with an average runtime of less than 5 minutes and at least 80% success rate.
 * Valid submissions get a reward of $10,000.
