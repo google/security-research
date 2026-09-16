@@ -12,6 +12,7 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+import import_all_calls
 import import_allocations
 import import_allocs
 import import_conditions
@@ -22,7 +23,6 @@ import import_functions
 import import_macro_invocations
 import import_macros
 import import_ops_targets
-import import_sarif_db
 import import_syscall_node
 from utils import detect_prefix, trim_filename
 
@@ -517,8 +517,8 @@ class TestImportAllocs(BaseImporterTest):
         conn.close()
 
 
-class TestImportSarifDb(BaseImporterTest):
-    def test_import_sarif_to_db(self):
+class TestImportAllCalls(BaseImporterTest):
+    def test_import_all_calls_to_db(self):
         sarif_path = os.path.join(self.tmp_dir.name, "test.sarif")
         sarif_content = {
             "runs": [
@@ -579,7 +579,7 @@ class TestImportSarifDb(BaseImporterTest):
         with open(sarif_path, "w", encoding="utf-8") as f:
             json.dump(sarif_content, f)
 
-        edge_cnt = import_sarif_db.import_sarif_to_db(sarif_path, self.db_path)
+        edge_cnt = import_all_calls.import_all_calls_to_db(sarif_path, self.db_path)
         self.assertEqual(edge_cnt, 1)
 
         conn = sqlite3.connect(self.db_path)
