@@ -4,35 +4,43 @@ import sys
 import json
 import jsonschema
 import hashlib
-import re
+import glob
+import argparse
 from utils import *
 
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true&gid=2095368189"
+PUBLIC_CSV_BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true"
+OLD_SHEET_GID = "2095368189"
+WINNERS_SHEET_GID = "855892526"
 POC_FOLDER = "pocs/linux/kernelctf/"
 EXPLOIT_DIR = "exploit/"
 MIN_SCHEMA_VERSION = 2
-# DEBUG = "--debug" in sys.argv
 
-argv = [arg for arg in sys.argv if not arg.startswith("--")]
-print(f"[-] Argv: {argv}")
+parser = argparse.ArgumentParser(description="Check kernelCTF PR submission")
+parser.add_argument("mergeInto", nargs="?", default="origin/master", help="Git branch or commit to merge into (default: origin/master)")
+parser.add_argument("--submission-dir", help="Explicit submission directory to check instead of git diff")
+args = parser.parse_args()
 
-mergeInto = argv[1] if len(argv) >= 2 else "origin/master"
-print(f"[-] Params: mergeInto = {mergeInto}")
-
-mergeBase = run(f"git merge-base HEAD {mergeInto}")[0]
-print(f"[-] mergeBase = {mergeBase}")
-
-prFiles = run(f"git diff --name-only {mergeBase}")
+if args.submission_dir:
+    submission_path = os.path.normpath(args.submission_dir)
+    print(f"[-] Using explicit submission directory: {submission_path}")
+    subDirName = os.path.basename(submission_path)
+    submissionFolder = submission_path if submission_path.endswith("/") else f"{submission_path}/"
+    prFiles = [f for f in glob.glob(f"{submissionFolder}**", recursive=True) if os.path.isfile(f)]
+else:
+    print(f"[-] Params: mergeInto = {args.mergeInto}")
+    mergeBase = run(f"git merge-base HEAD {args.mergeInto}")[0]
+    print(f"[-] mergeBase = {mergeBase}")
+    prFiles = run(f"git diff --name-only {mergeBase}")
+    checkAtLeastOne(prFiles, "There are no files in the submission")
+    prFiles = checkList(prFiles, lambda f: f.startswith(POC_FOLDER), f"The following files are outside of the `{POC_FOLDER}` folder which is not allowed")
+    subDirName = checkOnlyOne(subdirEntries(prFiles, POC_FOLDER), "Only one submission is allowed per PR. Found multiple submissions")
+    submissionFolder = f"{POC_FOLDER}{subDirName}/"
 
 checkAtLeastOne(prFiles, "There are no files in the submission")
-prFiles = checkList(prFiles, lambda f: f.startswith(POC_FOLDER), f"The following files are outside of the `{POC_FOLDER}` folder which is not allowed")
-
-subDirName = checkOnlyOne(subdirEntries(prFiles, POC_FOLDER), "Only one submission is allowed per PR. Found multiple submissions")
-checkRegex(subDirName, r"^CVE-\d+-\d+(_lts|_cos|_mitigation|_android\d+)+(_\d+)?$", f"The submission folder name is invalid (`{subDirName}`)")
+checkRegex(subDirName, r"^CVE-\d+-\d+(_lts|_cos|_mitigation|_hardened|_android\d+)+(_\d+)?$", f"The submission folder name is invalid (`{subDirName}`)")
 
 print(f"[-] Processing submission... Folder = {subDirName}")
 cve, *targets = subDirName.split('_')
-submissionFolder = f"{POC_FOLDER}{subDirName}/"
 files = [f[len(submissionFolder):] for f in prFiles]
 printList("Submission files", files)
 
@@ -91,12 +99,12 @@ for x in submissionIds:
 
 if "exploits" in metadata:
     for target in metadata["exploits"].keys():
-        if not re.match(r"^(lts|cos|mitigation)-[a-z0-9.-]+$", target):
+        if not re.match(r"^(lts|cos|mitigation|hardened)-[a-z0-9.-]+$", target):
             fail(f"Error: invalid target '{target}'")
 
-publicCsv = fetch(PUBLIC_CSV_URL, "public.csv")
-publicSheet = { x["ID"]: x for x in parseCsv(publicCsv) }
-# print(json.dumps(publicSheet, indent=4))
+publicSheet = {}
+for gid, fn, is_v5 in [(OLD_SHEET_GID, "public.csv", False), (WINNERS_SHEET_GID, "winners.csv", True)]:
+    publicSheet.update({ x["ID"]: {**x, "is_v5": is_v5} for x in parseCsv(fetch(f"{PUBLIC_CSV_BASE_URL}&gid={gid}", fn)) })
 
 for submissionId in set(submissionIds).difference(publicSheet.keys()):
     fail(f"submission ID ({submissionId}) was not found on public spreadsheet")
@@ -113,9 +121,10 @@ def flagTarget(flag):
 
 targetFlagTimes = {}
 flags = []
+flagTargets = set()
 for submissionId in submissionIds:
     publicData = publicSheet[submissionId]
-    is0Day = publicData["0-day / 1-day"] == "0-day"
+    is0Day = True if publicData["is_v5"] else publicData["0-day / 1-day"] == "0-day"
     exploitHash = publicData["Exploit hash"]
     archiveFn = "original.tar.gz" if len(submissionIds) == 1 else f"original_{submissionId}.tar.gz"
 
@@ -134,14 +143,19 @@ for submissionId in submissionIds:
             else:
                 print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
 
-    for flag in publicData["Flags"].strip().split('\n'):
-        flags.append(flag)
-        targetFlagTimes[flagTarget(flag)] = publicData["Flag submission time"]
+    if publicData["is_v5"]:
+        target = publicData["Target"]
+        flagTargets.add(target)
+        targetFlagTimes[target] = publicData.get("Submission time") or publicData.get("Flag capture times", "")
+    elif "Flags" in publicData and publicData["Flags"]:
+        for flag in publicData["Flags"].strip().split('\n'):
+            flags.append(flag)
+            targetFlagTimes[flagTarget(flag)] = publicData["Flag submission time"]
+        flagTargets.update(flagTarget(flag) for flag in flags)
 
     if cve != publicData["CVE"]:
         error(f"The CVE on the public spreadsheet for submission `{submissionId}` is `{publicData['CVE']}` but the PR is for `{cve}`.")
 
-flagTargets = set([flagTarget(flag) for flag in flags])
 print(f"[-] Got flags for the following targets: {', '.join(flagTargets)}")
 checkList(flagTargets, lambda t: t in exploitFolders, f"Missing exploit for target(s)")
 checkList(exploitFolders, lambda t: t in flagTargets, f"Found extra exploit(s) without flag submission", True)
@@ -167,7 +181,10 @@ for target in flagTargets:
         exploit_info = metadata["exploits"].get(target)
         if not exploit_info: continue
         exploits_info[target] = { key: exploit_info[key] for key in ["uses", "requires_separate_kaslr_leak"] if key in exploit_info }
-        exploits_info[target]["flag_time"] = targetFlagTimes[target]
+        exploits_info[target]["flag_time"] = targetFlagTimes.get(target, "")
+        for sid in submissionIds:
+            if publicSheet[sid]["is_v5"]:
+                exploits_info[target]["lts_slot"] = publicSheet[sid]["LTS slot"]
 ghSet("OUTPUT", f"exploits_info={json.dumps(exploits_info)}")
 ghSet("OUTPUT", f"artifact_backup_dir={'_'.join(submissionIds)}")
 

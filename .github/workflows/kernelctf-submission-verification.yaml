@@ -272,7 +272,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 inotify-tools expect
 
       - name: Fetch rootfs - Linux only
-        if: startsWith(matrix.target, 'android') == false
+        if: startsWith(matrix.target, 'android') == false && startsWith(matrix.target, 'hardened') == false
         run: |
           wget -O rootfs.img.gz https://storage.googleapis.com/kernelctf-build/files/rootfs_repro_v2.img.gz
           gzip -d rootfs.img.gz

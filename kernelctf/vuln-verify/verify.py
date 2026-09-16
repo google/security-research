@@ -65,7 +65,9 @@ if not GITHUB_TOKEN and not args.no_gh_auth:
 GH_HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN and not args.no_gh_auth else {}
 
 CACHE_DB_FN = "cache.json"
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&gid=2095368189"
+PUBLIC_CSV_BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true"
+OLD_SHEET_GID = "2095368189"
+WINNERS_SHEET_GID = "855892526"
 KERNEL_DANCE_SQL_URL = "https://linux-mirror-db.storage.googleapis.com/mirror.sl3"
 KERNEL_DANCE_SQL_FN = "kernel-dance.sqlite3"
 KERNELCTF_RELEASES_URL = "https://storage.googleapis.com/kernelctf-build/releases"
@@ -98,7 +100,9 @@ os.chdir(os.path.dirname(__file__))
 os.makedirs("builds", exist_ok=True)
 os.makedirs("verify_results", exist_ok=True)
 
-public_csv = parseCsv(fetch(PUBLIC_CSV_URL, "kernelctf_public_sheet.csv", cache_time=24*3600), "ID")
+public_csv = {}
+for gid, fn, is_v5 in [(OLD_SHEET_GID, "kernelctf_public_sheet.csv", False), (WINNERS_SHEET_GID, "kernelctf_winners_sheet.csv", True)]:
+    public_csv.update({ x["ID"]: {**x, "is_v5": is_v5} for x in parseCsv(fetch(f"{PUBLIC_CSV_BASE_URL}&gid={gid}", fn, cache_time=24*3600)) })
 #pprint(public_csv)
 
 if not is_cached(KERNEL_DANCE_SQL_FN, 3600*24*7):
@@ -121,7 +125,8 @@ def sql_value(query, *params):
 
 
 def hash_from_url(url):
-    return re.search(r"(?:id|h)=([0-9a-f]+)", url).group(1)
+    m = re.search(r"(?:id|h)=([0-9a-f]+)", url) or re.search(r"/commit/([0-9a-f]+)", url)
+    return m.group(1) if m else url.strip()
 
 cache_db = json.loads(readTextFile(CACHE_DB_FN)) if os.path.isfile(CACHE_DB_FN) else {}
 
@@ -171,11 +176,16 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
     exp_fail = False
     targets = list(metadata["exploits"].keys())
     for target in targets:
-        if not re.match(r"^(lts|cos|mitigation)-[a-z0-9.-]+$", target):
+        if not re.match(r"^(lts|cos|mitigation|hardened)-[a-z0-9.-]+$", target):
             fatal(f"Error: invalid target '{target}'")
     for i_target, target in enumerate(targets):
         orig_target = target
-        if target == "mitigation-6.1":
+        if public_csv[first_exp_id].get("is_v5") or target.startswith("hardened-"):
+            lts_slot = public_csv[first_exp_id].get("LTS slot")
+            if not lts_slot:
+                fatal(f"Error: LTS slot not found in spreadsheet for {first_exp_id}")
+            target = lts_slot
+        elif target == "mitigation-6.1":
             target = "mitigation-6.1-v2"
         config = fetch(f"{KERNELCTF_RELEASES_URL}/{target}/.config", f"builds/{target}.config")
         commit_info_txt = fetch(f"{KERNELCTF_RELEASES_URL}/{target}/COMMIT_INFO", f"builds/{target}_COMMIT_INFO")
