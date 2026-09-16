@@ -320,15 +320,56 @@ class TestExtractBTF(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract_btf.vmlinux("/nonexistent/path/to/vmlinux")
 
-        # Test against an existing file with mocked readelf/bpftool output
+        # Test against an existing file with mocked readelf output containing .BTF only
         with tempfile.NamedTemporaryFile() as tmp_file:
             with patch.object(
                 extract_btf.subprocess,
                 "check_output",
-                return_value=b"ELF64 debug BTF",
+                side_effect=[b"ELF64", b"Section Headers: [17] .BTF PROGBITS"],
             ):
                 validated_path = extract_btf.vmlinux(tmp_file.name)
                 self.assertEqual(validated_path, os.path.abspath(tmp_file.name))
+
+            # Test with neither .BTF nor debug should raise ValueError
+            with patch.object(
+                extract_btf.subprocess,
+                "check_output",
+                side_effect=[b"ELF64", b"Section Headers: [1] .text PROGBITS"],
+            ):
+                with self.assertRaises(ValueError):
+                    extract_btf.vmlinux(tmp_file.name)
+
+    def test_dump_btf_json_direct_vs_pahole_fallback(self):
+        """Test dump_btf_json uses bpftool directly when .BTF section exists, and pahole when absent."""
+        sample_btf_json = b'{"types": [{"id": 1, "kind": "INT", "name": "int", "nr_bits": 32, "size": 4}]}'
+
+        # Case 1: .BTF section present -> bpftool called directly, pahole NOT called
+        with patch.object(extract_btf, "has_btf_section", return_value=True), \
+             patch.object(extract_btf.subprocess, "check_output", return_value=sample_btf_json) as mock_check_out, \
+             patch.object(extract_btf.subprocess, "run") as mock_run:
+            result = extract_btf.dump_btf_json("/fake/vmlinux")
+            self.assertEqual(len(result["types"]), 1)
+            mock_run.assert_not_called()
+            mock_check_out.assert_called_once_with(
+                [extract_btf.BPFTOOL, "btf", "dump", "--json", "file", "/fake/vmlinux"]
+            )
+
+        # Case 2: .BTF section absent -> pahole called to encode detached BTF, then bpftool dumps tmp file
+        def fake_pahole(cmd, check=True):
+            # Write non-empty dummy content to the detached BTF temp file
+            for arg in cmd:
+                if arg.startswith("--btf_encode_detached="):
+                    tmp_path = arg.split("=", 1)[1]
+                    with open(tmp_path, "wb") as f:
+                        f.write(b"BTF_DATA")
+
+        with patch.object(extract_btf, "has_btf_section", return_value=False), \
+             patch.object(extract_btf.subprocess, "run", side_effect=fake_pahole) as mock_run, \
+             patch.object(extract_btf.subprocess, "check_output", return_value=sample_btf_json) as mock_check_out:
+            result = extract_btf.dump_btf_json("/fake/vmlinux")
+            self.assertEqual(len(result["types"]), 1)
+            mock_run.assert_called_once()
+            self.assertEqual(mock_check_out.call_count, 1)
 
     def test_check_tools(self):
         """Test check_tools helper function to verify system Pahole, Bpftool, Readelf binaries."""

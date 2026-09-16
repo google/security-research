@@ -25,8 +25,14 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
+def has_btf_section(filename: str) -> bool:
+    """Checks if the ELF binary contains an embedded .BTF section."""
+    result = subprocess.check_output([READELF, "-S", filename]).decode("utf-8")
+    return ".BTF" in result
+
+
 def vmlinux(filename: str) -> str:
-    """Validates that the given file exists, is an ELF64 binary, and contains debug data."""
+    """Validates that the given file exists, is an ELF64 binary, and contains BTF or debug data."""
     base_dir, file_name = os.path.split(filename)
     if not base_dir:
         base_dir = os.getcwd()
@@ -40,10 +46,10 @@ def vmlinux(filename: str) -> str:
         logging.critical("Ooops! Not an ELF64 file: %s" % filename)
         raise ValueError
 
-    result = subprocess.check_output([READELF, "-S", filename])
-    if "debug" not in result.decode("utf-8"):
+    result = subprocess.check_output([READELF, "-S", filename]).decode("utf-8")
+    if ".BTF" not in result and "debug" not in result:
         logging.critical(
-            "The binary provided isn't compiled with debug data (DWARF): %s"
+            "The binary provided isn't compiled with BTF or debug data (DWARF): %s"
             % filename
         )
         raise ValueError
@@ -64,42 +70,56 @@ def can_create_file(filename: str) -> str:
         raise ValueError
 
 
-def dump_btf_json(vmlinux: str) -> bytes:
-    """Generates BTF data using Pahole and dumps it as JSON via bpftool."""
-    with tempfile.NamedTemporaryFile() as tmp:
-        logging.info("TMP file created: %s" % tmp.name)
-
-        subprocess.run(
-            [PAHOLE, "--btf_encode_detached=%s" % tmp.name, vmlinux], check=True
+def dump_btf_json(vmlinux: str) -> dict:
+    """Dumps BTF data from vmlinux as JSON via bpftool directly if .BTF exists, or via Pahole."""
+    if has_btf_section(vmlinux):
+        logging.info(
+            "Embedded .BTF section found in %s; extracting directly via bpftool."
+            % vmlinux
         )
-
-        if not os.path.getsize(tmp.name):
-            logging.critical(
-                "The tmp file doesn't contain valid BTF encoded data: %s"
-                % tmp.name
-            )
-            raise ValueError
-
-        logging.info("Data size in TMP file: %d" % os.path.getsize(tmp.name))
         raw_json_data = subprocess.check_output(
-            [BPFTOOL, "btf", "dump", "--json", "file", tmp.name]
+            [BPFTOOL, "btf", "dump", "--json", "file", vmlinux]
         )
+    else:
+        logging.info(
+            "No embedded .BTF section in %s; encoding detached BTF via pahole."
+            % vmlinux
+        )
+        with tempfile.NamedTemporaryFile() as tmp:
+            logging.info("TMP file created: %s" % tmp.name)
 
-        if not raw_json_data:
-            logging.critical(
-                "The JSON formated BTF data could not be extracted from BTF file: %s"
-                % tmp.name
+            subprocess.run(
+                [PAHOLE, "--btf_encode_detached=%s" % tmp.name, vmlinux],
+                check=True,
             )
-            raise ValueError
 
-        json_data = ""
-        try:
-            json_data = json.loads(raw_json_data)
-            logging.info("Length of parsed BTF JSON: %d" % len(json_data))
-        except ValueError:
-            logging.critical("Can't parse BTF data in JSON format")
+            if not os.path.getsize(tmp.name):
+                logging.critical(
+                    "The tmp file doesn't contain valid BTF encoded data: %s"
+                    % tmp.name
+                )
+                raise ValueError
 
-        return json_data
+            logging.info("Data size in TMP file: %d" % os.path.getsize(tmp.name))
+            raw_json_data = subprocess.check_output(
+                [BPFTOOL, "btf", "dump", "--json", "file", tmp.name]
+            )
+
+    if not raw_json_data:
+        logging.critical(
+            "The JSON formatted BTF data could not be extracted from: %s"
+            % vmlinux
+        )
+        raise ValueError
+
+    json_data = {}
+    try:
+        json_data = json.loads(raw_json_data)
+        logging.info("Length of parsed BTF JSON: %d" % len(json_data))
+    except ValueError:
+        logging.critical("Can't parse BTF data in JSON format")
+
+    return json_data
 
 
 def unwrap_modifiers(type: dict, types: dict) -> dict:
@@ -549,13 +569,14 @@ def create_sql_db(db_file: str, json_data: dict) -> None:
             print("BTF data saved into Sqlite DB. Number of lines: %d" % res)
 
 
-def check_tools() -> None:
-    """Verifies that Pahole, Bpftool, and Readelf CLI utilities are installed and functional."""
+def check_tools(require_pahole: bool = True) -> None:
+    """Verifies that Bpftool, Readelf, and (if required) Pahole CLI utilities are installed."""
     tools = [
-        ("Pahole", PAHOLE, ["--version"], "dwarves"),
         ("Bpftool", BPFTOOL, ["--version"], "bpftool"),
         ("Readelf", READELF, ["-v"], "binutils"),
     ]
+    if require_pahole:
+        tools.insert(0, ("Pahole", PAHOLE, ["--version"], "dwarves"))
 
     for name, path, flag, pkg in tools:
         if not path or not os.path.exists(path):
@@ -587,7 +608,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "vmlinux",
-        help="Kernel binary (vmlinux) with debug data (DWARF).",
+        help="Kernel binary (vmlinux) with BTF or debug data (DWARF).",
         type=vmlinux,
         nargs=1,
     )
@@ -607,7 +628,7 @@ def main():
     )
     args = parser.parse_args()
 
-    check_tools()
+    check_tools(require_pahole=not has_btf_section(args.vmlinux[0]))
 
     json_data = dump_btf_json(args.vmlinux[0])
 
