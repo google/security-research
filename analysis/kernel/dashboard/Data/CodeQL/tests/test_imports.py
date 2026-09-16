@@ -21,7 +21,7 @@ import import_functions
 import import_macro_invocations
 import import_macros
 import import_ops_targets
-import import_syscall_reachable
+import import_syscall_node
 from utils import detect_prefix, trim_filename
 
 
@@ -300,40 +300,6 @@ class TestImportConditions(BaseImporterTest):
                 import_conditions.main()
 
 
-class TestImportSyscallReachable(BaseImporterTest):
-    def test_import_syscall_reachable(self):
-        with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("syscall,fn,sys_loc,fn_loc\n\"sys_bind\",\"sock_create\",\"linux/arch/x86/sys.c\",\"linux/net/sock.c\"\nshort\n")
-
-        count = import_syscall_reachable.import_syscall_reachable_to_db(self.csv_path, self.db_path)
-        self.assertEqual(count, 1)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT syscall_location, function_location FROM syscall_node")
-        self.assertEqual(cursor.fetchone(), ("arch/x86/sys.c", "net/sock.c"))
-        conn.close()
-
-    def test_cli_main(self):
-        with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("s,f,sl,fl\ns,f,sl,fl\n")
-
-        with patch("sys.argv", ["import_syscall_reachable.py", self.csv_path, self.db_path]):
-            import_syscall_reachable.main()
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT count(*) FROM syscall_node")
-        self.assertEqual(cursor.fetchone()[0], 1)
-        conn.close()
-
-    def test_cli_missing_csv(self):
-        missing_csv = os.path.join(self.tmp_dir.name, "nonexistent.csv")
-        with patch("sys.argv", ["import_syscall_reachable.py", missing_csv, self.db_path]):
-            with self.assertRaises(SystemExit):
-                import_syscall_reachable.main()
-
-
 class TestImportConditionsReachable(BaseImporterTest):
     def test_import_conditions_reachable(self):
         with open(self.csv_path, "w", encoding="utf-8") as f:
@@ -444,6 +410,72 @@ class TestImportOpsTargets(BaseImporterTest):
         with patch("sys.argv", ["import_ops_targets.py", missing_csv, self.db_path]):
             with self.assertRaises(SystemExit):
                 import_ops_targets.main()
+
+
+class TestImportSyscallNode(BaseImporterTest):
+    def setUp(self):
+        super().setUp()
+        self.locs_path = os.path.join(self.tmp_dir.name, "locs.csv")
+        self.pairs_path = os.path.join(self.tmp_dir.name, "pairs.csv")
+        self.out_csv = os.path.join(self.tmp_dir.name, "syscall_node.csv")
+
+    def test_import_3col_exact_join(self):
+        with open(self.locs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","linux/fs/open.c",100,1,120,20\n')
+            f.write('"hash","linux/fs/inode.c",50,1,60,20\n')
+            f.write('"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n')
+
+        with open(self.pairs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","hash","linux/fs/inode.c"\n')
+
+        by_fn_file, by_name, prefix = import_syscall_node.load_locs(self.locs_path)
+        sysloc = import_syscall_node.syscall_locations(by_name)
+        rows = list(import_syscall_node.gen_rows(self.pairs_path, by_fn_file, by_name, sysloc, prefix))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0],
+            ("__do_sys_openat", "hash", "fs/open.c:100:1:120:20", "fs/inode.c:50:1:60:20"),
+        )
+
+        import_syscall_node.write_db(self.db_path, rows)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT count(*) FROM syscall_node")
+        self.assertEqual(cursor.fetchone()[0], 1)
+        conn.close()
+
+    def test_import_2col_fallback(self):
+        with open(self.locs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","linux/fs/open.c",100,1,120,20\n')
+            f.write('"hash","linux/fs/inode.c",50,1,60,20\n')
+            f.write('"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n')
+
+        with open(self.pairs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","hash"\n')
+
+        by_fn_file, by_name, prefix = import_syscall_node.load_locs(self.locs_path)
+        sysloc = import_syscall_node.syscall_locations(by_name)
+        rows = list(import_syscall_node.gen_rows(self.pairs_path, by_fn_file, by_name, sysloc, prefix))
+
+        self.assertEqual(len(rows), 2)
+
+    def test_cli_main(self):
+        with open(self.locs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","linux/fs/open.c",100,1,120,20\n')
+            f.write('"vfs_read","linux/fs/read_write.c",200,1,220,20\n')
+
+        with open(self.pairs_path, "w", encoding="utf-8") as f:
+            f.write('"__do_sys_openat","vfs_read","linux/fs/read_write.c"\n')
+
+        with patch("sys.argv", ["import_syscall_node.py", "--pairs", self.pairs_path, "--locs", self.locs_path, "--db", self.db_path]):
+            import_syscall_node.main()
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT count(*) FROM syscall_node")
+        self.assertEqual(cursor.fetchone()[0], 1)
+        conn.close()
 
 
 if __name__ == "__main__":

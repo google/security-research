@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
+from unittest.mock import patch
 import sqlite3
 import tempfile
 import os
@@ -319,11 +320,15 @@ class TestExtractBTF(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract_btf.vmlinux("/nonexistent/path/to/vmlinux")
 
-        # Test against existing vmlinux if present
-        vmlinux_path = "/usr/local/google/home/ametla/prodkernel_vmlinux/vmlinux-6.18.20-smp-DEV"
-        if os.path.exists(vmlinux_path):
-            validated_path = extract_btf.vmlinux(vmlinux_path)
-            self.assertEqual(validated_path, os.path.abspath(vmlinux_path))
+        # Test against an existing file with mocked readelf/bpftool output
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            with patch.object(
+                extract_btf.subprocess,
+                "check_output",
+                return_value=b"ELF64 debug BTF",
+            ):
+                validated_path = extract_btf.vmlinux(tmp_file.name)
+                self.assertEqual(validated_path, os.path.abspath(tmp_file.name))
 
     def test_check_tools(self):
         """Test check_tools helper function to verify system Pahole, Bpftool, Readelf binaries."""

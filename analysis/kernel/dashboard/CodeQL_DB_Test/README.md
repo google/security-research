@@ -1,0 +1,71 @@
+# Standalone CodeQL Linux Kernel Database Quality Test Suite (`CodeQL_DB_Test/`)
+
+This directory contains a **standalone, self-referential CodeQL Database Quality Test Suite** designed to evaluate the structural health and completeness of any Linux kernel CodeQL database (`linux_codeql_db_v*`).
+
+Every check in this test suite is **100% intrinsic to the database under test**—it does not rely on comparing against external baseline databases or hardcoded version-specific function counts, making it invariant across kernel versions (`6.1`, `6.6`, `6.12`, `6.18+`) and kernel configurations.
+
+---
+
+## 1. Why a Standalone Intrinsic CodeQL DB Test?
+
+When `codeql database create` builds a database from a Linux kernel, compiler/extractor incompatibilities (such as GCC's `__seg_gs` named address spaces or Clang's C23 `__typeof_unqual__` macro expansion) do not cause `codeql` to fail—it still exits with code `0` (`Successfully created database`).
+
+However, the resulting CodeQL database suffers severe, silent structural damage:
+- **Mid-File Translation Unit Aborts (`Error limit reached.`)**: CodeQL's EDG frontend defaults to a per-TU error limit of 100 (`--error_limit 100`). As soon as a `.c` file hits ~20 unparseable per-cpu or networking macros, EDG emits `Error limit reached.` and aborts extracting the remainder of that translation unit.
+- **Intra-Procedural `ErrorExpr` AST Black Holes**: Unparseable statement expressions inside surviving functions are silently replaced with `ErrorExpr` nodes. When these appear inside `if (...)` conditions or call arguments, they sever control-flow dominance (`dominates(condition, call)`) and call target resolution.
+- **Dangling Call Targets & Broken Ops Tables**: When TUs abort mid-file, callers in other files and `file_operations` / `proto_ops` struct initializers point to function declarations whose `.c` definitions were never extracted (`!hasDefinition()`).
+
+---
+
+## 2. Test Suite Components
+
+| File | Description |
+| :--- | :--- |
+| **`test_codeql_db.py`** | **Standalone Python Test Runner**. Evaluates 21 intrinsic quality checks across 5 domains in ~18 seconds using a single shared CodeQL query evaluator session. Automatically cleans up all temporary BQRS results. |
+| **`extraction_coverage.ql`** | Measures **Compilation-to-Extraction Coverage & Cross-Subsystem Parity**: computes what percentage of `.c` files compiled during the build (`Compilation.getAFileCompiled()`) yielded valid AST function definitions, and checks whether complex subsystems (`fs/`, `net/`) suffered a sudden drop relative to the internal core baseline (`mm/`, `kernel/`, `security/`). |
+| **`ast_corruption.ql`** | Measures **Intra-Procedural AST & CFG Corruption**: counts `ErrorExpr` AST black holes globally, per defined function, inside branch conditions (`IfStmt`/`Loop`), and inside call arguments (`Call`). |
+| **`callgraph_completeness.ql`** | Measures **Intrinsic Call-Graph & Ops Table Resolution**: computes what percentage of direct `FunctionCall` sites in `.c` files and function pointers in kernel operations tables (`file_operations`, `proto_ops`, `net_device_ops`, `inode_operations`) resolve to functions with extracted bodies (`hasDefinition()`). |
+| **`kernel_invariants.ql`** | Measures **Universal Kernel Anchor Subgraph Invariants**: verifies that universal kernel entry points (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`) have extracted bodies, resolved 1-hop and 2-hop callees, and `0` `ErrorExpr` nodes in their call neighborhood. |
+| **`btf_struct_sizes.ql`** | Extracts `(struct_name, byte_size)` from CodeQL's type table for optional DWARF/BTF `pahole --sizes` ground-truth verification. |
+
+---
+
+## 3. The 5 Intrinsic Quality Domains (`21 Checks`)
+
+### Domain 1: Extractor & Build-Tracer Log Forensics (`<db>/log/build-tracer.log`)
+1. **EDG Translation Unit Aborts (`Error limit reached.`)**: Must be `0` aborted TUs (unpatched 6.18 has `560` aborted TUs).
+2. **EDG Parse Error Density (`edg_errors / compiled_c_files`)**: Must be `< 0.05` errors per compiled `.c` file (healthy 6.1 is `0.01`; unpatched 6.18 is `1,148` errors/file).
+3. **C23 `__typeof_unqual__` Macro Compatibility**: Must be `0` errors (detects `pto_tmp__`, `pao_tmp__`, `pscr_ret__` cascading errors from `CONFIG_CC_HAS_TYPEOF_UNQUAL=y`).
+4. **Named Address Space Compatibility (`__seg_gs` / `__seg_fs`)**: Must be `0` errors (detects GCC named address space failures).
+
+### Domain 2: Intrinsic Compilation-to-Extraction Completeness (`extraction_coverage.ql`)
+5. **Global Compiled `.c` Extraction Rate (`extracted / compiled`)**: Must be `>= 85.0%` of compiled `.c` files.
+6. **Core Subsystems Baseline (`mm/` + `kernel/` + `security/`)**: Establishes the internal baseline extraction rate (`>= 92.0%`).
+7. **`fs/` Subsystem Extraction Parity**: Must be `>= 85.0%` and within `12%` of the internal core baseline.
+8. **`net/` Subsystem Extraction Parity**: Must be `>= 70.0%` and within `26%` of the internal core baseline.
+
+### Domain 3: Intra-Procedural AST & Control-Flow Integrity (`ast_corruption.ql`)
+9. **Total `ErrorExpr` AST Black Holes**: Must be `0` (unpatched 6.18 has `16,580`).
+10. **Corrupted Kernel Functions Percentage**: Must be `0.00%` (`0` corrupted functions).
+11. **Branch Condition AST Corruption**: Must be `0` `ErrorExpr` nodes inside `IfStmt`/`Loop` conditions.
+12. **Call Site Argument / Target AST Corruption**: Must be `0` `ErrorExpr` nodes inside `Call` arguments.
+
+### Domain 4: Intrinsic Call-Graph & Ops Table Resolution (`callgraph_completeness.ql`)
+13. **Global Direct `FunctionCall` Definition Resolution Rate**: `>= 97.5%` of direct kernel calls in `.c` files must resolve to defined functions with bodies.
+14. **`fs/` Direct Call Definition Resolution Rate**: `>= 98.0%` resolved.
+15. **`net/` Direct Call Definition Resolution Rate**: `>= 97.5%` resolved.
+16. **Operations Table (`file_operations`/`proto_ops`) Pointer Resolution**: `>= 99.0%` of function pointers initialized in kernel ops structs must resolve to defined functions with bodies (`100.00%` across all patched kernels).
+
+### Domain 5: Universal Kernel Anchor Subgraph Invariants (`kernel_invariants.ql`)
+17–21. **Core Kernel Anchor Subgraph Integrity (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`)**: Verifies that each core anchor has an extracted AST body, resolved 1-hop and 2-hop callees (`0` missing definitions), and `0` `ErrorExpr` nodes in its call neighborhood.
+
+---
+
+## 4. Usage
+
+Run directly against any raw CodeQL kernel database:
+
+```bash
+python3 CodeQL_DB_Test/test_codeql_db.py \
+  --codeql-db ~/kernel_codeql_workspace/linux_codeql_db_v6.18.45
+```

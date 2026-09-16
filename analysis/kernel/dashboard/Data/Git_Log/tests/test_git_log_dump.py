@@ -201,7 +201,7 @@ class TestCreateSqlDb(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
 
-        # Create CodeQL DB modeled after /usr/local/google/home/ametla/fun.db
+        # Create mock CodeQL DB with sample function locations
         self.codeql_db_path = os.path.join(self.tmp_dir.name, "codeql.db")
         conn = sqlite3.connect(self.codeql_db_path)
         conn.execute(
@@ -235,22 +235,6 @@ class TestCreateSqlDb(unittest.TestCase):
         )
         mock_create_log_table.assert_called_once()
         self.assertEqual(len(mock_create_log_table.call_args[0][3]), 4)
-
-    def test_create_sql_db_with_real_fun_db(self):
-        real_fun_db = "/usr/local/google/home/ametla/fun.db"
-        if not os.path.exists(real_fun_db):
-            self.skipTest(f"{real_fun_db} not found")
-
-        with patch("git_log_dump.create_log_table") as mock_create_log_table:
-            mock_create_log_table.return_value = 20076
-            git_log_dump.create_sql_db(
-                self.db_file_path, real_fun_db, 4, self.mock_repo, force=True
-            )
-            mock_create_log_table.assert_called_once()
-            functions = mock_create_log_table.call_args[0][3]
-            self.assertEqual(len(functions), 20076)
-            self.assertEqual(functions[0][0], "error")
-            self.assertEqual(functions[0][1], "arch/x86/boot/compressed/error.c")
 
     def test_create_sql_db_empty_codeql(self):
         empty_codeql_path = os.path.join(self.tmp_dir.name, "empty_codeql.db")
