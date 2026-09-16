@@ -1,22 +1,29 @@
+/**
+ * @name Kernel configs needed
+ * @description Extracts preprocessor branch guards (CONFIG_*) with their file path,
+ *   start line (#ifdef/#if), #endif line, and #else line (or 0 if none).
+ *   Produces the `configs` table in the SQLite database.
+ * @id cpp/dashboard/kernel-configs-needed
+ * @kind table
+ * @tags security kernel
+ */
+
 import cpp
 
-class FunctionConfig extends Function {
-  FunctionConfig() { not this.getName().matches("__compiletime_assert_%") }
-
-  PreprocessorBranch getAGuard() {
-    exists(PreprocessorEndif e, int line |
-      result.getEndIf() = e and
-      e.getFile() = this.getFile() and
-      result.getFile() = this.getFile() and
-      line = this.getLocation().getStartLine() and
-      result.getLocation().getStartLine() < line and
-      line < e.getLocation().getEndLine()
-    )
-  }
+int getElseLine(PreprocessorBranch pb) {
+  exists(PreprocessorElse pe |
+    pe = pb.getNext() and
+    result = pe.getLocation().getStartLine()
+  )
+  or
+  not pb.getNext() instanceof PreprocessorElse and
+  result = 0
 }
 
-from FunctionConfig enc, string guard
-where
-  guard = enc.getAGuard().getHead() and
-  guard.matches("CONFIG%")
-select enc, guard
+from PreprocessorBranch pb
+where pb.getHead().matches("CONFIG%")
+select pb.getHead() as config,
+  pb.getFile().getRelativePath() as path,
+  pb.getLocation().getStartLine() as ifdef,
+  pb.getEndIf().getLocation().getStartLine() as endif,
+  getElseLine(pb) as else_
