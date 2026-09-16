@@ -17,13 +17,13 @@ import git_log_dump
 
 
 class TestValidationHelpers(unittest.TestCase):
-    def test_repo_url_valid(self):
-        url = "https://github.com/torvalds/linux.git"
-        self.assertEqual(git_log_dump.repo_url(url), url)
+    def test_can_read_dir_valid(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.assertEqual(git_log_dump.can_read_dir(tmpdir), tmpdir)
 
-    def test_repo_url_invalid(self):
+    def test_can_read_dir_invalid(self):
         with self.assertRaises(ValueError):
-            git_log_dump.repo_url("invalid_url_without_scheme")
+            git_log_dump.can_read_dir("/non_existent_directory_xyz123")
 
     def test_can_create_file_valid(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -47,13 +47,6 @@ class TestValidationHelpers(unittest.TestCase):
         with self.assertRaises(ValueError):
             git_log_dump.can_read_file("/non_existent_file_xyz123.txt")
 
-    def test_clone_progress(self):
-        progress = git_log_dump.CloneProgress()
-        try:
-            progress.update(0, 50, 100, "Downloading")
-        except Exception as e:
-            self.fail(f"CloneProgress.update raised an exception: {e}")
-
 
 class TestCheckTools(unittest.TestCase):
     @patch("subprocess.run")
@@ -72,12 +65,35 @@ class TestCheckTools(unittest.TestCase):
             git_log_dump.check_tools()
 
 
+class TestSetupRepository(unittest.TestCase):
+    @patch("git.Repo")
+    def test_setup_repository_unshallow_when_shallow(self, mock_repo_cls):
+        mock_repo = MagicMock()
+        mock_repo.git.rev_parse.return_value = "true"
+        mock_repo.head.commit.hexsha = "abcdef1234567890"
+        mock_repo_cls.return_value = mock_repo
+
+        repo = git_log_dump.setup_repository("/tmp/fake_kernel_dir")
+        self.assertEqual(repo, mock_repo)
+        mock_repo.git.fetch.assert_called_once_with("--unshallow")
+
+    @patch("git.Repo")
+    def test_setup_repository_not_shallow(self, mock_repo_cls):
+        mock_repo = MagicMock()
+        mock_repo.git.rev_parse.return_value = "false"
+        mock_repo.head.commit.hexsha = "abcdef1234567890"
+        mock_repo_cls.return_value = mock_repo
+
+        repo = git_log_dump.setup_repository("/tmp/fake_kernel_dir")
+        self.assertEqual(repo, mock_repo)
+        mock_repo.git.fetch.assert_not_called()
+
+
 class TestCreateLogTable(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.repo_dir = self.tmp_dir.name
 
-        # Create sample files based on real CodeQL function locations from fun.db
         self.real_functions = [
             ("error", "arch/x86/boot/compressed/error.c", 18, 24),
             ("isxdigit", "arch/x86/boot/ctype.h", 11, 19),
@@ -134,7 +150,6 @@ class TestCreateLogTable(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_create_log_table_untracked_generated_files(self, mock_subproc):
-        # Mix of tracked kernel files and untracked build artifacts (e.g. inat-tables.c, stdio.h)
         mixed_functions = self.real_functions + [
             ("inat_lookup", "arch/x86/lib/inat-tables.c", 10, 20),
             ("printf", "include/x86_64-linux-gnu/bits/stdio.h", 5, 15),
@@ -201,7 +216,6 @@ class TestCreateSqlDb(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
 
-        # Create mock CodeQL DB with sample function locations
         self.codeql_db_path = os.path.join(self.tmp_dir.name, "codeql.db")
         conn = sqlite3.connect(self.codeql_db_path)
         conn.execute(
@@ -257,7 +271,7 @@ class TestMain(unittest.TestCase):
     @patch("git_log_dump.check_tools")
     @patch("git_log_dump.create_sql_db")
     @patch("git_log_dump.setup_repository")
-    def test_main_existing_repo(
+    def test_main_defaults_db_file_to_codeql_db(
         self, mock_setup_repo, mock_create_sql_db, mock_check_tools
     ):
         mock_repo_obj = MagicMock()
@@ -277,65 +291,14 @@ class TestMain(unittest.TestCase):
                 git_log_dump.main()
 
         mock_check_tools.assert_called_once()
-        mock_setup_repo.assert_called_once_with(None, "/tmp/fake_dir", None)
+        mock_setup_repo.assert_called_once_with("/tmp/fake_dir")
         mock_create_sql_db.assert_called_once()
+        # Verify target_db (first arg to create_sql_db) defaulted to --codeql_db (__file__)
+        self.assertEqual(mock_create_sql_db.call_args[0][0], __file__)
+        self.assertEqual(mock_create_sql_db.call_args[0][1], __file__)
 
-    @patch("git_log_dump.check_tools")
-    @patch("git_log_dump.create_sql_db")
-    @patch("git_log_dump.setup_repository")
-    def test_main_clone_repo(
-        self, mock_setup_repo, mock_create_sql_db, mock_check_tools
-    ):
-        mock_repo_obj = MagicMock()
-        mock_setup_repo.return_value = mock_repo_obj
-
-        with patch(
-            "sys.argv",
-            [
-                "git_log_dump.py",
-                "--repo_url",
-                "https://github.com/torvalds/linux.git",
-                "--commit",
-                "master",
-                "--codeql_db",
-                __file__,
-            ],
-        ):
-            git_log_dump.main()
-
-        mock_check_tools.assert_called_once()
-        mock_setup_repo.assert_called_once_with(
-            "https://github.com/torvalds/linux.git", None, "master"
-        )
-        mock_create_sql_db.assert_called_once()
-        expected_cpus = os.cpu_count() or 4
-        self.assertEqual(mock_create_sql_db.call_args[0][2], expected_cpus)
-
-    def test_main_url_missing_commit(self):
-        with patch(
-            "sys.argv",
-            [
-                "git_log_dump.py",
-                "--repo_url",
-                "https://github.com/torvalds/linux.git",
-                "--codeql_db",
-                __file__,
-            ],
-        ):
-            with self.assertRaises(SystemExit):
-                git_log_dump.main()
-
-    def test_main_missing_codeql_db(self):
-        with patch(
-            "sys.argv",
-            [
-                "git_log_dump.py",
-                "--repo_url",
-                "https://github.com/torvalds/linux.git",
-                "--commit",
-                "master",
-            ],
-        ):
+    def test_main_missing_required_args(self):
+        with patch("sys.argv", ["git_log_dump.py", "--repo_dir", "/tmp/fake_dir"]):
             with self.assertRaises(SystemExit):
                 git_log_dump.main()
 
