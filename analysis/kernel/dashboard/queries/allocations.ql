@@ -36,6 +36,11 @@ class KmallocCall extends FunctionCall {
   int flagsArgIndex;
 
   KmallocCall() {
+    not this.getEnclosingStmt().(DeclStmt).getADeclaration().hasName("_res") and
+    not exists(IfStmt ifs |
+      ifs.getElse() = this.getEnclosingStmt() and
+      ifs.getThen() instanceof BlockStmt
+    ) and
     exists(AllocSizeAttribute attr |
       attr = this.getTarget().getAnAttribute() and
       attr.isSingleParamForm() and
@@ -50,6 +55,28 @@ class KmallocCall extends FunctionCall {
   Expr getSizeArg() { result = this.getArgument(sizeArgIndex) }
 
   Expr getFlagsArg() { result = this.getArgument(flagsArgIndex) }
+
+  StmtExpr innerAllocHooks() {
+    result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt().getParentStmt()
+  }
+
+  StmtExpr outerAllocHooks() {
+    result.getStmt() = this.innerAllocHooks().getEnclosingStmt().getParentStmt()
+  }
+
+  Expr getOuterExpr() {
+    if exists(this.outerAllocHooks()) then result = this.outerAllocHooks()
+    else if exists(this.innerAllocHooks()) then result = this.innerAllocHooks()
+    else result = this
+  }
+
+  string getCleanTargetName() {
+    result = this.getTarget().getName().regexpReplaceAll("_noprof$", "")
+  }
+
+  string getCleanCallExpr() {
+    result = "call to " + this.getCleanTargetName()
+  }
 
   string getFlag() {
     result =
@@ -72,16 +99,28 @@ class KmallocCall extends FunctionCall {
     result = e.(SizeofTypeOperator).getTypeOperand()
   }
 
+  Struct validSizeofStruct(Expr sof) {
+    this.getSizeArg().getAChild*() = sof and
+    result = this.sizeofParam(sof) and
+    result.getSize() > 0 and
+    not result.getName().matches("%unnamed%")
+  }
+
   Struct getStruct() {
-    exists(Expr sof |
-      this.getSizeArg().getAChild*() = sof and
-      this.sizeofParam(sof) = result
-    )
-    or
-    not exists(Expr sof |
-      this.getSizeArg().getAChild*() = sof and exists(this.sizeofParam(sof))
+    (
+      result = this.validSizeofStruct(_)
+      or
+      not exists(this.validSizeofStruct(_)) and
+      (
+        result = this.getOuterExpr().getFullyConverted().getType().stripType()
+        or
+        result = this.getOuterExpr().getParent().(AssignExpr).getLValue().getType().stripType()
+        or
+        result = this.getOuterExpr().getParent().(Initializer).getDeclaration().(Variable).getType().stripType()
+      )
     ) and
-    result = this.getFullyConverted().getType().stripType()
+    result.getSize() > 0 and
+    not result.getName().matches("%unnamed%")
   }
 
   predicate sizeViaSafeSizeMacro() {
@@ -104,5 +143,6 @@ class KmallocCall extends FunctionCall {
 
 from KmallocCall kfc, Struct s
 where s = kfc.getStruct()
-select kfc.getLocation(), kfc, s, s.getLocation(), s.getSize(), kfc.getFlag(), kfc.getSize(),
-  kfc.getSizeArg(), kfc.isFlexible(), kfc.getTarget().getName()
+select kfc.getLocation(), kfc.getCleanCallExpr(), s, s.getLocation(), s.getSize(), kfc.getFlag(),
+  kfc.getSize(), kfc.getSizeArg(), kfc.isFlexible(), kfc.getCleanTargetName()
+
