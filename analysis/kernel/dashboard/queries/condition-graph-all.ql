@@ -29,7 +29,9 @@ cached predicate exprCallEdge(ExprCall a, Function b) {
  }
 
 predicate badname(Function f) {
-   f.getName().regexpMatch("__builtin_.*|__compile.*") or f.getBlock().isEmpty() 
+   f.getName().regexpMatch("__builtin_.*|__compile.*") or
+   not exists(f.getBlock()) or
+   f.getBlock().isEmpty()
 }
 
 query predicate edges(ControlFlowNode a, ControlFlowNode b) {
@@ -127,5 +129,5 @@ class ConditionDependentCall extends Call {
 from ConditionDependentCall cdc, Function last
 where
     edges+(cdc, last) and
-    last.hasName(["core_siblings_list_read", "bfq_init_rq", "cpumap_read", "cpumap_listread", "ovl_encode_real_fh", "show_mark_fhandle", "dm_array_cursor_end"])
+    not badname(last)
 select cdc, last, cdc.getLocation(), last.getLocation()

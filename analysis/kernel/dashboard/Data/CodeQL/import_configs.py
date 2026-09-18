@@ -19,8 +19,11 @@ def import_configs_to_db(csv_filename: str, db_name: str) -> int:
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS configs (
-                function_name TEXT,
-                config TEXT
+                config TEXT,
+                path TEXT,
+                ifdef INTEGER,
+                endif INTEGER,
+                else_ INTEGER
             )
             """
         )
@@ -34,20 +37,31 @@ def import_configs_to_db(csv_filename: str, db_name: str) -> int:
                 pass
             rows = list(reader)
 
-        sample_paths = [r[1] for r in rows if len(r) >= 3]
+        sample_paths = [r[1] for r in rows if len(r) >= 5]
         prefix = detect_prefix(sample_paths)
 
         data = []
         for row in rows:
-            if len(row) >= 2:
-                data.append((row[0], row[1]))
+            if len(row) >= 5:
+                try:
+                    data.append(
+                        (
+                            row[0],
+                            trim_filename(row[1], prefix),
+                            int(row[2]),
+                            int(row[3]),
+                            int(row[4]),
+                        )
+                    )
+                except ValueError:
+                    logging.warning(f"Skipping row with non-integer line numbers: {row}")
             else:
                 logging.warning(f"Skipping invalid row: {row}")
 
         cursor.executemany(
             """
-            INSERT INTO configs (function_name, config)
-            VALUES (?, ?)
+            INSERT INTO configs (config, path, ifdef, endif, else_)
+            VALUES (?, ?, ?, ?, ?)
             """,
             data,
         )

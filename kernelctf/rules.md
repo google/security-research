@@ -173,6 +173,7 @@ Submitting reports via [bughunters.google.com](https://bughunters.google.com/) p
 However, to collect your payout reward:
   1. You must register once on [bughunters.google.com](https://bughunters.google.com/) so we can send you the reward.
   2. We highly recommend changing your payment provider to BugCrowd for a better payment process. You can [read here](https://bughunters.google.com/blog/6483936851394560/announcing-bugcrowd-as-a-new-bughunters-google-com-payment-option) how.
+  3. If you'd like to split your reward with another researcher, please [read our FAQ regarding the process](https://bughunters.google.com/about/frequently-asked-questions#q-is-it-possible-to-split-the-reward-for-a-report-with-other-researchers-for-example-if-we-collaborated-on-the-report-).
 
 ## Note about making the exploit public
 

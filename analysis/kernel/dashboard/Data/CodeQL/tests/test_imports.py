@@ -12,7 +12,9 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+import import_all_calls
 import import_allocations
+import import_allocs
 import import_conditions
 import import_conditions_reachable
 import import_configs
@@ -21,7 +23,6 @@ import import_functions
 import import_macro_invocations
 import import_macros
 import import_ops_targets
-import import_syscall_reachable
 import import_syscall_node
 from utils import detect_prefix, trim_filename
 
@@ -160,20 +161,32 @@ class TestImportFunctions(BaseImporterTest):
 class TestImportConfigs(BaseImporterTest):
     def test_import_configs(self):
         with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("function_name,config\nsock_create,CONFIG_NET\nshort\n")
+            f.write(
+                "config,path,ifdef,endif,else_\n"
+                "CONFIG_INTEL_TDX_GUEST,/build/linux/arch/x86/include/asm/disabled-features.h,84,88,86\n"
+                "CONFIG_64BIT,/build/linux/include/linux/mm_types.h,145,148,0\n"
+                "short\n"
+            )
 
         count = import_configs.import_configs_to_db(self.csv_path, self.db_path)
-        self.assertEqual(count, 1)
+        self.assertEqual(count, 2)
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT function_name, config FROM configs")
-        self.assertEqual(cursor.fetchone(), ("sock_create", "CONFIG_NET"))
+        cursor.execute("SELECT config, path, ifdef, endif, else_ FROM configs ORDER BY ifdef")
+        rows = cursor.fetchall()
+        self.assertEqual(
+            rows,
+            [
+                ("CONFIG_INTEL_TDX_GUEST", "arch/x86/include/asm/disabled-features.h", 84, 88, 86),
+                ("CONFIG_64BIT", "include/linux/mm_types.h", 145, 148, 0),
+            ],
+        )
         conn.close()
 
     def test_import_configs_cli_main(self):
         with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("fn,config\nfn1,CONFIG_FOO\n")
+            f.write("config,path,ifdef,endif,else_\nCONFIG_FOO,net/socket.c,10,20,15\n")
 
         with patch("sys.argv", ["import_configs.py", self.csv_path, self.db_path]):
             import_configs.main()
@@ -299,40 +312,6 @@ class TestImportConditions(BaseImporterTest):
         with patch("sys.argv", ["import_conditions.py", missing_csv, self.db_path]):
             with self.assertRaises(SystemExit):
                 import_conditions.main()
-
-
-class TestImportSyscallReachable(BaseImporterTest):
-    def test_import_syscall_reachable(self):
-        with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("syscall,fn,sys_loc,fn_loc\n\"sys_bind\",\"sock_create\",\"linux/arch/x86/sys.c\",\"linux/net/sock.c\"\nshort\n")
-
-        count = import_syscall_reachable.import_syscall_reachable_to_db(self.csv_path, self.db_path)
-        self.assertEqual(count, 1)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT syscall_location, function_location FROM syscall_node")
-        self.assertEqual(cursor.fetchone(), ("arch/x86/sys.c", "net/sock.c"))
-        conn.close()
-
-    def test_cli_main(self):
-        with open(self.csv_path, "w", encoding="utf-8") as f:
-            f.write("s,f,sl,fl\ns,f,sl,fl\n")
-
-        with patch("sys.argv", ["import_syscall_reachable.py", self.csv_path, self.db_path]):
-            import_syscall_reachable.main()
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT count(*) FROM syscall_node")
-        self.assertEqual(cursor.fetchone()[0], 1)
-        conn.close()
-
-    def test_cli_missing_csv(self):
-        missing_csv = os.path.join(self.tmp_dir.name, "nonexistent.csv")
-        with patch("sys.argv", ["import_syscall_reachable.py", missing_csv, self.db_path]):
-            with self.assertRaises(SystemExit):
-                import_syscall_reachable.main()
 
 
 class TestImportConditionsReachable(BaseImporterTest):
@@ -510,6 +489,107 @@ class TestImportSyscallNode(BaseImporterTest):
         cursor = conn.cursor()
         cursor.execute("SELECT count(*) FROM syscall_node")
         self.assertEqual(cursor.fetchone()[0], 1)
+        conn.close()
+
+
+class TestImportAllocs(BaseImporterTest):
+    def test_import_allocs_17col(self):
+        with open(self.csv_path, "w", encoding="utf-8") as f:
+            f.write(
+                "call_value,type_value,objectSize,sizeMin,sizeMax,sizeVal,flagsMin,flagsMax,flagsVal,file,line,col,isFlexible,depth,typeUri,typeLine,typeCol\n"
+                '"kmalloc","struct foo","64","64","64","64","3264","3264","3264","linux/mm/slab.c","100","12","false","1","linux/include/foo.h","20","8"\n'
+                '"short"\n'
+            )
+
+        count = import_allocs.import_allocs_to_db(self.csv_path, self.db_path)
+        self.assertEqual(count, 1)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT call_value, type_value, call_uri, call_startLine, depth_value, type_uri FROM allocs"
+        )
+        row = cursor.fetchone()
+        self.assertEqual(
+            row,
+            ("call to kmalloc", "struct foo", "mm/slab.c", 100, "1", "include/foo.h"),
+        )
+        conn.close()
+
+
+class TestImportAllCalls(BaseImporterTest):
+    def test_import_all_calls_to_db(self):
+        sarif_path = os.path.join(self.tmp_dir.name, "test.sarif")
+        sarif_content = {
+            "runs": [
+                {
+                    "results": [
+                        {
+                            "ruleId": "callgraph-all",
+                            "message": {"text": "callgraph-all"},
+                            "codeFlows": [
+                                {
+                                    "threadFlows": [
+                                        {
+                                            "locations": [
+                                                {
+                                                    "location": {
+                                                        "message": {"text": "caller_fn"},
+                                                        "physicalLocation": {
+                                                            "artifactLocation": {
+                                                                "uri": "linux/net/socket.c"
+                                                            },
+                                                            "region": {
+                                                                "startLine": 100,
+                                                                "startColumn": 5,
+                                                                "endLine": 100,
+                                                                "endColumn": 15,
+                                                            },
+                                                        },
+                                                    }
+                                                },
+                                                {
+                                                    "location": {
+                                                        "message": {"text": "call to callee_fn"},
+                                                        "physicalLocation": {
+                                                            "artifactLocation": {
+                                                                "uri": "linux/net/socket.c"
+                                                            },
+                                                            "region": {
+                                                                "startLine": 105,
+                                                                "startColumn": 10,
+                                                                "endLine": 105,
+                                                                "endColumn": 20,
+                                                            },
+                                                        },
+                                                    }
+                                                },
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+        import json
+
+        with open(sarif_path, "w", encoding="utf-8") as f:
+            json.dump(sarif_content, f)
+
+        edge_cnt = import_all_calls.import_all_calls_to_db(sarif_path, self.db_path)
+        self.assertEqual(edge_cnt, 1)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT uri, message FROM locations ORDER BY id ASC")
+        locs = cursor.fetchall()
+        self.assertEqual(locs[0], ("net/socket.c", "caller_fn"))
+        self.assertEqual(locs[1], ("net/socket.c", "call to callee_fn"))
+        cursor.execute("SELECT rule_id FROM edges")
+        self.assertEqual(cursor.fetchone()[0], "callgraph-all")
         conn.close()
 
 

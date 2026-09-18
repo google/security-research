@@ -1,0 +1,2 @@
+ID,Target,LTS slot,Slot date,Submission count,RunID,Score,Stability,Avg. runtime,Patch commit,Patch commit title,PR,CVE,Notes,Syzkaller reference,Exploit hash,Submission time,Patch commit submission time,Last modification,Flag capture times,Slot opening time
+exp9999,hardened-v1-7.2-rc5,lts-6.12.104,2026-09-07,4,b12c8332,299.9993,100%,0.0007s,a75bf27fe41abe658c53276a0c486c4bf9adecfc,,,CVE-2024-99999,,,,2026-09-16T09:03:03.401Z,,2026-09-16T09:03:03.401Z,2026-09-16T09:02:45.951Z,2026-09-07 12:00 UTC

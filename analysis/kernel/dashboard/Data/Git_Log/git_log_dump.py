@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dumps Git blame and commit metadata into an SQLite database for CodeQL functions."""
+"""Dumps Git log commit metadata and source code into an SQLite database for CodeQL functions."""
 
 import argparse
 import logging
@@ -9,32 +9,10 @@ import subprocess
 import sys
 import tempfile
 from contextlib import closing
-from urllib.parse import urlparse
 import git
-from tqdm import tqdm
 
 GIT = "/usr/bin/git"
 PARALLEL = "/usr/bin/parallel"
-
-
-class CloneProgress(git.RemoteProgress):
-    """Progress bar callback for Git clone operations."""
-
-    def update(self, op_code, cur_count, max_count=None, message=""):
-        """Updates the tqdm progress bar for Git operations."""
-        pbar = tqdm(total=max_count)
-        pbar.update(cur_count)
-
-
-def repo_url(repo_url: str) -> str:
-    """Validates that repo_url is a valid URL with scheme and domain."""
-    logging.info("Validating URL provided")
-    result = urlparse(repo_url)
-    if result.scheme and result.netloc:
-        return repo_url
-    else:
-        logging.critical("Wrong URL provided: %s" % repo_url)
-        raise ValueError
 
 
 def can_read_dir(dirname: str) -> str:
@@ -223,7 +201,7 @@ def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
             (start_line, end_line, file_path, author_date, commit, function_code)
         )
 
-    logging.info("Git data processing for specified commit is complete")
+    logging.info("Git data processing for repository is complete")
 
     if not data:
         logging.critical(
@@ -303,38 +281,21 @@ def check_tools() -> None:
     )
 
 
-def setup_repository(
-    repo_url_val: str | None, repo_dir_val: str | None, commit: str | None
-) -> git.repo.base.Repo:
-    """Sets up local or remote Git repository and checks out target commit if specified."""
-    if repo_dir_val:
-        logging.info("Using local Linux repository folder: %s" % repo_dir_val)
-        repo = git.Repo(repo_dir_val)
-        if commit:
-            logging.info("Making hard reset to commit: %s" % commit)
-            repo.git.reset("--hard", commit)
-        else:
-            logging.info(
-                "Skipping reset and using current repository commit: %s"
-                % repo.head.commit.hexsha
-            )
-        return repo
+def setup_repository(repo_dir_val: str) -> git.repo.base.Repo:
+    """Opens local Git repository and unshallows history if needed without modifying working tree."""
+    logging.info("Using local Linux repository folder: %s" % repo_dir_val)
+    repo = git.Repo(repo_dir_val)
+    try:
+        is_shallow = repo.git.rev_parse("--is-shallow-repository").strip()
+        if is_shallow == "true":
+            logging.info("Repository is shallow (--depth 1). Fetching full history (--unshallow)...")
+            repo.git.fetch("--unshallow")
+    except Exception as e:
+        logging.warning("Could not check or unshallow repository: %s" % e)
 
-    if not os.path.exists("linux"):
-        logging.info(
-            "Cloning the Git repo as linux folder is empty: %s" % repo_url_val
-        )
-        repo = git.Repo.clone_from(
-            repo_url_val, "linux", branch="master", progress=CloneProgress()
-        )
-    else:
-        logging.info("Reusing source code in Linux folder")
-        repo = git.Repo("linux")
-        repo.git.reset("--hard", "origin")
-        repo.remotes.origin.pull()
-
-    logging.info("Making hard reset to commit: %s" % commit)
-    repo.git.reset("--hard", commit)
+    logging.info(
+        "Using repository HEAD commit: %s" % repo.head.commit.hexsha
+    )
     return repo
 
 
@@ -343,38 +304,26 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
     parser = argparse.ArgumentParser(
-        description="Dump Git log information into SQLite database."
+        description="Dump Git log commit metadata and function source code into SQLite database."
     )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--repo_url",
-        help="Linux Kernel Repository URL.",
-        type=repo_url,
-    )
-    group.add_argument(
+    parser.add_argument(
         "--repo_dir",
-        help="Path to local Linux Kernel Repository directory.",
+        help="Path to local Linux Kernel Repository directory (created by 01_build_codeql_db.sh).",
         type=can_read_dir,
+        required=True,
     )
-
     parser.add_argument(
         "--codeql_db",
-        help="CodeQL DB file that contains function data.",
+        help="SQLite DB file that contains function_locations table.",
         type=can_read_file,
         required=True,
     )
     parser.add_argument(
-        "--commit",
-        help="Commit hash or branch to hard reset to (required with --repo_url, optional with --repo_dir).",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
         "--db_file",
         nargs="?",
-        help="Path where to store Sqlite3 DB with Git Blame data.",
+        help="Path where to store Sqlite3 DB with Git Log data (defaults to --codeql_db).",
         type=can_create_file,
-        default="git_log.db",
+        default=None,
     )
     default_cpu_count = os.cpu_count() or 4
     parser.add_argument(
@@ -392,12 +341,11 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.repo_url and not args.commit:
-        parser.error("--commit is required when using --repo_url")
+    target_db = args.db_file if args.db_file else args.codeql_db
 
     check_tools()
-    repo = setup_repository(args.repo_url, args.repo_dir, args.commit)
-    create_sql_db(args.db_file, args.codeql_db, args.no_cpu, repo, force=args.force)
+    repo = setup_repository(args.repo_dir)
+    create_sql_db(target_db, args.codeql_db, args.no_cpu, repo, force=args.force)
 
 
 if __name__ == "__main__":
