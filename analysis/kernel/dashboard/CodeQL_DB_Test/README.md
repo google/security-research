@@ -1,8 +1,17 @@
 # Standalone CodeQL Linux Kernel Database Quality Test Suite (`CodeQL_DB_Test/`)
 
-This directory contains a **standalone, self-referential CodeQL Database Quality Test Suite** designed to evaluate the structural health and completeness of any Linux kernel CodeQL database (`linux_codeql_db_v*`).
+This directory contains a **standalone, self-referential CodeQL Database Quality Test Suite** designed to evaluate the structural health and completeness of any Linux kernel CodeQL database (`linux_codeql_db_v*`) before executing queries.
 
-Every check in this test suite is **100% intrinsic to the database under test**—it does not rely on comparing against external baseline databases or hardcoded version-specific function counts, making it invariant across kernel versions (`6.1`, `6.6`, `6.12`, `6.18+`) and kernel configurations.
+Complementary to `Data_Test/` (which validates the decoded output tables produced by queries), `CodeQL_DB_Test/` validates the *database itself*:
+
+```text
+CodeQL Database Creation ──► CodeQL_DB_Test/ (Is the database healthy?)
+                                   │
+                                   ▼
+                        CodeQL Query Execution ──► Data_Test/ (Did each query produce valid data?)
+```
+
+Every check in this test suite is **intrinsic to the database under test** (or cross-validated against ground-truth BTF debug info from `Data/Field_Information/extract-btf.py`), making it invariant across kernel versions (`6.1`, `6.6`, `6.12`, `6.18+`) and kernel configurations.
 
 ---
 
@@ -21,16 +30,17 @@ However, the resulting CodeQL database suffers severe, silent structural damage:
 
 | File | Description |
 | :--- | :--- |
-| **`test_codeql_db.py`** | **Standalone Python Test Runner**. Evaluates 21 intrinsic quality checks across 5 domains in ~18 seconds using a single shared CodeQL query evaluator session. Automatically cleans up all temporary BQRS results. |
+| **`conftest.py`** | **Pytest Configuration & Session Fixtures**. Manages CLI options (`--codeql-db`, `--btf-db`, `--vmlinux`, `--ram`, `--threads`), executes all 5 `.ql` queries in a single shared session fixture (`codeql_query_results`), and renders the 6-domain diagnostic summary report via `pytest_terminal_summary`. |
+| **`test_codeql_db.py`** | **Pytest Quality Test Suite**. Evaluates 25 quality checks across 6 test classes (`TestDomain1...` through `TestDomain6...`). Can be run via `pytest CodeQL_DB_Test` or executed directly as a script. |
 | **`extraction_coverage.ql`** | Measures **Compilation-to-Extraction Coverage & Cross-Subsystem Parity**: computes what percentage of `.c` files compiled during the build (`Compilation.getAFileCompiled()`) yielded valid AST function definitions, and checks whether complex subsystems (`fs/`, `net/`) suffered a sudden drop relative to the internal core baseline (`mm/`, `kernel/`, `security/`). |
 | **`ast_corruption.ql`** | Measures **Intra-Procedural AST & CFG Corruption**: counts `ErrorExpr` AST black holes globally, per defined function, inside branch conditions (`IfStmt`/`Loop`), and inside call arguments (`Call`). |
 | **`callgraph_completeness.ql`** | Measures **Intrinsic Call-Graph & Ops Table Resolution**: computes what percentage of direct `FunctionCall` sites in `.c` files and function pointers in kernel operations tables (`file_operations`, `proto_ops`, `net_device_ops`, `inode_operations`) resolve to functions with extracted bodies (`hasDefinition()`). |
-| **`kernel_invariants.ql`** | Measures **Universal Kernel Anchor Subgraph Invariants**: verifies that universal kernel entry points (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`) have extracted bodies, resolved 1-hop and 2-hop callees, and `0` `ErrorExpr` nodes in their call neighborhood. |
-| **`btf_struct_sizes.ql`** | Extracts `(struct_name, byte_size)` from CodeQL's type table for optional DWARF/BTF `pahole --sizes` ground-truth verification. |
+| **`kernel_invariants.ql`** | Measures **Universal Kernel Anchor Subgraph Invariants**: verifies that universal kernel entry points (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`, `do_sys_openat2`) have extracted bodies, resolved 1-hop and 2-hop callees, and `0` `ErrorExpr` nodes in their call neighborhood. |
+| **`btf_struct_sizes.ql`** | Measures **Kernel Struct Layout & BTF Type Integrity**: extracts 64-bit LP64 `(struct_name, byte_size)` definitions from CodeQL's type table (`max(s.getSize())` per struct name to avoid 32-bit VDSO shadowing) for intrinsic LP64 layout checks and ground-truth BTF cross-validation. |
 
 ---
 
-## 3. The 5 Intrinsic Quality Domains (`21 Checks`)
+## 3. The 6 Quality Domains (`25 Checks`)
 
 ### Domain 1: Extractor & Build-Tracer Log Forensics (`<db>/log/build-tracer.log`)
 1. **EDG Translation Unit Aborts (`Error limit reached.`)**: Must be `0` aborted TUs (unpatched 6.18 has `560` aborted TUs).
@@ -57,15 +67,33 @@ However, the resulting CodeQL database suffers severe, silent structural damage:
 16. **Operations Table (`file_operations`/`proto_ops`) Pointer Resolution**: `>= 99.0%` of function pointers initialized in kernel ops structs must resolve to defined functions with bodies (`100.00%` across all patched kernels).
 
 ### Domain 5: Universal Kernel Anchor Subgraph Invariants (`kernel_invariants.ql`)
-17–21. **Core Kernel Anchor Subgraph Integrity (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`)**: Verifies that each core anchor has an extracted AST body, resolved 1-hop and 2-hop callees (`0` missing definitions), and `0` `ErrorExpr` nodes in its call neighborhood.
+17–22. **Core Kernel Anchor Subgraph Integrity (`__sys_setsockopt`, `sk_setsockopt`, `unix_stream_connect`, `vfs_write`, `vfs_read`, `do_sys_openat2`)**: Verifies that each core anchor has an extracted AST body, resolved 1-hop and 2-hop callees (`0` missing definitions), and `0` `ErrorExpr` nodes in its call neighborhood.
+
+### Domain 6: Kernel Struct Layout & BTF Type Integrity (`btf_struct_sizes.ql`)
+23. **Extracted Named Kernel Struct Count**: Verifies CodeQL's type table extracted `>= 5,000` named kernel structs with `byte_size > 0`.
+24. **Universal 64-Bit LP64 Kernel Struct Size Invariants**: Verifies exact byte sizes on Kconfig-independent 64-bit kernel structs (`list_head == 16`, `hlist_node == 16`, `msg_msg == 48`, `user_key_payload == 24`) and valid 64-bit LP64 bounds on core slab structs (`sk_buff`, `task_struct`, `file`, `inode`, `sock`, `mm_struct`, `vm_area_struct`, `page`), detecting any 32-bit VDSO truncation or type corruption.
+25. **Ground-Truth BTF Struct Size Parity (`--btf-db`)**: Cross-validates CodeQL's extracted struct sizes against BTF debug info from `Data/Field_Information/extract-btf.py` (via `--btf-db <sqlite>` or auto-extracted from `vmlinux`), verifying `100%` exact match on core security structs and `>= 98.0%` match across all shared structs.
 
 ---
 
 ## 4. Usage
 
-Run directly against any raw CodeQL kernel database:
-
+### 1. Standard Pytest Mode (Auto-discovers or extracts BTF SQLite DB from sibling `vmlinux`)
 ```bash
-python3 CodeQL_DB_Test/test_codeql_db.py \
-  --codeql-db ~/kernel_codeql_workspace/linux_codeql_db_v6.18.45
+pytest CodeQL_DB_Test -v \
+  --codeql-db /path/to/linux_codeql_db_v6.1.111
+```
+
+### 2. Explicit BTF SQLite Database Verification
+```bash
+pytest CodeQL_DB_Test -v \
+  --codeql-db /path/to/linux_codeql_db_v6.1.111 \
+  --btf-db /path/to/btf.db
+```
+
+### 3. Filter Specific Domain or Check
+```bash
+pytest CodeQL_DB_Test -v -k Domain6 \
+  --codeql-db /path/to/linux_codeql_db_v6.1.111 \
+  --btf-db /path/to/btf.db
 ```

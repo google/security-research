@@ -13,7 +13,8 @@ import cpp
 predicate isOpsStructName(string name) {
   name in [
       "file_operations", "proto_ops", "net_device_ops", "inode_operations",
-      "seq_operations", "vm_operations_struct", "super_operations"
+      "seq_operations", "vm_operations_struct", "super_operations",
+      "proto", "nf_hook_ops", "bpf_map_ops", "security_list_options"
     ]
 }
 
@@ -31,7 +32,10 @@ from
   int opsTotalFuncPtrs,
   int opsResolvedFuncPtrs,
   int opsUnresolvedFuncPtrs,
-  int totalExprCalls
+  int totalExprCalls,
+  int configBranchCount,
+  int macroCount,
+  int capMacroInvocations
 where
   totalCFunctionCalls = count(FunctionCall fc |
     fc.getFile().getExtension() = "c" and isNonBuiltinTarget(fc.getTarget())
@@ -78,7 +82,10 @@ where
     )
   ) and
   opsUnresolvedFuncPtrs = opsTotalFuncPtrs - opsResolvedFuncPtrs and
-  totalExprCalls = count(ExprCall ec)
+  totalExprCalls = count(ExprCall ec) and
+  configBranchCount = count(PreprocessorBranch pb | pb.getHead().matches("CONFIG%")) and
+  macroCount = count(Macro m) and
+  capMacroInvocations = count(MacroInvocation mi | mi.getMacroName().matches("CAP_%"))
 select
   totalCFunctionCalls,
   resolvedCFunctionCalls,
@@ -88,4 +95,7 @@ select
   opsTotalFuncPtrs,
   opsResolvedFuncPtrs,
   opsUnresolvedFuncPtrs,
-  totalExprCalls
+  totalExprCalls,
+  configBranchCount,
+  macroCount,
+  capMacroInvocations

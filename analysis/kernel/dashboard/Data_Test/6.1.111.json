@@ -1,0 +1,55 @@
+{
+  "_comment": "Recorded from intact 2-year-old ground-truth databases (/usr/local/google/home/ametla/Documents/codeql_data-6.1.db and allocs.db) on kernel 6.1.111.",
+  "function_locations": {
+    "rows": 152385
+  },
+  "configs": {
+    "rows": 11130
+  },
+  "ops_targets": {
+    "rows": 52991
+  },
+  "allocs": {
+    "rows": 4492,
+    "dynamic_ratio": 0.248,
+    "objectsize_btf_match_pct": 99.8
+  },
+  "kmalloc_calls": {
+    "rows": 2051,
+    "flexible_rows": 146
+  },
+  "field_access": {
+    "rows": 1493089,
+    "exec_rows": 7985,
+    "read_rows": 1342151,
+    "write_rows": 142953
+  },
+  "macro_locations": {
+    "rows": 102604
+  },
+  "macroinvocation_locations": {
+    "rows": 456649
+  },
+  "syscall_node": {
+    "rows": 5770829,
+    "distinct_syscalls": 418,
+    "mean_reach": 13800
+  },
+  "conditions": {
+    "rows": 9719,
+    "capable_rows": 2058,
+    "ns_capable_rows": 3144,
+    "sysctl_rows": 2514,
+    "module_param_rows": 2003
+  },
+  "conditions_node": {
+    "rows": 27791381,
+    "distinct_conditions": 2236,
+    "distinct_functions": 29345
+  },
+  "all_calls": {
+    "edges": 1829002,
+    "locations": 3555034,
+    "results": 622514
+  }
+}
