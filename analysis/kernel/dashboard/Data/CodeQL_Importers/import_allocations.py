@@ -16,9 +16,10 @@ def import_allocations_to_db(csv_filename: str, db_name: str) -> int:
     """Imports CodeQL heap allocation CSV records into the SQLite kmalloc_calls table."""
     with closing(sqlite3.connect(db_name)) as conn:
         cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS kmalloc_calls")
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS kmalloc_calls (
+            CREATE TABLE kmalloc_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 call_site TEXT,
                 call_expr TEXT,

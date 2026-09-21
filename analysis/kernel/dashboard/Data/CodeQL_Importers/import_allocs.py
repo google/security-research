@@ -16,9 +16,10 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
     """Imports CodeQL allocs CSV records into the SQLite allocs table."""
     with closing(sqlite3.connect(db_name)) as conn:
         cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS allocs")
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS allocs (
+            CREATE TABLE allocs (
                 call_value TEXT,
                 type_value TEXT,
                 objectSize_value TEXT,

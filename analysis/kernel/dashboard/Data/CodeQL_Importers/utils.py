@@ -30,10 +30,22 @@ KERNEL_TOP_DIRS = (
 )
 
 
+def _strip_file_scheme(path: str) -> str:
+    """Strips leading file:// scheme if present while preserving absolute slash."""
+    if not path:
+        return ""
+    if path.startswith("file:///"):
+        return path[len("file://") :]
+    if path.startswith("file://"):
+        return path[len("file://") :]
+    return path
+
+
 def detect_prefix(paths: Sequence[str]) -> str:
     """Scans all paths in a dataset to find the most common kernel root prefix."""
     prefixes = []
-    for path in paths:
+    for raw_path in paths:
+        path = _strip_file_scheme(raw_path)
         if not path or not path.startswith("/"):
             continue
         for top_dir in KERNEL_TOP_DIRS:
@@ -53,8 +65,11 @@ def trim_filename(path: str, prefix: str = "") -> str:
     if not path:
         return ""
 
-    if prefix and path.startswith(prefix):
-        return path[len(prefix) :]
+    path = _strip_file_scheme(path)
+    clean_prefix = _strip_file_scheme(prefix) if prefix else ""
+
+    if clean_prefix and path.startswith(clean_prefix):
+        return path[len(clean_prefix) :]
 
     # Fallback for individual paths that did not match the detected root prefix
     for top_dir in KERNEL_TOP_DIRS:

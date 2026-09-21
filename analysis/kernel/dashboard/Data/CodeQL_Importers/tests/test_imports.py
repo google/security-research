@@ -67,6 +67,18 @@ class TestDetectPrefixAndTrim(unittest.TestCase):
         self.assertEqual(detect_prefix([]), "")
         self.assertEqual(trim_filename(""), "")
 
+    def test_detect_prefix_and_trim_file_scheme(self):
+        sample_paths = [
+            "file:///build/workspace/linux_tree/net/socket.c:100:5:100:20",
+            "file:///build/workspace/linux_tree/mm/slab.c:50:1:50:10",
+        ]
+        prefix = detect_prefix(sample_paths)
+        self.assertEqual(prefix, "/build/workspace/linux_tree/")
+        self.assertEqual(
+            trim_filename("file:///build/workspace/linux_tree/net/socket.c:100:5:100:20", prefix),
+            "net/socket.c:100:5:100:20",
+        )
+
 
 class BaseImporterTest(unittest.TestCase):
     def setUp(self):

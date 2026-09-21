@@ -126,39 +126,41 @@ def import_all_calls_to_db(sarif_file_path: str, db_name: str = "codeql_data.db"
         cursor.execute("PRAGMA synchronous = OFF")
         cursor.execute("PRAGMA journal_mode = MEMORY")
 
+        run_id = (cursor.execute("SELECT COALESCE(MAX(id), 0) FROM runs").fetchone()[0] or 0)
+        res_id = (cursor.execute("SELECT COALESCE(MAX(id), 0) FROM results").fetchone()[0] or 0)
+        cf_id = (cursor.execute("SELECT COALESCE(MAX(id), 0) FROM codeFlows").fetchone()[0] or 0)
+        tf_id = (cursor.execute("SELECT COALESCE(MAX(id), 0) FROM threadFlows").fetchone()[0] or 0)
+        loc_id = (cursor.execute("SELECT COALESCE(MAX(id), 0) FROM locations").fetchone()[0] or 0)
+
+        run_rows = []
+        res_rows = []
+        cf_rows = []
+        tf_rows = []
+        loc_rows = []
+        edge_rows = []
         total_edges = 0
+
         for run in runs:
-            cursor.execute(
-                "INSERT INTO runs (tool, version) VALUES (?, ?)",
-                ("dashboard", "1.0"),
-            )
-            run_id = cursor.lastrowid
+            run_id += 1
+            run_rows.append((run_id, "dashboard", "1.0"))
 
             for result in run.get("results", []):
+                res_id += 1
                 rule_id = result.get("ruleId", "callgraph-all")
                 msg_text = result.get("message", {}).get("text", "")
-                cursor.execute(
-                    "INSERT INTO results (run_id, ruleId, message) VALUES (?, ?, ?)",
-                    (run_id, rule_id, msg_text),
-                )
-                result_id = cursor.lastrowid
+                res_rows.append((res_id, run_id, rule_id, msg_text))
 
                 for code_flow in result.get("codeFlows", []):
-                    cursor.execute(
-                        "INSERT INTO codeFlows (result_id) VALUES (?)",
-                        (result_id,),
-                    )
-                    code_flow_id = cursor.lastrowid
+                    cf_id += 1
+                    cf_rows.append((cf_id, res_id))
 
                     for thread_flow in code_flow.get("threadFlows", []):
-                        cursor.execute(
-                            "INSERT INTO threadFlows (codeFlow_id) VALUES (?)",
-                            (code_flow_id,),
-                        )
-                        thread_flow_id = cursor.lastrowid
+                        tf_id += 1
+                        tf_rows.append((tf_id, cf_id))
 
                         location_ids = []
                         for location in thread_flow.get("locations", []):
+                            loc_id += 1
                             loc = location.get("location", {})
                             phys_loc = loc.get("physicalLocation", {})
                             art_loc = phys_loc.get("artifactLocation", {})
@@ -169,38 +171,39 @@ def import_all_calls_to_db(sarif_file_path: str, db_name: str = "codeql_data.db"
                                 raw_uri = raw_uri[7:]
                             clean_uri = trim_filename(raw_uri, prefix)
 
-                            cursor.execute(
-                                """
-                                INSERT INTO locations (
-                                    threadFlow_id, message, uri, startLine, startColumn, endLine, endColumn
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    thread_flow_id,
-                                    loc_msg,
-                                    clean_uri,
-                                    region.get("startLine"),
-                                    region.get("startColumn"),
-                                    region.get("endLine"),
-                                    region.get("endColumn"),
-                                ),
-                            )
-                            location_ids.append(cursor.lastrowid)
+                            loc_rows.append((
+                                loc_id,
+                                tf_id,
+                                loc_msg,
+                                clean_uri,
+                                region.get("startLine"),
+                                region.get("startColumn"),
+                                region.get("endLine"),
+                                region.get("endColumn"),
+                            ))
+                            location_ids.append(loc_id)
 
                         if len(location_ids) >= 2:
-                            edge_rows = [
-                                (location_ids[i], location_ids[i + 1], rule_id)
-                                for i in range(len(location_ids) - 1)
-                            ]
-                            cursor.executemany(
-                                """
-                                INSERT INTO edges (source_location_id, target_location_id, rule_id)
-                                VALUES (?, ?, ?)
-                                """,
-                                edge_rows,
-                            )
-                            total_edges += len(edge_rows)
+                            for i in range(len(location_ids) - 1):
+                                edge_rows.append((location_ids[i], location_ids[i + 1], rule_id))
+                            total_edges += len(location_ids) - 1
 
+        cursor.executemany("INSERT INTO runs (id, tool, version) VALUES (?, ?, ?)", run_rows)
+        cursor.executemany("INSERT INTO results (id, run_id, ruleId, message) VALUES (?, ?, ?, ?)", res_rows)
+        cursor.executemany("INSERT INTO codeFlows (id, result_id) VALUES (?, ?)", cf_rows)
+        cursor.executemany("INSERT INTO threadFlows (id, codeFlow_id) VALUES (?, ?)", tf_rows)
+        cursor.executemany(
+            """
+            INSERT INTO locations (
+                id, threadFlow_id, message, uri, startLine, startColumn, endLine, endColumn
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            loc_rows,
+        )
+        cursor.executemany(
+            "INSERT INTO edges (source_location_id, target_location_id, rule_id) VALUES (?, ?, ?)",
+            edge_rows,
+        )
         conn.commit()
         logging.info(
             f"Successfully imported all-calls SARIF '{sarif_file_path}' into '{db_name}' ({total_edges} edges)."
