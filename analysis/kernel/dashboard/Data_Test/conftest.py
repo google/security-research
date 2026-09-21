@@ -13,9 +13,9 @@ Supports three invocation modes:
 2. SQLite database validation mode:
    pytest Data_Test -v --sqlite-db /path/to/codeql_data-6.1.db [--allocs-db /path/to/allocs.db] [--btf-db /path/to/btf.db]
 
-   - Loads tables directly from an imported SQLite database (such as the reference DBs in
-     /usr/local/google/home/ametla/Documents or newly imported DBs) and validates both
-     per-table quality checks and cross-table SQLite/tool invariants.
+   - Loads tables directly from an imported SQLite database (such as reference or newly
+     imported DBs) and validates both per-table quality checks and cross-table SQLite/tool
+     invariants.
 
 3. Standalone explicit CSV mode:
    pytest Data_Test -v \

@@ -1,5 +1,5 @@
 {
-  "_comment": "Recorded from intact 2-year-old ground-truth databases (/usr/local/google/home/ametla/Documents/codeql_data-6.1.db and allocs.db) on kernel 6.1.111.",
+  "_comment": "Recorded from reference ground-truth databases (codeql_data-6.1.db and allocs.db) on kernel 6.1.111.",
   "function_locations": {
     "rows": 152385
   },
