@@ -50,7 +50,7 @@ export class Struct {
                 let structAllocFragment = interpolateHtml(structAllocHtml, new Map([
                     [`//*[@class="struct-alloc-cache"]/a/@href`, `#!heap/${kmalloc}/${struct}`],
                     [`//*[@class="struct-alloc-cache"]/a/text()`, kmalloc],
-                    [`//*[@class="struct-alloc-call"]/text()`, `${alloc.call_value}`],
+                    [`//*[@class="struct-alloc-call"]/text()`, `${alloc.call_value}${Number(alloc.depth) > 1 ? ` (${"*".repeat(Number(alloc.depth))})` : ""}`],
                     [`//*[@class="struct-alloc-link"]/a/@href`, `#${alloc.call_uri}:${alloc.function_start_line}:${alloc.function_end_line}`],
                     [`//*[@class="struct-alloc-link"]/a/text()`, `${alloc.call_uri}#${alloc.call_startLine}`],
                     [`//*[@class="struct-alloc-link"]/a/@title`, `${alloc.function}`],

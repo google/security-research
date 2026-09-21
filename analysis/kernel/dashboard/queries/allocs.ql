@@ -53,7 +53,7 @@ predicate isExcludedAllocator(Function f) {
 
 // Canonical 8-byte unsigned long type used for generic void* pointer arrays.
 Type canonicalUnsignedLong() {
-  result = min(IntegralType t | t.getName() = "unsigned long" | t order by t.getSize())
+  result = max(IntegralType t | t.getName() = "unsigned long" | t order by t.getSize())
 }
 
 // Top-level helpers (outside KmallocCall to avoid unbound `this` Cartesian product)
@@ -98,6 +98,34 @@ Type normalizeType(Type raw) {
   )
 }
 
+int pointerDepth(Type t) {
+  exists(Type u | u = t.getUnspecifiedType() |
+    if u instanceof PointerType
+    then result = 1 + pointerDepth(u.(PointerType).getBaseType())
+    else if u instanceof ArrayType
+    then result = 1 + pointerDepth(u.(ArrayType).getBaseType())
+    else result = 0
+  )
+}
+
+string getTypeUri(Type t) {
+  if exists(t.getLocation().getFile().getRelativePath())
+  then result = t.getLocation().getFile().getRelativePath()
+  else result = "file:/"
+}
+
+string getTypeStartLine(Type t) {
+  if exists(t.getLocation().getFile().getRelativePath())
+  then result = t.getLocation().getStartLine().toString()
+  else result = ""
+}
+
+string getTypeStartCol(Type t) {
+  if exists(t.getLocation().getFile().getRelativePath())
+  then result = t.getLocation().getStartColumn().toString()
+  else result = ""
+}
+
 class KmallocCall extends FunctionCall {
   int sizeArgIndex;
   int flagsArgIndex;
@@ -126,6 +154,16 @@ class KmallocCall extends FunctionCall {
 
   Expr getSizeArg() { result = this.getArgument(sizeArgIndex) }
   Expr getFlagsArg() { result = this.getArgument(flagsArgIndex) }
+
+  // For 2-parameter array allocators (__alloc_size(1, 2): kcalloc, kmalloc_array, kvcalloc),
+  // return the element count argument (arg0).
+  Expr getCountArg() {
+    exists(AllocSizeAttribute attr |
+      attr = this.getTarget().getAnAttribute() and
+      attr.isTwoParamForm() and
+      result = this.getArgument(attr.getArg0ParamOneBased() - 1)
+    )
+  }
 
   // O(1) upward AST step from kmalloc_noprof to enclosing alloc_hooks_tag StmtExpr:
   //   this -> ExprStmt -> BlockStmt (then) -> IfStmt -> BlockStmt -> StmtExpr
@@ -194,15 +232,20 @@ class KmallocCall extends FunctionCall {
     )
   }
 
-  // Valid sizeof candidate: excludes bare void, zero-size structs, and unnamed
-  // anonymous structs from BUILD_BUG_ON_ZERO inside struct_size().
+  // Valid sizeof candidate: excludes bare void, zero-size structs, unnamed
+  // anonymous structs from BUILD_BUG_ON_ZERO, and (for depth<=1) bit-layout structs larger than constSize().
   Type validSizeofCandidate() {
     exists(Expr sof |
       this.getSizeArg().getAChild*() = sof and
       result = normalizeType(sizeofParam(sof)) and
       not result instanceof VoidType and
       result.getSize() > 0 and
-      not result.getName().matches("%unnamed%")
+      not result.getName().matches("%unnamed%") and
+      (
+        pointerDepth(this.getBestOuterType()) >= 2 or
+        not this.sizeIsConstant() or
+        result.getSize() <= this.constSize()
+      )
     )
   }
 
@@ -210,8 +253,9 @@ class KmallocCall extends FunctionCall {
   //   1: sizeof candidate matching the assigned pointer target type
   //   2: sizeof candidate that is a Struct with a FlexibleArrayMember
   //   3: sizeof candidate that is a named Struct/Class
-  //   4: any other valid sizeof candidate (e.g. unsigned long, int)
-  //   5: fallback to assignedPointeeType() when no valid sizeof candidate exists
+  //   4: assigned pointer target type that is a named Struct/Class
+  //   5: any other valid sizeof candidate (e.g. unsigned long, int)
+  //   6: fallback to assignedPointeeType()
   int candidateRank(Type t) {
     t = this.validSizeofCandidate() and
     t = normalizeType(this.assignedPointeeType()) and
@@ -225,23 +269,46 @@ class KmallocCall extends FunctionCall {
     t instanceof Class and
     result = 3
     or
+    t = normalizeType(this.assignedPointeeType()) and
+    t instanceof Class and
+    t.getSize() > 0 and
+    not t.getName().matches("%unnamed%") and
+    (
+      pointerDepth(this.getBestOuterType()) >= 2 or
+      not this.sizeIsConstant() or
+      t.getSize() <= this.constSize()
+    ) and
+    result = 4
+    or
     t = this.validSizeofCandidate() and
     not t instanceof Class and
-    result = 4
+    result = 5
     or
     not exists(this.validSizeofCandidate()) and
     t = normalizeType(this.assignedPointeeType()) and
-    result = 5
+    result = 6
   }
 
   // Select single canonical type per allocation site using a single stratification pass.
-  Type getAllocType() {
+  Type rawAllocType() {
     result =
       min(Type t, int prio |
         prio = this.candidateRank(t)
       |
-        t order by prio asc, t.getSize() desc, t.getName() asc
+        t
+        order by
+          prio asc, t.getSize() desc, t.getName() asc, getTypeUri(t) asc,
+          getTypeStartLine(t) asc, getTypeStartCol(t) asc
       )
+  }
+
+  Type getAllocType() {
+    if
+      pointerDepth(this.getBestOuterType()) <= 1 and
+      this.totalSizeHi() > 0 and
+      this.rawAllocType().getSize() > this.totalSizeHi()
+    then result = canonicalUnsignedLong()
+    else result = this.rawAllocType()
   }
 
   // Recover user-facing allocator name without expensive cross-table location joins.
@@ -261,14 +328,51 @@ class KmallocCall extends FunctionCall {
   predicate sizeIsConstant() { exists(this.getSizeArg().getValue()) }
   float constSize() { result = this.getSizeArg().getValue().toFloat() }
 
-  float totalSizeLo() {
+  float elemSizeLo() {
     if this.sizeIsConstant() then result = this.constSize()
     else result = lowerBound(this.getSizeArg().getFullyConverted())
   }
 
-  float totalSizeHi() {
+  float elemSizeHi() {
     if this.sizeIsConstant() then result = this.constSize()
     else result = upperBound(this.getSizeArg().getFullyConverted())
+  }
+
+  predicate countIsConstant() { exists(this.getCountArg().getValue()) }
+  float constCount() { result = this.getCountArg().getValue().toFloat() }
+
+  float countLo() {
+    if this.countIsConstant()
+    then result = this.constCount()
+    else
+      // Real slab allocations have count >= 1 (count == 0 returns ZERO_SIZE_PTR).
+      exists(float lb | lb = lowerBound(this.getCountArg().getFullyConverted()) |
+        if lb < 1.0 then result = 1.0 else result = lb
+      )
+  }
+
+  float countHi() {
+    if this.countIsConstant()
+    then result = this.constCount()
+    else
+      exists(float ub, float lb |
+        ub = upperBound(this.getCountArg().getFullyConverted()) and
+        lb = this.countLo()
+      |
+        if ub < lb then result = lb else result = ub
+      )
+  }
+
+  float totalSizeLo() {
+    if exists(this.getCountArg())
+    then result = this.countLo() * this.elemSizeLo()
+    else result = this.elemSizeLo()
+  }
+
+  float totalSizeHi() {
+    if exists(this.getCountArg())
+    then result = this.countHi() * this.elemSizeHi()
+    else result = this.elemSizeHi()
   }
 
   predicate flagsIsConstant() { exists(this.getFlagsArg().getValue()) }
@@ -316,4 +420,8 @@ select
   kfc.getLocation().getFile().getRelativePath() as file,
   kfc.getLocation().getStartLine().toString() as line,
   kfc.getLocation().getStartColumn().toString() as col,
-  isFlexibleType(allocType) as isFlexible
+  isFlexibleType(allocType) as isFlexible,
+  pointerDepth(kfc.getBestOuterType()).toString() as depth,
+  getTypeUri(allocType) as typeUri,
+  getTypeStartLine(allocType) as typeLine,
+  getTypeStartCol(allocType) as typeCol

@@ -1,6 +1,3 @@
-ATTACH DATABASE 'allocs.db' AS allocs;
-ATTACH DATABASE 'codeql_data-6.1.db' AS codeql;
-
 CREATE TABLE IF NOT EXISTS kmalloc_bucket AS
 SELECT
     column1 AS min,
@@ -269,7 +266,8 @@ INNER JOIN
         fields_with_allocs.parent_type=field_access_clean.field_access_parent
     )
 WHERE
-    kmalloc_bucket_name IS NOT NULL;
+    kmalloc_bucket_name IS NOT NULL
+    AND depth = 1;
 
 CREATE INDEX IF NOT EXISTS fields_with_allocs_and_access_tmp ON fields_with_allocs_and_access (
     field_access_uri,
