@@ -22,6 +22,7 @@ abstract class InterestingConditionCalls extends Element {
 
   abstract Element getInterestingArg();
 
+  pragma[nomagic]
   IfStmt getCondition() {
       if (this instanceof Capabilities or this instanceof NSCapabilities) then
         CapabilityFlow::flow(DataFlow::exprNode(this), DataFlow::exprNode(result.getCondition().getAChild()))
@@ -55,8 +56,16 @@ class ModuleParam extends InterestingConditionCalls, MacroInvocation {
   override string getInterestingType() {result = "module_param"}
   ModuleParam() { this.getMacroName() = "module_param" }
 
+  pragma[nomagic]
+  private Locatable getModuleParamAffectedElement() {
+    inmacroexpansion(unresolveElement(result), underlyingElement(this))
+    or
+    macrolocationbind(underlyingElement(this), result.getLocation()) and this != result
+  }
+
+  pragma[nomagic]
   override Element getInterestingArg() {
-    result = this.getAnAffectedElement().(VariableAccess).getTarget() and
+    result = this.getModuleParamAffectedElement().(VariableAccess).getTarget() and
     not result.(Variable).getName().regexpMatch("param_ops.*|__param_str.*")
   }
 

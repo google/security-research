@@ -34,17 +34,14 @@ predicate badname(Function f) {
    f.getBlock().isEmpty()
 }
 
-query predicate edges(ControlFlowNode a, ControlFlowNode b) {
-    //if a instanceof ExprCall then
-    //   exprCallEdge(a, b)
-    //else 
-    if a instanceof Call then 
-        b = resolveCall(a) and not badname(b)
-    else if a instanceof Function
-    then   
-       a = b.(Call).getEnclosingFunction() and not badname(a)
-   else
-   none()
+pragma[nomagic]
+predicate funcEdge(Function caller, Function callee) {
+  not badname(caller) and
+  not badname(callee) and
+  exists(Call c |
+    c.getEnclosingFunction() = caller and
+    callee = resolveCall(c)
+  )
 }
 
 
@@ -68,6 +65,7 @@ abstract class InterestingConditionCalls extends Element {
 
   abstract Element getInterestingArg();
 
+  pragma[nomagic]
   IfStmt getCondition() {
       if (this instanceof Capabilities or this instanceof NSCapabilities) then
         CapabilityFlow::flow(DataFlow::exprNode(this), DataFlow::exprNode(result.getCondition().getAChild()))
@@ -101,8 +99,16 @@ class ModuleParam extends InterestingConditionCalls, MacroInvocation {
   override string getInterestingType() {result = "module_param"}
   ModuleParam() { this.getMacroName() = "module_param" }
 
+  pragma[nomagic]
+  private Locatable getModuleParamAffectedElement() {
+    inmacroexpansion(unresolveElement(result), underlyingElement(this))
+    or
+    macrolocationbind(underlyingElement(this), result.getLocation()) and this != result
+  }
+
+  pragma[nomagic]
   override Element getInterestingArg() {
-    result = this.getAnAffectedElement().(VariableAccess).getTarget() and
+    result = this.getModuleParamAffectedElement().(VariableAccess).getTarget() and
     not result.(Variable).getName().regexpMatch("param_ops.*|__param_str.*")
   }
 
@@ -126,8 +132,24 @@ class ConditionDependentCall extends Call {
     }
 }
 
+pragma[nomagic]
+Function cdcDirectTarget(ConditionDependentCall cdc) {
+  result = resolveCall(cdc) and not badname(result)
+}
+
+pragma[nomagic]
+predicate reachableFunc(Function start, Function last) {
+  start = cdcDirectTarget(_) and
+  (
+    last = start
+    or
+    exists(Function mid |
+      reachableFunc(start, mid) and
+      funcEdge(mid, last)
+    )
+  )
+}
+
 from ConditionDependentCall cdc, Function last
-where
-    edges+(cdc, last) and
-    not badname(last)
-select cdc, last, cdc.getLocation(), last.getLocation()
+where reachableFunc(cdcDirectTarget(cdc), last)
+select cdc.toString(), last.getName(), cdc.getLocation().toString(), last.getDefinitionLocation().toString()
