@@ -290,11 +290,14 @@ def setup_repository(repo_dir_val: str) -> git.repo.base.Repo:
         if is_shallow == "true":
             logging.info("Repository is shallow (--depth 1). Fetching full history (--unshallow)...")
             repo.git.fetch("--unshallow")
+        repo.git.config("core.commitGraph", "true")
+        repo.git.config("commitGraph.readChangedPaths", "true")
+        repo.git.commit_graph("write", "--reachable", "--changed-paths")
     except Exception as e:
         logging.warning("Could not check or unshallow repository: %s" % e)
 
     logging.info(
-        "Using repository HEAD commit: %s" % repo.head.commit.hexsha
+        "Using repository HEAD commit: %s" % repo.git.rev_parse("HEAD").strip()
     )
     return repo
 
