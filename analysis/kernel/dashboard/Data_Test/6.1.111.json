@@ -10,13 +10,13 @@
     "rows": 52991
   },
   "allocs": {
-    "rows": 4492,
-    "dynamic_ratio": 0.248,
+    "rows": 4479,
+    "dynamic_ratio": 0.395,
     "objectsize_btf_match_pct": 99.8
   },
   "kmalloc_calls": {
-    "rows": 2051,
-    "flexible_rows": 146
+    "rows": 2561,
+    "flexible_rows": 417
   },
   "field_access": {
     "rows": 1493089,

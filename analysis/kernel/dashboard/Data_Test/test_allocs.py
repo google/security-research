@@ -103,6 +103,48 @@ def test_allocs_flexible_array_detection(allocs):
     assert len(flex_rows) > 0, "0 flexible-array allocations detected (isFlexible == 'true')"
 
 
+def test_allocs_two_param_array_allocators_variable(allocs):
+    """2-parameter array allocators (kcalloc, kmalloc_array, kvcalloc) must multiply
+    element size by count bounds so variable-length array allocations (such as
+    pipe_buffer in fs/pipe.c) are classified as variable (sizeMin < sizeMax)."""
+    pipe_buf_rows = [r for r in allocs if r.get("type_value") == "pipe_buffer"]
+    variable_pipe_buf = [
+        r for r in pipe_buf_rows
+        if r.get("sizeVal") == "variable" and int(r["sizeMin"]) < int(r["sizeMax"])
+    ]
+    report(
+        "2-param array allocators (pipe_buffer)",
+        {
+            "pipe_buffer rows": len(pipe_buf_rows),
+            "variable pipe_buffer rows": len(variable_pipe_buf),
+        },
+    )
+    assert len(variable_pipe_buf) > 0, (
+        f"pipe_buffer allocations failed variable range detection: {pipe_buf_rows}"
+    )
+
+
+def test_allocs_pointer_depth_preserved(allocs):
+    """Pointer-array allocations (depth >= 2, e.g. struct request **, struct sk_buff **)
+    must preserve depth >= 2 and named pointee struct type_value rather than collapsing
+    to unsigned long."""
+    if "depth" not in allocs[0]:
+        pytest.skip("depth column not present in legacy allocs dump")
+    depth2_rows = [
+        r for r in allocs
+        if is_int(r.get("depth", "1")) and int(r.get("depth", "1")) >= 2
+        and r.get("type_value") not in PRIMITIVES
+    ]
+    report(
+        "pointer-array allocations (depth >= 2)",
+        {
+            "depth >= 2 named struct rows": len(depth2_rows),
+            "sample types": sorted({r["type_value"] for r in depth2_rows})[:8],
+        },
+    )
+    assert len(depth2_rows) > 0, "0 named struct pointer-array allocations (depth >= 2) preserved"
+
+
 # --------------------------------------------------------------------------- #
 # cross-table agreement -- independent ground truth, no oracle needed
 # --------------------------------------------------------------------------- #

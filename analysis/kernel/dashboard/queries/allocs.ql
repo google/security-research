@@ -42,12 +42,12 @@ class AllocSizeAttribute extends GnuAttribute {
 // objects, so the oracle excludes them; we do too.
 predicate isExcludedAllocator(Function f) {
   f.getName().regexpMatch(
-    ".*percpu.*" +
+    ".*percpu.*|pcpu_alloc.*" +
     "|__vmalloc.*|vmalloc.*|__vcalloc.*" +
     "|alloc_pages.*" +
     "|__kmalloc.*" +
-    "|kmalloc_array_node" +
-    "|__do_krealloc"
+    "|kmalloc_array_node.*" +
+    "|__do_krealloc.*"
   )
 }
 
@@ -108,22 +108,40 @@ int pointerDepth(Type t) {
   )
 }
 
+Location canonicalTypeLocation(Type t) {
+  result =
+    min(Location l |
+      l = t.getLocation() and exists(l.getFile().getRelativePath())
+    |
+      l
+      order by
+        l.getFile().getRelativePath() asc, l.getStartLine() asc, l.getStartColumn() asc
+    )
+}
+
 string getTypeUri(Type t) {
-  if exists(t.getLocation().getFile().getRelativePath())
-  then result = t.getLocation().getFile().getRelativePath()
+  if exists(canonicalTypeLocation(t))
+  then result = canonicalTypeLocation(t).getFile().getRelativePath()
   else result = "file:/"
 }
 
 string getTypeStartLine(Type t) {
-  if exists(t.getLocation().getFile().getRelativePath())
-  then result = t.getLocation().getStartLine().toString()
+  if exists(canonicalTypeLocation(t))
+  then result = canonicalTypeLocation(t).getStartLine().toString()
   else result = ""
 }
 
 string getTypeStartCol(Type t) {
-  if exists(t.getLocation().getFile().getRelativePath())
-  then result = t.getLocation().getStartColumn().toString()
+  if exists(canonicalTypeLocation(t))
+  then result = canonicalTypeLocation(t).getStartColumn().toString()
   else result = ""
+}
+
+// Step upward through statement parents and across StmtExpr ({ ... }) boundaries.
+Stmt enclosingStmtStep(Stmt s) {
+  result = s.getParentStmt()
+  or
+  exists(StmtExpr se | se.getStmt() = s and result = se.getEnclosingStmt())
 }
 
 class KmallocCall extends FunctionCall {
@@ -131,13 +149,19 @@ class KmallocCall extends FunctionCall {
   int flagsArgIndex;
 
   KmallocCall() {
+    exists(this.getEnclosingStmt()) and
     not isExcludedAllocator(this.getTarget()) and
-    // O(1) check to exclude the duplicate else-branch of 6.10+ alloc_hooks_tag:
+    // Exclude the unevaluated typeof(_do_alloc) _res declaration and the dead/duplicate
+    // then-branch of 6.10+ alloc_hooks_tag (keeping the reachable else-branch):
+    //   typeof(_do_alloc) _res;
     //   if (mem_alloc_profiling_enabled()) { _res = _do_alloc; } else _res = _do_alloc;
-    not this.getEnclosingStmt().(DeclStmt).getADeclaration().hasName("_res") and
+    not exists(DeclStmt ds |
+      ds.getADeclaration().hasName("_res") and
+      ds = enclosingStmtStep*(this.getEnclosingStmt())
+    ) and
     not exists(IfStmt ifs |
-      ifs.getElse() = this.getEnclosingStmt() and
-      ifs.getThen() instanceof BlockStmt
+      ifs.getCondition().(FunctionCall).getTarget().hasName("mem_alloc_profiling_enabled") and
+      ifs.getThen() = enclosingStmtStep*(this.getEnclosingStmt())
     ) and
     exists(Parameter p |
       p = this.getTarget().getParameter(flagsArgIndex) and
@@ -165,29 +189,47 @@ class KmallocCall extends FunctionCall {
     )
   }
 
-  // O(1) upward AST step from kmalloc_noprof to enclosing alloc_hooks_tag StmtExpr:
-  //   this -> ExprStmt -> BlockStmt (then) -> IfStmt -> BlockStmt -> StmtExpr
+  // Upward AST step from kmalloc_noprof to enclosing alloc_hooks_tag StmtExpr:
+  //   else-branch: this -> ExprStmt -> IfStmt -> BlockStmt -> StmtExpr (2 hops)
+  //   then-branch: this -> ExprStmt -> BlockStmt -> IfStmt -> BlockStmt -> StmtExpr (3 hops)
   StmtExpr innerAllocHooks() {
+    result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt() or
     result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt().getParentStmt()
   }
 
-  // O(1) upward AST step from innerAllocHooks to outer alloc_hooks StmtExpr:
+  // Upward AST step from innerAllocHooks to outer alloc_hooks StmtExpr:
   //   innerAllocHooks -> ExprStmt -> BlockStmt -> StmtExpr
   StmtExpr outerAllocHooks() {
     result.getStmt() = this.innerAllocHooks().getEnclosingStmt().getParentStmt()
   }
 
+  // Upward AST step from outerAllocHooks to 6.12+/6.18 __alloc_objs / __alloc_flex StmtExpr:
+  StmtExpr allocObjsWrapper() {
+    result.getStmt() = this.outerAllocHooks().getEnclosingStmt().getParentStmt() or
+    result.getStmt() = this.outerAllocHooks().getEnclosingStmt().getParentStmt().getParentStmt()
+  }
+
+  // Candidate wrapper expressions (from innermost call to outermost macro StmtExpr).
+  Expr getWrapperExpr() {
+    result = this or
+    result = this.innerAllocHooks() or
+    result = this.outerAllocHooks() or
+    result = this.allocObjsWrapper()
+  }
+
   // Outermost expression wrapping this allocation call.
   Expr getOuterExpr() {
-    if exists(this.outerAllocHooks()) then result = this.outerAllocHooks()
+    if exists(this.allocObjsWrapper()) then result = this.allocObjsWrapper()
+    else if exists(this.outerAllocHooks()) then result = this.outerAllocHooks()
     else if exists(this.innerAllocHooks()) then result = this.innerAllocHooks()
     else result = this
   }
 
-  // O(1) extraction of target pointer type from surrounding cast, assignment, or initializer.
+  // Extraction of target pointer type from surrounding cast, assignment, or initializer
+  // at any wrapper level (direct call, alloc_hooks, or __alloc_objs / __alloc_flex).
   Type getContextTargetType() {
     exists(Expr outer, Expr fc |
-      outer = this.getOuterExpr() and
+      outer = this.getWrapperExpr() and
       fc = outer.getFullyConverted()
     |
       result = fc.getType()
@@ -217,7 +259,13 @@ class KmallocCall extends FunctionCall {
 
   Type getBestOuterType() {
     if exists(this.getNonVoidContextTargetType())
-    then result = this.getNonVoidContextTargetType()
+    then
+      result =
+        min(Type t |
+          t = this.getNonVoidContextTargetType()
+        |
+          t order by pointerDepth(t) desc, t.getSize() desc, t.getName() asc
+        )
     else result = this.getOuterExpr().getFullyConverted().getType()
   }
 
@@ -232,11 +280,17 @@ class KmallocCall extends FunctionCall {
     )
   }
 
+  Expr sizeSubExpr() {
+    result = this.getSizeArg().getAChild*()
+    or
+    result = this.getSizeArg().(VariableAccess).getTarget().getInitializer().getExpr().getAChild*()
+  }
+
   // Valid sizeof candidate: excludes bare void, zero-size structs, unnamed
   // anonymous structs from BUILD_BUG_ON_ZERO, and (for depth<=1) bit-layout structs larger than constSize().
   Type validSizeofCandidate() {
     exists(Expr sof |
-      this.getSizeArg().getAChild*() = sof and
+      sof = this.sizeSubExpr() and
       result = normalizeType(sizeofParam(sof)) and
       not result instanceof VoidType and
       result.getSize() > 0 and

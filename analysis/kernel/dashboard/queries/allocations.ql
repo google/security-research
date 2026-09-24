@@ -31,11 +31,26 @@ class AllocSizeAttribute extends GnuAttribute {
   predicate isSingleParamForm() { not exists(this.getArgument(1)) }
 }
 
+Stmt enclosingStmtStep(Stmt s) {
+  result = s.getParentStmt()
+  or
+  exists(StmtExpr se | se.getStmt() = s and result = se.getEnclosingStmt())
+}
+
 class KmallocCall extends FunctionCall {
   int sizeArgIndex;
   int flagsArgIndex;
 
   KmallocCall() {
+    exists(this.getEnclosingStmt()) and
+    not exists(DeclStmt ds |
+      ds.getADeclaration().hasName("_res") and
+      ds = enclosingStmtStep*(this.getEnclosingStmt())
+    ) and
+    not exists(IfStmt ifs |
+      ifs.getCondition().(FunctionCall).getTarget().hasName("mem_alloc_profiling_enabled") and
+      ifs.getThen() = enclosingStmtStep*(this.getEnclosingStmt())
+    ) and
     exists(AllocSizeAttribute attr |
       attr = this.getTarget().getAnAttribute() and
       attr.isSingleParamForm() and
@@ -50,6 +65,12 @@ class KmallocCall extends FunctionCall {
   Expr getSizeArg() { result = this.getArgument(sizeArgIndex) }
 
   Expr getFlagsArg() { result = this.getArgument(flagsArgIndex) }
+
+  Expr sizeSubExpr() {
+    result = this.getSizeArg().getAChild*()
+    or
+    result = this.getSizeArg().(VariableAccess).getTarget().getInitializer().getExpr().getAChild*()
+  }
 
   string getFlag() {
     result =
@@ -78,12 +99,12 @@ class KmallocCall extends FunctionCall {
   Struct getStruct() {
     (
       exists(Expr sof |
-        this.getSizeArg().getAChild*() = sof and
+        this.sizeSubExpr() = sof and
         this.sizeofParam(sof) = result
       )
       or
       not exists(Expr sof |
-        this.getSizeArg().getAChild*() = sof and exists(this.sizeofParam(sof))
+        this.sizeSubExpr() = sof and exists(this.sizeofParam(sof))
       ) and
       result = this.getFullyConverted().getType().stripType()
     ) and
@@ -94,7 +115,7 @@ class KmallocCall extends FunctionCall {
   predicate sizeViaSafeSizeMacro() {
     exists(MacroInvocation mi |
       mi.getMacro().getName() = ["struct_size", "array_size", "flex_array_size", "struct_size_t"] and
-      mi.getExpr() = this.getSizeArg().getAChild*()
+      mi.getExpr() = this.sizeSubExpr()
     )
   }
 

@@ -13,19 +13,30 @@ def test_allocations_not_empty(allocations, kernel):
 
 
 def test_allocations_is_flexible_total_and_valid(allocations):
-    """is_flexible must be populated ('true' or 'false') for 100% of rows, with >0 'true' rows."""
+    """is_flexible must be populated ('true' or 'false') for 100% of rows, with >0 'true' rows,
+    and must not falsely mark fixed-size array element structs (iovec, bio_vec, input_event)
+    referenced inside struct_size(p, member, count) as flexible."""
     valid_vals = {"true", "false"}
     invalid = [r for r in allocations if r.get("is_flexible", "").lower() not in valid_vals]
     flex_rows = [r for r in allocations if r.get("is_flexible", "").lower() == "true"]
+    false_flex_element_structs = {"iovec", "bio_vec", "input_event"}
+    falsely_marked_flex = [
+        r for r in flex_rows if r.get("struct_type") in false_flex_element_structs
+    ]
     report(
         "is_flexible completeness",
         {
             "total": len(allocations),
             "flexible ('true')": len(flex_rows),
             "invalid is_flexible": len(invalid),
+            "falsely marked fixed element structs": len(falsely_marked_flex),
         },
     )
     assert not invalid, f"{len(invalid)} rows have invalid is_flexible values"
+    assert not falsely_marked_flex, (
+        f"{len(falsely_marked_flex)} non-flexible element structs marked is_flexible='true': "
+        f"{falsely_marked_flex[:5]}"
+    )
     assert len(flex_rows) >= 50, f"only {len(flex_rows)} flexible struct allocations detected"
 
 
