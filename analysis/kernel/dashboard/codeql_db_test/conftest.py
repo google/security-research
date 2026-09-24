@@ -333,7 +333,7 @@ def btf_ground_truth(
     extract_btf_script = (
         Path(__file__).resolve().parent.parent
         / "data"
-        / "field_information"
+        / "btf_data"
         / "extract-btf.py"
     )
     if vmlinux_path and extract_btf_script.exists():

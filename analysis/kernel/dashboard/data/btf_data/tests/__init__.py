@@ -1,4 +1,4 @@
-"""Package init for field_information tests."""
+"""Package init for btf_data tests."""
 
 from pathlib import Path
 

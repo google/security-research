@@ -11,7 +11,7 @@ CodeQL Database Creation ──► codeql_db_test/ (Is the database healthy?)
                         CodeQL Query Execution ──► data_test/ (Did each query produce valid data?)
 ```
 
-Every check in this test suite is **intrinsic to the database under test** (or cross-validated against ground-truth BTF debug info from `data/field_information/extract-btf.py`), making it invariant across kernel versions (`6.1`, `6.6`, `6.12`, `6.18+`) and kernel configurations.
+Every check in this test suite is **intrinsic to the database under test** (or cross-validated against ground-truth BTF debug info from `data/btf_data/extract-btf.py`), making it invariant across kernel versions (`6.1`, `6.6`, `6.12`, `6.18+`) and kernel configurations.
 
 ---
 
@@ -72,7 +72,7 @@ However, the resulting CodeQL database suffers severe, silent structural damage:
 ### Domain 6: Kernel Struct Layout & BTF Type Integrity (`btf_struct_sizes.ql`)
 23. **Extracted Named Kernel Struct Count**: Verifies CodeQL's type table extracted `>= 5,000` named kernel structs with `byte_size > 0`.
 24. **Universal 64-Bit LP64 Kernel Struct Size Invariants**: Verifies exact byte sizes on Kconfig-independent 64-bit kernel structs (`list_head == 16`, `hlist_node == 16`, `msg_msg == 48`, `user_key_payload == 24`) and valid 64-bit LP64 bounds on core slab structs (`sk_buff`, `task_struct`, `file`, `inode`, `sock`, `mm_struct`, `vm_area_struct`, `page`), detecting any 32-bit VDSO truncation or type corruption.
-25. **Ground-Truth BTF Struct Size Parity (`--btf-db`)**: Cross-validates CodeQL's extracted struct sizes against BTF debug info from `data/field_information/extract-btf.py` (via `--btf-db <sqlite>` or auto-extracted from `vmlinux`), verifying `100%` exact match on core security structs and `>= 98.0%` match across all shared structs.
+25. **Ground-Truth BTF Struct Size Parity (`--btf-db`)**: Cross-validates CodeQL's extracted struct sizes against BTF debug info from `data/btf_data/extract-btf.py` (via `--btf-db <sqlite>` or auto-extracted from `vmlinux`), verifying `100%` exact match on core security structs and `>= 98.0%` match across all shared structs.
 
 ---
 

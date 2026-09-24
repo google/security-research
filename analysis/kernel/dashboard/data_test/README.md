@@ -18,7 +18,7 @@ CodeQL Database Creation ──► codeql_db_test/ (Is the database healthy?)
 Even on a healthy CodeQL database, individual queries can silently degrade across kernel releases due to upstream kernel refactoring (such as allocator wrapper renames, `_noprof` macro wrappers, or changes to `file_operations` / syscall entry point definitions):
 - **Per-Query Fail-Fast Validation**: Queries can be validated immediately after decoding (`--query <query_name> --results-dir <dir>`). If a foundational query (`functions.ql`, `ops_edges.ql`, `allocs.ql`) produces empty or corrupted output, validation fails immediately rather than waiting for all queries to complete.
 - **Graceful Skip for New Query Development**: If `--query <name>` specifies an experimental or newly developed query that does not have a test module mapped in `conftest.py` yet, `data_test` prints `SKIPPED (no test implemented for query '<name>')` and exits with code `0` so new query development is never blocked.
-- **Intrinsic & Cross-Table Verification**: Checks verify structural invariants (e.g. `start_line <= end_line`, `sizeMin <= sizeMax`), cross-table agreement (e.g. `ops_targets` and `syscall_node` targets must exist in `function_locations`), and independent BTF ground-truth parity (`allocs.objectSize` vs. BTF `struct_size` from `data/field_information/extract-btf.py`).
+- **Intrinsic & Cross-Table Verification**: Checks verify structural invariants (e.g. `start_line <= end_line`, `sizeMin <= sizeMax`), cross-table agreement (e.g. `ops_targets` and `syscall_node` targets must exist in `function_locations`), and independent BTF ground-truth parity (`allocs.objectSize` vs. BTF `struct_size` from `data/btf_data/extract-btf.py`).
 
 ---
 
@@ -63,7 +63,7 @@ Even on a healthy CodeQL database, individual queries can silently degrade acros
 15. **Dynamic Size Sentinel Consistency**: Rows with `sizeMin != sizeMax` must match rows marked `sizeVal == "variable"` within tolerance.
 16. **Bounded Untyped (`void`) Allocation Share**: Allocations resolving to `void` or empty type must be `< 10.0%` of total allocations.
 17. **Flexible Array (`isFlexible`) Detection**: Verifies elastic / flexible-array struct allocations (`isFlexible == "true"`) are detected.
-18. **Ground-Truth BTF `objectSize` Parity (`allocs` $\leftrightarrow$ `--btf-db`)**: Cross-validates CodeQL's extracted `objectSize` against BTF `struct_size` from `data/field_information/extract-btf.py` across all named kernel structs (`>= 90.0%` exact match).
+18. **Ground-Truth BTF `objectSize` Parity (`allocs` $\leftrightarrow$ `--btf-db`)**: Cross-validates CodeQL's extracted `objectSize` against BTF `struct_size` from `data/btf_data/extract-btf.py` across all named kernel structs (`>= 90.0%` exact match).
 19. **Baseline Distribution Drift**: Optional check verifying total row count and dynamic ratio stability against `--baseline`.
 
 ### Module 5: Syscall Reachability Graph (`test_syscall_node.py` $\leftarrow$ `syscall-node-*.ql`)
