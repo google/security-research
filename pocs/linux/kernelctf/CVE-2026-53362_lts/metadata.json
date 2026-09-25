@@ -1,0 +1,22 @@
+{
+  "$schema": "https://google.github.io/security-research/kernelctf/metadata.schema.v3.json",
+  "submission_ids": ["exp522"],
+  "vulnerability": {
+    "summary": "UDPv6 MSG_SPLICE_PAGES fraggap accounting can write past the skb linear area into skb_shared_info",
+    "patch_commit": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=736b380e28d0480c7bc3e022f1950f31fe53a7c5",
+    "cve": "CVE-2026-53362",
+    "affected_versions": ["6.6-rc1 - 6.12.94"],
+    "requirements": {
+      "attack_surface": [],
+      "capabilities": [],
+      "kernel_config": ["CONFIG_IPV6"]
+    }
+  },
+  "exploits": {
+    "lts-6.12.85": {
+      "uses": [],
+      "requires_separate_kaslr_leak": false,
+      "stability_notes": "95%"
+    }
+  }
+}
