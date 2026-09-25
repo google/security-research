@@ -43,9 +43,11 @@ class KmallocCall extends FunctionCall {
 
   KmallocCall() {
     exists(this.getEnclosingStmt()) and
-    not exists(DeclStmt ds |
-      ds.getADeclaration().hasName("_res") and
-      ds = enclosingStmtStep*(this.getEnclosingStmt())
+    not exists(DeclStmt ds, Variable v |
+      v = ds.getADeclaration() and
+      v.hasName("_res") and
+      ds = enclosingStmtStep*(this.getEnclosingStmt()) and
+      not this = v.getInitializer().getExpr().getAChild*()
     ) and
     not exists(IfStmt ifs |
       ifs.getCondition().(FunctionCall).getTarget().hasName("mem_alloc_profiling_enabled") and
@@ -96,6 +98,28 @@ class KmallocCall extends FunctionCall {
     result.getSize() > 0
   }
 
+  StmtExpr innerAllocHooks() {
+    result.getStmt() = this.getEnclosingStmt().getParentStmt() or
+    result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt() or
+    result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt().getParentStmt()
+  }
+
+  StmtExpr outerAllocHooks() {
+    result.getStmt() = this.innerAllocHooks().getEnclosingStmt().getParentStmt()
+  }
+
+  StmtExpr allocObjsWrapper() {
+    result.getStmt() = this.outerAllocHooks().getEnclosingStmt().getParentStmt() or
+    result.getStmt() = this.outerAllocHooks().getEnclosingStmt().getParentStmt().getParentStmt()
+  }
+
+  Expr getWrapperExpr() {
+    result = this or
+    result = this.innerAllocHooks() or
+    result = this.outerAllocHooks() or
+    result = this.allocObjsWrapper()
+  }
+
   Struct getStruct() {
     (
       exists(Expr sof |
@@ -106,9 +130,10 @@ class KmallocCall extends FunctionCall {
       not exists(Expr sof |
         this.sizeSubExpr() = sof and exists(this.sizeofParam(sof))
       ) and
-      result = this.getFullyConverted().getType().stripType()
+      result = this.getWrapperExpr().getFullyConverted().getType().stripType()
     ) and
     result.getSize() > 0 and
+    not result.getName().matches("%unnamed%") and
     (this.getSize() = "unknown" or result.getSize() <= this.getSize().toInt())
   }
 

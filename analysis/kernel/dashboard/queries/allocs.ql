@@ -155,9 +155,11 @@ class KmallocCall extends FunctionCall {
     // then-branch of 6.10+ alloc_hooks_tag (keeping the reachable else-branch):
     //   typeof(_do_alloc) _res;
     //   if (mem_alloc_profiling_enabled()) { _res = _do_alloc; } else _res = _do_alloc;
-    not exists(DeclStmt ds |
-      ds.getADeclaration().hasName("_res") and
-      ds = enclosingStmtStep*(this.getEnclosingStmt())
+    not exists(DeclStmt ds, Variable v |
+      v = ds.getADeclaration() and
+      v.hasName("_res") and
+      ds = enclosingStmtStep*(this.getEnclosingStmt()) and
+      not this = v.getInitializer().getExpr().getAChild*()
     ) and
     not exists(IfStmt ifs |
       ifs.getCondition().(FunctionCall).getTarget().hasName("mem_alloc_profiling_enabled") and
@@ -190,9 +192,11 @@ class KmallocCall extends FunctionCall {
   }
 
   // Upward AST step from kmalloc_noprof to enclosing alloc_hooks_tag StmtExpr:
-  //   else-branch: this -> ExprStmt -> IfStmt -> BlockStmt -> StmtExpr (2 hops)
-  //   then-branch: this -> ExprStmt -> BlockStmt -> IfStmt -> BlockStmt -> StmtExpr (3 hops)
+  //   6.12 (_res init): this -> DeclStmt -> BlockStmt -> StmtExpr (1 hop)
+  //   6.18 else-branch: this -> ExprStmt -> IfStmt -> BlockStmt -> StmtExpr (2 hops)
+  //   6.18 then-branch: this -> ExprStmt -> BlockStmt -> IfStmt -> BlockStmt -> StmtExpr (3 hops)
   StmtExpr innerAllocHooks() {
+    result.getStmt() = this.getEnclosingStmt().getParentStmt() or
     result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt() or
     result.getStmt() = this.getEnclosingStmt().getParentStmt().getParentStmt().getParentStmt()
   }
