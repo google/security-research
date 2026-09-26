@@ -66,7 +66,7 @@ def run(*args, **kwargs):
 def get_kernelctf_releases():
     if os.path.exists(SA_KEY_FILE):
         run(["gcloud", "auth", "activate-service-account", f"--key-file={SA_KEY_FILE}"])
-    res = run(["gsutil", "ls", "gs://kernelctf-build/releases/"]).stdout
+    res = run(["gcloud", "storage", "ls", "gs://kernelctf-build/releases/"]).stdout
     return [os.path.basename(line.rstrip('/')) for line in res.splitlines()]
 
 def activate_releases(auto_confirm, filter_releases=None):
@@ -80,7 +80,7 @@ def activate_releases(auto_confirm, filter_releases=None):
 def download_release(rel):
     target_dir = os.path.join(STAGING_DIR, rel)
     os.makedirs(target_dir, exist_ok=True)
-    run(["gsutil", "rsync", "-rx", ".*vmlinux.gz|.*dbgsym.*", f"gs://kernelctf-build/releases/{rel}", target_dir])
+    run(["gcloud", "storage", "rsync", "--recursive", "--exclude", ".*vmlinux.gz|.*dbgsym.*", f"gs://kernelctf-build/releases/{rel}", target_dir])
 
 def get_scheduled_releases():
     if os.path.exists(RELEASES_YAML):
