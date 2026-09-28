@@ -100,6 +100,29 @@ class TestDetectPrefixAndTrim(unittest.TestCase):
             "net/socket.c:100:5:100:20",
         )
 
+    def test_trim_filename_preserves_nested_top_dirs(self):
+        """Verifies paths with inner top-dir names (e.g. drivers/block/) keep outer dir."""
+        self.assertEqual(
+            trim_filename("drivers/block/loop.c", ""),
+            "drivers/block/loop.c",
+        )
+        self.assertEqual(
+            trim_filename("include/crypto/internal/rng.h", ""),
+            "include/crypto/internal/rng.h",
+        )
+        self.assertEqual(
+            trim_filename("lib/crypto/memneq.c", ""),
+            "lib/crypto/memneq.c",
+        )
+        self.assertEqual(
+            trim_filename("/opt/linux/drivers/block/loop.c", ""),
+            "drivers/block/loop.c",
+        )
+        self.assertEqual(
+            trim_filename("/opt/linux/include/crypto/internal/rng.h", ""),
+            "include/crypto/internal/rng.h",
+        )
+
 
 class BaseImporterTest(unittest.TestCase):
     """Base test case managing temporary SQLite DB and CSV paths."""

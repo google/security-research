@@ -78,13 +78,19 @@ def trim_filename(path: str, prefix: str = "") -> str:
     if clean_prefix and path.startswith(clean_prefix):
         return path[len(clean_prefix) :]
 
-    # Fallback for individual paths that did not match the detected root prefix
+    if path.startswith(KERNEL_TOP_DIRS):
+        return path
+
+    # Fallback for individual paths that did not match the detected root prefix:
+    # choose the earliest (outermost) top-level kernel directory match.
+    earliest_idx = -1
     for top_dir in KERNEL_TOP_DIRS:
         idx = path.find("/" + top_dir)
-        if idx != -1:
-            return path[idx + 1 :]
-        if path.startswith(top_dir):
-            return path
+        if idx != -1 and (earliest_idx == -1 or idx < earliest_idx):
+            earliest_idx = idx
+
+    if earliest_idx != -1:
+        return path[earliest_idx + 1 :]
 
     return path
 
