@@ -27,7 +27,7 @@ class TestValidationHelpers(unittest.TestCase):
             kconfig_dump.can_read_dir("/nonexistent_dir_kconfig_xyz")
 
     def test_can_create_file_valid_and_invalid(self):
-        """Verify can_create_file accepts writable parent dirs and rejects bad ones."""
+        """Verify can_create_file accepts valid parent dirs and rejects bad."""
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "out.db")
             self.assertEqual(kconfig_dump.can_create_file(target), target)
@@ -36,7 +36,7 @@ class TestValidationHelpers(unittest.TestCase):
 
 
 class TestMakefileParsing(unittest.TestCase):
-    """Test Makefile/Kbuild parsing, composite modules, and subdir inheritance."""
+    """Test Makefile/Kbuild parsing, composite modules, and subdir rules."""
 
     def test_join_continuation_lines(self):
         """Verify backslash line continuations and comments are normalized."""
@@ -52,7 +52,7 @@ class TestMakefileParsing(unittest.TestCase):
         self.assertEqual(joined[1][1], "obj-$(CONFIG_BAR) += c.o")
 
     def test_parse_single_makefile_direct_and_composite(self):
-        """Verify direct obj-$(CONFIG_*), composite modules, and ifdef blocks."""
+        """Verify direct obj-$(CONFIG_*), composites, and conditionals."""
         content = """
 obj-$(CONFIG_NETFILTER) += netfilter/
 obj-$(CONFIG_NF_TABLES) += nf_tables_api.o
@@ -65,6 +65,12 @@ ifdef CONFIG_DEBUG_FS
 obj-y += debugfs_helper.o
 else
 obj-y += fallback_helper.o
+endif
+
+ifeq ($(CONFIG_FOO),m)
+obj-y += foo_mod.o
+else ifeq ($(CONFIG_BAR),y)
+obj-y += bar_builtin.o
 endif
 """
         with tempfile.NamedTemporaryFile(
@@ -92,6 +98,8 @@ endif
             self.assertEqual(
                 file_cfgs.get("fallback_helper.c"), {"!CONFIG_DEBUG_FS"}
             )
+            self.assertEqual(file_cfgs.get("foo_mod.c"), {"CONFIG_FOO"})
+            self.assertEqual(file_cfgs.get("bar_builtin.c"), {"CONFIG_BAR"})
         finally:
             os.remove(tmp_path)
 
@@ -116,11 +124,12 @@ endif
                 fh.write("int a = 1;\nint b = 2;\nint c = 3;\n")
 
             rows = kconfig_dump.collect_makefile_configs(repo)
+            rel_c = "net/netfilter/nf_tables_api.c"
             self.assertEqual(
                 rows,
                 [
-                    ("CONFIG_NETFILTER", "net/netfilter/nf_tables_api.c", 1, 3, 0),
-                    ("CONFIG_NF_TABLES", "net/netfilter/nf_tables_api.c", 1, 3, 0),
+                    ("CONFIG_NETFILTER", rel_c, 1, 3, 0),
+                    ("CONFIG_NF_TABLES", rel_c, 1, 3, 0),
                 ],
             )
 
@@ -145,7 +154,8 @@ config NF_TABLES
 \ttristate "Netfilter nf_tables support"
 \tdepends on NET && \\
 \t\tINET
-\tselect NETFILTER_NETLINK
+\tselect NETFILTER_NETLINK if NET
+\tdefault m if EXPERIMENTAL
 \tdefault n
 \thelp
 \t  This help text mentions default y and select BOGUS_SYM
@@ -165,8 +175,8 @@ menuconfig KVM_VFIO
             self.assertEqual(nft[1], "tristate")
             self.assertEqual(nft[2], "Netfilter nf_tables support")
             self.assertEqual(nft[3], "NET && INET")
-            self.assertEqual(nft[4], "NETFILTER_NETLINK")
-            self.assertEqual(nft[5], "n")
+            self.assertEqual(nft[4], "NETFILTER_NETLINK if NET")
+            self.assertEqual(nft[5], "m if EXPERIMENTAL; n")
             self.assertEqual(nft[6], "y")
 
             vfio = by_name["CONFIG_KVM_VFIO"]

@@ -14,6 +14,7 @@ Parses two complementary sources from a Linux kernel source tree (--repo_dir):
 
 import argparse
 from contextlib import closing
+from dataclasses import dataclass, field
 import logging
 import os
 import re
@@ -21,21 +22,64 @@ import sqlite3
 from typing import Dict, List, Optional, Set, Tuple
 
 CONFIG_TOKEN_RE = re.compile(r"\b(CONFIG_[A-Za-z0-9_]+)\b")
-OBJ_ASSIGN_RE = re.compile(
-    r"^([A-Za-z0-9_$()-]+)\s*(?:\+=|:=|=)\s*(.*)$"
-)
+OBJ_ASSIGN_RE = re.compile(r"^([A-Za-z0-9_$()-]+)\s*(?:\+=|:=|=)\s*(.*)$")
 MAKEFILE_IFDEF_RE = re.compile(
     r"^\s*(ifdef|ifndef)\s+(CONFIG_[A-Za-z0-9_]+)\b"
 )
 MAKEFILE_IFEQ_RE = re.compile(
     r"^\s*(ifeq|ifneq)\s*\(\s*\$\((CONFIG_[A-Za-z0-9_]+)\)\s*,\s*([^)]*)\)"
 )
-KCONFIG_ENTRY_RE = re.compile(
-    r"^(?:menu)?config\s+([A-Za-z0-9_]+)\s*$"
-)
+KCONFIG_ENTRY_RE = re.compile(r"^(?:menu)?config\s+([A-Za-z0-9_]+)\s*$")
 KCONFIG_TYPE_RE = re.compile(
     r"^\s*(bool|tristate|string|hex|int)(?:\s+\"(.*)\")?"
 )
+DOT_CONFIG_UNSET_RE = re.compile(
+    r"^#\s*(CONFIG_[A-Za-z0-9_]+)\s+is not set\b"
+)
+DOT_CONFIG_ASSIGN_RE = re.compile(r"^(CONFIG_[A-Za-z0-9_]+)=(.*)$")
+
+SKIP_DIRS = {"Documentation", "scripts", "samples", "tools"}
+TOP_LEVEL_PREFIXES = {
+    "obj",
+    "lib",
+    "core",
+    "drivers",
+    "net",
+    "fs",
+    "virt",
+    "sound",
+    "arch",
+}
+
+KconfigRow = Tuple[str, str, str, str, str, str, str, str, int]
+MakefileRow = Tuple[str, str, int, int, int]
+
+
+@dataclass
+class _KconfigEntry:
+    """In-memory accumulator for a single Kconfig symbol definition."""
+
+    config: str
+    line_no: int
+    sym_type: str = ""
+    prompt: str = ""
+    depends: List[str] = field(default_factory=list)
+    selects: List[str] = field(default_factory=list)
+    defaults: List[str] = field(default_factory=list)
+
+    def to_row(self, build_vals: Dict[str, str], rel_path: str) -> KconfigRow:
+        """Formats the accumulated entry as a 9-tuple for `kconfig_symbols`."""
+        return (
+            self.config,
+            self.sym_type,
+            self.prompt,
+            " && ".join(self.depends),
+            ", ".join(self.selects),
+            "; ".join(self.defaults),
+            build_vals.get(self.config, ""),
+            rel_path,
+            self.line_no,
+        )
 
 
 def can_read_dir(dirname: str) -> str:
@@ -58,13 +102,13 @@ def can_create_file(filename: str) -> str:
 
 
 def join_continuation_lines(lines: List[str]) -> List[Tuple[int, str]]:
-    """Joins backslash-continued lines in a Makefile, returning (line_no, text)."""
+    """Joins backslash-continued Makefile lines into (line_no, text) pairs."""
     joined: List[Tuple[int, str]] = []
     buf = ""
     start_line = 1
     for idx, raw_line in enumerate(lines, start=1):
         line = raw_line.rstrip("\r\n")
-        # Strip inline comments unless inside quotes
+        # Strip inline Make comments
         if "#" in line:
             line = line.split("#", 1)[0]
         if not buf:
@@ -108,14 +152,34 @@ def _invert_config(cfg: str) -> str:
     return cfg[1:] if cfg.startswith("!") else f"!{cfg}"
 
 
-def parse_single_makefile(  # pylint: disable=too-many-locals,too-many-branches
+def _update_cond_stack(line: str, cond_stack: List[Optional[str]]) -> bool:
+    """Updates `cond_stack` if `line` is a Makefile conditional directive."""
+    if line.startswith(("ifdef ", "ifndef ", "ifeq", "ifneq")):
+        cond_stack.append(_parse_makefile_condition(line))
+        return True
+    if line == "else":
+        if cond_stack and cond_stack[-1] is not None:
+            cond_stack[-1] = _invert_config(cond_stack[-1])
+        return True
+    if line.startswith("else "):
+        if cond_stack:
+            cond_stack[-1] = _parse_makefile_condition(line[5:].strip())
+        return True
+    if line.startswith("endif"):
+        if cond_stack:
+            cond_stack.pop()
+        return True
+    return False
+
+
+def parse_single_makefile(
     makefile_path: str,
 ) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
     """Parses a single Makefile or Kbuild file.
 
     Returns:
       - file_configs: mapping of local `.c` filename -> set of CONFIG_* guards
-      - subdir_configs: mapping of local subdirectory name -> set of CONFIG_* guards
+      - subdir_configs: mapping of local subdir name -> set of CONFIG_* guards
     """
     try:
         with open(makefile_path, "r", encoding="utf-8", errors="replace") as fh:
@@ -123,28 +187,13 @@ def parse_single_makefile(  # pylint: disable=too-many-locals,too-many-branches
     except OSError:
         return {}, {}
 
-    joined_lines = join_continuation_lines(raw_lines)
-
-    # Track direct and composite rules:
-    # target_configs[stem] = set of CONFIG_* gating `obj-$(CONFIG_X) += stem.o`
     target_configs: Dict[str, Set[str]] = {}
-    # composite_members[stem] = list of (member_stem, extra_configs_set)
     composite_members: Dict[str, List[Tuple[str, Set[str]]]] = {}
     subdir_configs: Dict[str, Set[str]] = {}
-
     cond_stack: List[Optional[str]] = []
 
-    for _line_no, line in joined_lines:
-        if line.startswith(("ifdef ", "ifndef ", "ifeq", "ifneq")):
-            cond_stack.append(_parse_makefile_condition(line))
-            continue
-        if line == "else" or line.startswith("else "):
-            if cond_stack and cond_stack[-1] is not None:
-                cond_stack[-1] = _invert_config(cond_stack[-1])
-            continue
-        if line.startswith("endif"):
-            if cond_stack:
-                cond_stack.pop()
+    for _line_no, line in join_continuation_lines(raw_lines):
+        if _update_cond_stack(line, cond_stack):
             continue
 
         m_assign = OBJ_ASSIGN_RE.match(line)
@@ -154,21 +203,8 @@ def parse_single_makefile(  # pylint: disable=too-many-locals,too-many-branches
         lhs, rhs = m_assign.group(1), m_assign.group(2)
         active_conds = {c for c in cond_stack if c is not None}
         lhs_configs = set(CONFIG_TOKEN_RE.findall(lhs)) | active_conds
-
-        # Determine if LHS is top-level (obj-*, lib-*, hostprogs-*, core-*, etc.)
-        # or a composite module definition (<mod>-y, <mod>-objs, <mod>-$(CONFIG_*))
         lhs_prefix = lhs.split("-", 1)[0] if "-" in lhs else lhs
-        is_top_level = lhs_prefix in (
-            "obj",
-            "lib",
-            "core",
-            "drivers",
-            "net",
-            "fs",
-            "virt",
-            "sound",
-            "arch",
-        )
+        is_top_level = lhs_prefix in TOP_LEVEL_PREFIXES
 
         for token in rhs.split():
             if token.startswith(("$", "-", "+")):
@@ -177,8 +213,7 @@ def parse_single_makefile(  # pylint: disable=too-many-locals,too-many-branches
                 subdir = token.rstrip("/")
                 if subdir and "/" not in subdir:
                     subdir_configs.setdefault(subdir, set()).update(lhs_configs)
-                continue
-            if token.endswith(".o"):
+            elif token.endswith(".o"):
                 obj_stem = token[:-2]
                 if is_top_level:
                     target_configs.setdefault(obj_stem, set()).update(
@@ -189,58 +224,47 @@ def parse_single_makefile(  # pylint: disable=too-many-locals,too-many-branches
                         (obj_stem, set(lhs_configs))
                     )
 
-    file_configs: Dict[str, Set[str]] = {}
-    # 1. Direct .o -> .c mappings
-    for stem, cfgs in target_configs.items():
-        if stem not in composite_members:
-            file_configs.setdefault(f"{stem}.c", set()).update(cfgs)
-
-    # 2. Composite module mappings (e.g., kvm.o -> kvm_main.o, vfio.o)
+    file_configs: Dict[str, Set[str]] = {
+        f"{stem}.c": set(cfgs)
+        for stem, cfgs in target_configs.items()
+        if stem not in composite_members
+    }
     for mod_stem, members in composite_members.items():
         parent_cfgs = target_configs.get(mod_stem, set())
         for member_stem, member_cfgs in members:
-            combined = set(parent_cfgs) | set(member_cfgs)
-            file_configs.setdefault(f"{member_stem}.c", set()).update(combined)
+            file_configs.setdefault(f"{member_stem}.c", set()).update(
+                parent_cfgs | member_cfgs
+            )
 
     return file_configs, subdir_configs
 
 
 def count_file_lines(filepath: str) -> int:
-    """Returns total line count of a file (at least 2 for valid ifdef < endif)."""
+    """Returns total line count of a file (minimum 2 for ifdef < endif)."""
     try:
         with open(filepath, "rb") as fh:
-            count = sum(1 for _ in fh)
-        return max(count, 2)
+            return max(sum(1 for _ in fh), 2)
     except OSError:
         return 2
 
 
-def collect_makefile_configs(
-    repo_dir: str,
-) -> List[Tuple[str, str, int, int, int]]:
+def collect_makefile_configs(repo_dir: str) -> List[MakefileRow]:
     """Walks repo_dir top-down to extract file-level Makefile CONFIG_* guards.
 
     Returns list of 5-tuples matching the `configs` table schema:
       (config, relative_file_path, ifdef=1, endif=file_lines, else_=0)
     """
     repo_root = os.path.abspath(repo_dir)
-    # dir_inherited_configs[rel_dir] = set of CONFIG_* inherited from parent dirs
     dir_inherited: Dict[str, Set[str]] = {"": set()}
-    records: Set[Tuple[str, str, int, int, int]] = set()
+    records: Set[MakefileRow] = set()
 
     for root, dirs, files in os.walk(repo_root):
-        # Skip hidden directories (.git) and Documentation/scripts/tools/samples
         dirs[:] = sorted(
-            d
-            for d in dirs
-            if not d.startswith(".")
-            and d not in ("Documentation", "scripts", "samples")
+            d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS
         )
         rel_dir = os.path.relpath(root, repo_root)
-        if rel_dir == ".":
-            rel_dir = ""
-
-        inherited = set(dir_inherited.get(rel_dir, set()))
+        rel_dir = "" if rel_dir == "." else rel_dir
+        inherited = dir_inherited.get(rel_dir, set())
 
         makefile_name = (
             "Kbuild"
@@ -249,28 +273,25 @@ def collect_makefile_configs(
         )
         local_file_cfgs: Dict[str, Set[str]] = {}
         local_subdir_cfgs: Dict[str, Set[str]] = {}
-
         if makefile_name:
-            mf_path = os.path.join(root, makefile_name)
-            local_file_cfgs, local_subdir_cfgs = parse_single_makefile(mf_path)
+            local_file_cfgs, local_subdir_cfgs = parse_single_makefile(
+                os.path.join(root, makefile_name)
+            )
 
-        # Propagate directory configs to child directories
         for d in dirs:
             child_rel = os.path.join(rel_dir, d) if rel_dir else d
-            child_cfgs = set(inherited) | local_subdir_cfgs.get(d, set())
-            dir_inherited[child_rel] = child_cfgs
+            dir_inherited[child_rel] = inherited | local_subdir_cfgs.get(
+                d, set()
+            )
 
-        # Assign configs to existing .c files in this directory
-        c_files = [f for f in files if f.endswith(".c")]
-        for c_file in c_files:
-            all_cfgs = set(inherited) | local_file_cfgs.get(c_file, set())
+        for c_file in (f for f in files if f.endswith(".c")):
+            all_cfgs = inherited | local_file_cfgs.get(c_file, set())
             if not all_cfgs:
                 continue
-            full_c_path = os.path.join(root, c_file)
             rel_c_path = (
                 os.path.join(rel_dir, c_file) if rel_dir else c_file
             ).replace("\\", "/")
-            end_line = count_file_lines(full_c_path)
+            end_line = count_file_lines(os.path.join(root, c_file))
             for cfg in sorted(all_cfgs):
                 records.add((cfg, rel_c_path, 1, end_line, 0))
 
@@ -283,20 +304,17 @@ def parse_dot_config(dot_config_path: str) -> Dict[str, str]:
     if not dot_config_path or not os.path.isfile(dot_config_path):
         return build_vals
 
-    not_set_re = re.compile(r"^#\s*(CONFIG_[A-Z0-9_]+)\s+is not set\b")
-    assign_re = re.compile(r"^(CONFIG_[A-Z0-9_]+)=(.*)$")
-
     try:
         with open(
             dot_config_path, "r", encoding="utf-8", errors="replace"
         ) as fh:
             for raw_line in fh:
                 line = raw_line.strip()
-                m_unset = not_set_re.match(line)
+                m_unset = DOT_CONFIG_UNSET_RE.match(line)
                 if m_unset:
                     build_vals[m_unset.group(1)] = "n"
                     continue
-                m_set = assign_re.match(line)
+                m_set = DOT_CONFIG_ASSIGN_RE.match(line)
                 if m_set:
                     build_vals[m_set.group(1)] = m_set.group(2).strip()
     except OSError:
@@ -305,26 +323,20 @@ def parse_dot_config(dot_config_path: str) -> Dict[str, str]:
 
 
 def _join_kconfig_lines(raw_lines: List[str]) -> List[Tuple[int, str]]:
-    """Joins backslash-continued lines in a Kconfig file, preserving leading indent."""
+    """Joins backslash-continued Kconfig lines, preserving leading indent."""
     joined: List[Tuple[int, str]] = []
     buf = ""
     start_line = 1
     for idx, raw_line in enumerate(raw_lines, start=1):
         line = raw_line.rstrip("\r\n")
+        part = line.strip() if buf else line
         if not buf:
             start_line = idx
-            if line.endswith("\\"):
-                buf = line[:-1].rstrip() + " "
-            else:
-                joined.append((start_line, line))
+        if part.endswith("\\"):
+            buf += part[:-1].rstrip() + " "
         else:
-            cont = line.strip()
-            if cont.endswith("\\"):
-                buf += cont[:-1].rstrip() + " "
-            else:
-                buf += cont
-                joined.append((start_line, buf))
-                buf = ""
+            joined.append((start_line, buf + part))
+            buf = ""
     if buf:
         joined.append((start_line, buf.rstrip()))
     return joined
@@ -343,9 +355,34 @@ def _indent_width(line: str) -> int:
     return width
 
 
-def parse_kconfig_file(  # pylint: disable=too-many-locals,too-many-branches
+def _apply_kconfig_attribute(
+    entry: _KconfigEntry, line: str, stripped: str
+) -> None:
+    """Updates `entry` with a single indented Kconfig attribute line."""
+    m_type = KCONFIG_TYPE_RE.match(line)
+    if m_type and not entry.sym_type:
+        entry.sym_type = m_type.group(1)
+        if m_type.group(2):
+            entry.prompt = m_type.group(2)
+    elif stripped.startswith("prompt ") and not entry.prompt:
+        entry.prompt = stripped[7:].strip().strip('"')
+    elif stripped.startswith("depends on "):
+        entry.depends.append(stripped[len("depends on ") :].strip())
+    elif stripped.startswith("select "):
+        entry.selects.append(stripped[len("select ") :].strip())
+    elif stripped.startswith(("default ", "def_bool ", "def_tristate ")):
+        parts = stripped.split(None, 1)
+        if len(parts) == 2:
+            entry.defaults.append(parts[1].strip())
+            if parts[0] == "def_bool" and not entry.sym_type:
+                entry.sym_type = "bool"
+            elif parts[0] == "def_tristate" and not entry.sym_type:
+                entry.sym_type = "tristate"
+
+
+def parse_kconfig_file(
     kconfig_path: str, rel_path: str, build_vals: Dict[str, str]
-) -> List[Tuple[str, str, str, str, str, str, str, str, int]]:
+) -> List[KconfigRow]:
     """Parses a single Kconfig file into symbol metadata tuples."""
     try:
         with open(kconfig_path, "r", encoding="utf-8", errors="replace") as fh:
@@ -353,43 +390,21 @@ def parse_kconfig_file(  # pylint: disable=too-many-locals,too-many-branches
     except OSError:
         return []
 
-    symbols: List[Tuple[str, str, str, str, str, str, str, str, int]] = []
-    curr_sym: Optional[Dict[str, object]] = None
+    entries: List[_KconfigEntry] = []
+    curr: Optional[_KconfigEntry] = None
     help_indent: Optional[int] = None
-
-    def _flush_current() -> None:
-        if not curr_sym:
-            return
-        cfg_name = str(curr_sym["config"])
-        symbols.append((
-            cfg_name,
-            str(curr_sym["type"]),
-            str(curr_sym["prompt"]),
-            " && ".join(curr_sym["depends"]),  # type: ignore[arg-type]
-            ", ".join(curr_sym["selects"]),  # type: ignore[arg-type]
-            str(curr_sym["default"]),
-            build_vals.get(cfg_name, ""),
-            rel_path,
-            int(curr_sym["line_no"]),  # type: ignore[arg-type]
-        ))
 
     for idx, line in _join_kconfig_lines(raw_lines):
         m_entry = KCONFIG_ENTRY_RE.match(line)
         if m_entry:
-            _flush_current()
             help_indent = None
-            curr_sym = {
-                "config": f"CONFIG_{m_entry.group(1)}",
-                "type": "",
-                "prompt": "",
-                "depends": [],
-                "selects": [],
-                "default": "",
-                "line_no": idx,
-            }
+            curr = _KconfigEntry(
+                config=f"CONFIG_{m_entry.group(1)}", line_no=idx
+            )
+            entries.append(curr)
             continue
 
-        if curr_sym is None:
+        if curr is None:
             continue
 
         stripped = line.strip()
@@ -402,46 +417,23 @@ def parse_kconfig_file(  # pylint: disable=too-many-locals,too-many-branches
                 continue
             help_indent = None
 
-        # End of config block when hitting a new top-level keyword
         if cur_indent == 0:
-            _flush_current()
-            curr_sym = None
+            curr = None
             continue
 
         if stripped in ("help", "---help---"):
             help_indent = cur_indent
             continue
 
-        m_type = KCONFIG_TYPE_RE.match(line)
-        if m_type and not curr_sym["type"]:
-            curr_sym["type"] = m_type.group(1)
-            if m_type.group(2):
-                curr_sym["prompt"] = m_type.group(2)
-        elif stripped.startswith("prompt ") and not curr_sym["prompt"]:
-            curr_sym["prompt"] = stripped[7:].strip().strip('"')
-        elif stripped.startswith("depends on "):
-            dep = stripped[len("depends on ") :].strip()
-            curr_sym["depends"].append(dep)  # type: ignore[attr-defined]
-        elif stripped.startswith("select "):
-            sel = stripped[len("select ") :].split()[0].strip()
-            curr_sym["selects"].append(sel)  # type: ignore[attr-defined]
-        elif stripped.startswith(("default ", "def_bool ", "def_tristate ")):
-            parts = stripped.split(None, 1)
-            if len(parts) == 2 and not curr_sym["default"]:
-                curr_sym["default"] = parts[1].strip()
-                if parts[0] == "def_bool" and not curr_sym["type"]:
-                    curr_sym["type"] = "bool"
-                elif parts[0] == "def_tristate" and not curr_sym["type"]:
-                    curr_sym["type"] = "tristate"
+        _apply_kconfig_attribute(curr, line, stripped)
 
-    _flush_current()
-    return symbols
+    return [entry.to_row(build_vals, rel_path) for entry in entries]
 
 
 def collect_kconfig_symbols(
     repo_dir: str, dot_config_path: Optional[str] = None
-) -> List[Tuple[str, str, str, str, str, str, str, str, int]]:
-    """Walks repo_dir to parse all Kconfig* files and optional .config values."""
+) -> List[KconfigRow]:
+    """Walks repo_dir to parse all Kconfig* files and .config build values."""
     repo_root = os.path.abspath(repo_dir)
     if not dot_config_path:
         candidate = os.path.join(repo_root, ".config")
@@ -449,12 +441,11 @@ def collect_kconfig_symbols(
             dot_config_path = candidate
     build_vals = parse_dot_config(dot_config_path or "")
 
-    all_symbols: List[Tuple[str, str, str, str, str, str, str, str, int]] = []
+    all_symbols: List[KconfigRow] = []
     for root, dirs, files in os.walk(repo_root):
         dirs[:] = sorted(d for d in dirs if not d.startswith("."))
         rel_dir = os.path.relpath(root, repo_root)
-        if rel_dir == ".":
-            rel_dir = ""
+        rel_dir = "" if rel_dir == "." else rel_dir
         for fname in sorted(files):
             if fname == "Kconfig" or fname.startswith("Kconfig."):
                 full_p = os.path.join(root, fname)
@@ -469,10 +460,10 @@ def collect_kconfig_symbols(
 
 def store_kconfig_data(
     db_file: str,
-    makefile_rows: List[Tuple[str, str, int, int, int]],
-    kconfig_symbols: List[Tuple[str, str, str, str, str, str, str, str, int]],
+    makefile_rows: List[MakefileRow],
+    kconfig_symbols: List[KconfigRow],
 ) -> Tuple[int, int]:
-    """Writes Makefile config rows into `configs` and symbols into `kconfig_symbols`."""
+    """Stores Makefile rows in `configs` and symbols in `kconfig_symbols`."""
     with closing(sqlite3.connect(db_file)) as conn:
         conn.execute("PRAGMA synchronous = OFF;")
         conn.execute("PRAGMA journal_mode = MEMORY;")
@@ -486,7 +477,6 @@ def store_kconfig_data(
                     else_ INTEGER
                 )
             """)
-            # Avoid duplicate insertion if run multiple times on the same DB
             existing_rows = set(
                 cur.execute(
                     "SELECT config, path, ifdef, endif, else_ FROM configs"
@@ -557,7 +547,10 @@ def main() -> None:
     parser.add_argument(
         "--dot_config",
         default=None,
-        help="Optional path to .config build file (defaults to <repo_dir>/.config).",
+        help=(
+            "Optional path to .config build file (defaults to"
+            " <repo_dir>/.config)."
+        ),
     )
     args = parser.parse_args()
 

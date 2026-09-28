@@ -101,7 +101,7 @@ class TestDetectPrefixAndTrim(unittest.TestCase):
         )
 
     def test_trim_filename_preserves_nested_top_dirs(self):
-        """Verifies paths with inner top-dir names (e.g. drivers/block/) keep outer dir."""
+        """Verifies paths with inner top-dir names keep their outer dir."""
         self.assertEqual(
             trim_filename("drivers/block/loop.c", ""),
             "drivers/block/loop.c",

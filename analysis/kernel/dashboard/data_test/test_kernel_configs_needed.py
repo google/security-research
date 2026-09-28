@@ -96,7 +96,7 @@ def test_configs_every_row_contains_valid_config_token(configs):
 
 
 def test_configs_captures_negations_and_expressions(configs):
-    """Verify #ifndef (!CONFIG_*), defined(CONFIG_*), and IS_ENABLED(CONFIG_*)."""
+    """Verify #ifndef (!CONFIG_*), defined(...), and IS_ENABLED(...)."""
     negated = [r for r in configs if r["config"].startswith("!")]
     defined_exprs = [r for r in configs if "defined(" in r["config"]]
     is_enabled_exprs = [
