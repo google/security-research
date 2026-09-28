@@ -133,6 +133,28 @@ def _update_cond_stack(line: str, cond_stack: List[Optional[str]]) -> bool:
     return False
 
 
+def _resolve_composite_configs(
+    edges: List[Tuple[str, str]], stem_configs: Dict[str, Set[str]]
+) -> Dict[str, Set[str]]:
+    """Propagates parent CONFIG_* guards across composite edges to fixpoint."""
+    composite_parents = {lhs for lhs, rhs in edges if lhs != rhs}
+    self_included = {lhs for lhs, rhs in edges if lhs == rhs}
+    changed = True
+    while changed:
+        changed = False
+        for lhs_prefix, obj_stem in edges:
+            parent_cfgs = stem_configs.get(lhs_prefix)
+            if parent_cfgs and not parent_cfgs.issubset(stem_configs[obj_stem]):
+                stem_configs[obj_stem].update(parent_cfgs)
+                changed = True
+
+    return {
+        f"{stem}.c": cfgs
+        for stem, cfgs in stem_configs.items()
+        if stem not in composite_parents or stem in self_included
+    }
+
+
 def parse_single_makefile(
     makefile_path: str,
 ) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
@@ -178,18 +200,7 @@ def parse_single_makefile(
                 stem_configs.setdefault(obj_stem, set()).update(lhs_configs)
                 edges.append((lhs_prefix, obj_stem))
 
-    composite_parents = {lhs for lhs, rhs in edges if lhs != rhs}
-    self_included = {lhs for lhs, rhs in edges if lhs == rhs}
-    for lhs_prefix, obj_stem in edges:
-        if lhs_prefix in stem_configs:
-            stem_configs[obj_stem].update(stem_configs[lhs_prefix])
-
-    file_configs = {
-        f"{stem}.c": cfgs
-        for stem, cfgs in stem_configs.items()
-        if stem not in composite_parents or stem in self_included
-    }
-    return file_configs, subdir_configs
+    return _resolve_composite_configs(edges, stem_configs), subdir_configs
 
 
 def count_file_lines(filepath: str) -> int:

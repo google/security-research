@@ -62,6 +62,10 @@ obj-$(CONFIG_KVM) += kvm.o
 kvm-y := kvm_main.o coalesced_mmio.o
 kvm-$(CONFIG_KVM_VFIO) += vfio.o
 
+sub-y := deep_leaf.o
+mod-y := sub.o
+obj-$(CONFIG_DEEP) += mod.o
+
 ifdef CONFIG_DEBUG_FS
 obj-y += debugfs_helper.o
 else
@@ -96,6 +100,7 @@ endif
             self.assertEqual(
                 file_cfgs.get("vfio.c"), {"CONFIG_KVM", "CONFIG_KVM_VFIO"}
             )
+            self.assertEqual(file_cfgs.get("deep_leaf.c"), {"CONFIG_DEEP"})
             self.assertEqual(
                 file_cfgs.get("debugfs_helper.c"), {"CONFIG_DEBUG_FS"}
             )
@@ -105,6 +110,8 @@ endif
             self.assertEqual(file_cfgs.get("foo_mod.c"), {"CONFIG_FOO"})
             self.assertEqual(file_cfgs.get("bar_builtin.c"), {"CONFIG_BAR"})
             self.assertNotIn("kvm.c", file_cfgs)
+            self.assertNotIn("mod.c", file_cfgs)
+            self.assertNotIn("sub.c", file_cfgs)
         finally:
             os.remove(tmp_path)
 
