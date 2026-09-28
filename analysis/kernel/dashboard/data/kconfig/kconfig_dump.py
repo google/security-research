@@ -14,12 +14,11 @@ Parses two complementary sources from a Linux kernel source tree (--repo_dir):
 
 import argparse
 from contextlib import closing
-from dataclasses import dataclass, field
 import logging
 import os
 import re
 import sqlite3
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 CONFIG_TOKEN_RE = re.compile(r"\b(CONFIG_[A-Za-z0-9_]+)\b")
 OBJ_ASSIGN_RE = re.compile(r"^([A-Za-z0-9_$()-]+)\s*(?:\+=|:=|=)\s*(.*)$")
@@ -39,47 +38,9 @@ DOT_CONFIG_UNSET_RE = re.compile(
 DOT_CONFIG_ASSIGN_RE = re.compile(r"^(CONFIG_[A-Za-z0-9_]+)=(.*)$")
 
 SKIP_DIRS = {"Documentation", "scripts", "samples", "tools"}
-TOP_LEVEL_PREFIXES = {
-    "obj",
-    "lib",
-    "core",
-    "drivers",
-    "net",
-    "fs",
-    "virt",
-    "sound",
-    "arch",
-}
 
 KconfigRow = Tuple[str, str, str, str, str, str, str, str, int]
 MakefileRow = Tuple[str, str, int, int, int]
-
-
-@dataclass
-class _KconfigEntry:
-    """In-memory accumulator for a single Kconfig symbol definition."""
-
-    config: str
-    line_no: int
-    sym_type: str = ""
-    prompt: str = ""
-    depends: List[str] = field(default_factory=list)
-    selects: List[str] = field(default_factory=list)
-    defaults: List[str] = field(default_factory=list)
-
-    def to_row(self, build_vals: Dict[str, str], rel_path: str) -> KconfigRow:
-        """Formats the accumulated entry as a 9-tuple for `kconfig_symbols`."""
-        return (
-            self.config,
-            self.sym_type,
-            self.prompt,
-            " && ".join(self.depends),
-            ", ".join(self.selects),
-            "; ".join(self.defaults),
-            build_vals.get(self.config, ""),
-            rel_path,
-            self.line_no,
-        )
 
 
 def can_read_dir(dirname: str) -> str:
@@ -187,8 +148,8 @@ def parse_single_makefile(
     except OSError:
         return {}, {}
 
-    target_configs: Dict[str, Set[str]] = {}
-    composite_members: Dict[str, List[Tuple[str, Set[str]]]] = {}
+    edges: List[Tuple[str, str]] = []
+    stem_configs: Dict[str, Set[str]] = {}
     subdir_configs: Dict[str, Set[str]] = {}
     cond_stack: List[Optional[str]] = []
 
@@ -204,7 +165,6 @@ def parse_single_makefile(
         active_conds = {c for c in cond_stack if c is not None}
         lhs_configs = set(CONFIG_TOKEN_RE.findall(lhs)) | active_conds
         lhs_prefix = lhs.split("-", 1)[0] if "-" in lhs else lhs
-        is_top_level = lhs_prefix in TOP_LEVEL_PREFIXES
 
         for token in rhs.split():
             if token.startswith(("$", "-", "+")):
@@ -215,27 +175,20 @@ def parse_single_makefile(
                     subdir_configs.setdefault(subdir, set()).update(lhs_configs)
             elif token.endswith(".o"):
                 obj_stem = token[:-2]
-                if is_top_level:
-                    target_configs.setdefault(obj_stem, set()).update(
-                        lhs_configs
-                    )
-                else:
-                    composite_members.setdefault(lhs_prefix, []).append(
-                        (obj_stem, set(lhs_configs))
-                    )
+                stem_configs.setdefault(obj_stem, set()).update(lhs_configs)
+                edges.append((lhs_prefix, obj_stem))
 
-    file_configs: Dict[str, Set[str]] = {
-        f"{stem}.c": set(cfgs)
-        for stem, cfgs in target_configs.items()
-        if stem not in composite_members
+    composite_parents = {lhs for lhs, rhs in edges if lhs != rhs}
+    self_included = {lhs for lhs, rhs in edges if lhs == rhs}
+    for lhs_prefix, obj_stem in edges:
+        if lhs_prefix in stem_configs:
+            stem_configs[obj_stem].update(stem_configs[lhs_prefix])
+
+    file_configs = {
+        f"{stem}.c": cfgs
+        for stem, cfgs in stem_configs.items()
+        if stem not in composite_parents or stem in self_included
     }
-    for mod_stem, members in composite_members.items():
-        parent_cfgs = target_configs.get(mod_stem, set())
-        for member_stem, member_cfgs in members:
-            file_configs.setdefault(f"{member_stem}.c", set()).update(
-                parent_cfgs | member_cfgs
-            )
-
     return file_configs, subdir_configs
 
 
@@ -356,28 +309,28 @@ def _indent_width(line: str) -> int:
 
 
 def _apply_kconfig_attribute(
-    entry: _KconfigEntry, line: str, stripped: str
+    entry: Dict[str, Any], line: str, stripped: str
 ) -> None:
-    """Updates `entry` with a single indented Kconfig attribute line."""
+    """Updates `entry` dict with a single indented Kconfig attribute line."""
     m_type = KCONFIG_TYPE_RE.match(line)
-    if m_type and not entry.sym_type:
-        entry.sym_type = m_type.group(1)
+    if m_type and not entry["type"]:
+        entry["type"] = m_type.group(1)
         if m_type.group(2):
-            entry.prompt = m_type.group(2)
-    elif stripped.startswith("prompt ") and not entry.prompt:
-        entry.prompt = stripped[7:].strip().strip('"')
+            entry["prompt"] = m_type.group(2)
+    elif stripped.startswith("prompt ") and not entry["prompt"]:
+        entry["prompt"] = stripped[7:].strip().strip('"')
     elif stripped.startswith("depends on "):
-        entry.depends.append(stripped[len("depends on ") :].strip())
+        entry["depends"].append(stripped[len("depends on ") :].strip())
     elif stripped.startswith("select "):
-        entry.selects.append(stripped[len("select ") :].strip())
+        entry["selects"].append(stripped[len("select ") :].strip())
     elif stripped.startswith(("default ", "def_bool ", "def_tristate ")):
         parts = stripped.split(None, 1)
         if len(parts) == 2:
-            entry.defaults.append(parts[1].strip())
-            if parts[0] == "def_bool" and not entry.sym_type:
-                entry.sym_type = "bool"
-            elif parts[0] == "def_tristate" and not entry.sym_type:
-                entry.sym_type = "tristate"
+            entry["defaults"].append(parts[1].strip())
+            if parts[0] == "def_bool" and not entry["type"]:
+                entry["type"] = "bool"
+            elif parts[0] == "def_tristate" and not entry["type"]:
+                entry["type"] = "tristate"
 
 
 def parse_kconfig_file(
@@ -390,17 +343,23 @@ def parse_kconfig_file(
     except OSError:
         return []
 
-    entries: List[_KconfigEntry] = []
-    curr: Optional[_KconfigEntry] = None
+    entries: List[Dict[str, Any]] = []
+    curr: Optional[Dict[str, Any]] = None
     help_indent: Optional[int] = None
 
     for idx, line in _join_kconfig_lines(raw_lines):
         m_entry = KCONFIG_ENTRY_RE.match(line)
         if m_entry:
             help_indent = None
-            curr = _KconfigEntry(
-                config=f"CONFIG_{m_entry.group(1)}", line_no=idx
-            )
+            curr = {
+                "config": f"CONFIG_{m_entry.group(1)}",
+                "type": "",
+                "prompt": "",
+                "depends": [],
+                "selects": [],
+                "defaults": [],
+                "line_no": idx,
+            }
             entries.append(curr)
             continue
 
@@ -427,7 +386,20 @@ def parse_kconfig_file(
 
         _apply_kconfig_attribute(curr, line, stripped)
 
-    return [entry.to_row(build_vals, rel_path) for entry in entries]
+    return [
+        (
+            e["config"],
+            e["type"],
+            e["prompt"],
+            " && ".join(e["depends"]),
+            ", ".join(e["selects"]),
+            "; ".join(e["defaults"]),
+            build_vals.get(e["config"], ""),
+            rel_path,
+            e["line_no"],
+        )
+        for e in entries
+    ]
 
 
 def collect_kconfig_symbols(

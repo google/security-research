@@ -56,6 +56,7 @@ class TestMakefileParsing(unittest.TestCase):
         content = """
 obj-$(CONFIG_NETFILTER) += netfilter/
 obj-$(CONFIG_NF_TABLES) += nf_tables_api.o
+custom_vendor-$(CONFIG_VENDOR_X) += vendor_drv.o
 
 obj-$(CONFIG_KVM) += kvm.o
 kvm-y := kvm_main.o coalesced_mmio.o
@@ -87,6 +88,9 @@ endif
             self.assertEqual(
                 file_cfgs.get("nf_tables_api.c"), {"CONFIG_NF_TABLES"}
             )
+            self.assertEqual(
+                file_cfgs.get("vendor_drv.c"), {"CONFIG_VENDOR_X"}
+            )
             self.assertEqual(file_cfgs.get("kvm_main.c"), {"CONFIG_KVM"})
             self.assertEqual(file_cfgs.get("coalesced_mmio.c"), {"CONFIG_KVM"})
             self.assertEqual(
@@ -100,6 +104,7 @@ endif
             )
             self.assertEqual(file_cfgs.get("foo_mod.c"), {"CONFIG_FOO"})
             self.assertEqual(file_cfgs.get("bar_builtin.c"), {"CONFIG_BAR"})
+            self.assertNotIn("kvm.c", file_cfgs)
         finally:
             os.remove(tmp_path)
 
