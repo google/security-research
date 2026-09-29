@@ -138,7 +138,7 @@ for REL in "${TARGET_RELEASES[@]}"; do
     if [ ! -f "$TARGET_DIR/bzImage" ]; then
         echo "Release $REL not found in $TARGET_DIR. Downloading from GCS..."
         mkdir -p "$TARGET_DIR"
-        gsutil rsync -rx '.*vmlinux.gz|.*dbgsym.*' "gs://kernelctf-build/releases/$REL" "$TARGET_DIR"
+        gcloud storage rsync --recursive --exclude '.*vmlinux.gz|.*dbgsym.*' "gs://kernelctf-build/releases/$REL" "$TARGET_DIR"
     else
         echo "Release $REL already exists in $TARGET_DIR, skipping download."
     fi
