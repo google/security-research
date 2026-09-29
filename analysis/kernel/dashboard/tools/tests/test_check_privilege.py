@@ -562,6 +562,96 @@ class TestCheckPrivilege(
         self.assertIn("internal_gates", parsed["target"])
         self.assertEqual(len(parsed["target"]["internal_gates"]), 1)
 
+    def test_kconfig_and_runtime_tunables(self):
+        """Verify Kconfig, sysctl, and module_param preconditions surface."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE configs (
+                config TEXT,
+                path TEXT,
+                ifdef INTEGER,
+                endif INTEGER,
+                else_ INTEGER
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE kconfig_symbols (
+                config TEXT NOT NULL,
+                type TEXT,
+                prompt TEXT,
+                depends_on TEXT,
+                select_list TEXT,
+                default_val TEXT,
+                build_val TEXT,
+                kconfig_file TEXT NOT NULL,
+                line_no INTEGER NOT NULL
+            )
+        """)
+        cur.execute(
+            "INSERT INTO configs VALUES (?, ?, ?, ?, ?)",
+            ("CONFIG_UNPRIV_FS", "fs/unpriv.c", 1, 100, 0),
+        )
+        cur.execute(
+            "INSERT INTO kconfig_symbols VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "CONFIG_UNPRIV_FS",
+                "tristate",
+                "Unpriv FS",
+                "BLOCK",
+                "",
+                "m",
+                "y",
+                "fs/Kconfig",
+                5,
+            ),
+        )
+        cur.executemany(
+            "INSERT INTO conditions VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "sysctl",
+                    "kernel/sysctl.c:100:2:105:2",
+                    "fs/unpriv.c:15:2:16:12",
+                    "sysctl_unpriv_enabled",
+                    "call to unpriv_worker",
+                    "fs/unpriv.c:20:5:20:18",
+                ),
+                (
+                    "module_param",
+                    "fs/unpriv.c:5:1:5:40",
+                    "fs/unpriv.c:42:2:43:12",
+                    "allow_experimental",
+                    "call to helper",
+                    "fs/unpriv.c:55:5:55:12",
+                ),
+            ],
+        )
+        self.conn.commit()
+
+        target_info, verdict, primary, all_res = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "fs/unpriv.c", 50
+            )
+        )
+        self.assertEqual(verdict, "REACHABLE WITH NO PRIVILEGE (UNGATED)")
+        self.assertEqual(primary["configs"], ["CONFIG_UNPRIV_FS"])
+        tun_strs = [t["cap_str"] for t in primary["tunables"]]
+        self.assertIn("sysctl(sysctl_unpriv_enabled)", tun_strs)
+        self.assertIn("module_param(allow_experimental)", tun_strs)
+
+        summary = check_privilege.format_summary(
+            target_info, verdict, primary, all_res
+        )
+        self.assertIn("Kernel Config Preconditions (CONFIG_*):", summary)
+        self.assertIn(
+            "CONFIG_UNPRIV_FS (.config=y; depends on: BLOCK)", summary
+        )
+        self.assertIn(
+            "Runtime Tunable Preconditions (sysctl / module_param):", summary
+        )
+        self.assertIn("sysctl(sysctl_unpriv_enabled)", summary)
+        self.assertIn("module_param(allow_experimental)", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

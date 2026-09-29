@@ -304,6 +304,80 @@ class TestFindPaths(unittest.TestCase):
         )
         self.assertTrue(target_info_syzk["syzkaller"]["configured"])
 
+    def test_kconfig_configs_and_else_polarity(self):
+        """Verify configs (#ifdef/#else/Makefile) and kconfig_symbols lookup."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE configs (
+                config TEXT,
+                path TEXT,
+                ifdef INTEGER,
+                endif INTEGER,
+                else_ INTEGER
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE kconfig_symbols (
+                config TEXT NOT NULL,
+                type TEXT,
+                prompt TEXT,
+                depends_on TEXT,
+                select_list TEXT,
+                default_val TEXT,
+                build_val TEXT,
+                kconfig_file TEXT NOT NULL,
+                line_no INTEGER NOT NULL
+            )
+        """)
+        cur.executemany(
+            "INSERT INTO configs VALUES (?, ?, ?, ?, ?)",
+            [
+                ("CONFIG_FS_INTERNAL", "fs/internal.c", 1, 200, 0),
+                ("CONFIG_FAST_PATH", "fs/internal.c", 100, 150, 120),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO kconfig_symbols VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "CONFIG_FS_INTERNAL",
+                "bool",
+                "Internal FS",
+                "FS_CORE",
+                "",
+                "y",
+                "y",
+                "fs/Kconfig",
+                10,
+            ),
+        )
+        self.conn.commit()
+
+        # Line 110 is before #else (120) -> CONFIG_FAST_PATH
+        cfgs_before = find_paths.get_line_configs(
+            self.conn, "fs/internal.c", 110
+        )
+        self.assertEqual(
+            cfgs_before, ["CONFIG_FS_INTERNAL", "CONFIG_FAST_PATH"]
+        )
+
+        # Line 125 is after #else (120) -> !CONFIG_FAST_PATH
+        target_info, paths = find_paths.find_paths_to_line(
+            self.db_path, "fs/internal.c", 125, target_syscall="__do_sys_foo"
+        )
+        self.assertEqual(
+            target_info["configs"],
+            ["CONFIG_FS_INTERNAL", "!CONFIG_FAST_PATH"],
+        )
+        self.assertIn("CONFIG_FS_INTERNAL", target_info["kconfig_metadata"])
+        tree = find_paths.format_tree(paths, target_info)
+        self.assertIn(
+            "Kernel Configs (Target): CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH",
+            tree,
+        )
+        self.assertIn(
+            "[Kconfig: CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH]", tree
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

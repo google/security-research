@@ -192,8 +192,8 @@ def parse_single_makefile(
             if token.startswith(("$", "-", "+")):
                 continue
             if token.endswith("/"):
-                subdir = token.rstrip("/")
-                if subdir and "/" not in subdir:
+                subdir = os.path.normpath(token.rstrip("/")).replace("\\", "/")
+                if subdir and subdir != "." and "$" not in subdir:
                     subdir_configs.setdefault(subdir, set()).update(lhs_configs)
             elif token.endswith(".o"):
                 obj_stem = token[:-2]
@@ -212,6 +212,46 @@ def count_file_lines(filepath: str) -> int:
         return 2
 
 
+def _resolve_c_file_path(
+    repo_root: str, current_dir: str, c_rel: str
+) -> Optional[str]:
+    """Resolves a Makefile `.c` path relative to `current_dir` or Kbuild."""
+    cand = os.path.normpath(os.path.join(current_dir, c_rel))
+    if os.path.isfile(cand) and cand.startswith(repo_root + os.sep):
+        return cand
+    if "/" in c_rel:
+        c_dir, c_base = os.path.split(c_rel)
+        cand_inc = os.path.join(current_dir, c_base)
+        if current_dir.replace("\\", "/").endswith(
+            "/" + c_dir
+        ) and os.path.isfile(cand_inc):
+            return cand_inc
+    return None
+
+
+def _propagate_subdir_configs(
+    rel_dir: str,
+    dirs: List[str],
+    inherited: Set[str],
+    local_subdir_cfgs: Dict[str, Set[str]],
+    dir_inherited: Dict[str, Set[str]],
+) -> None:
+    """Propagates inherited and local subdir CONFIG_* sets to child paths."""
+    for d in dirs:
+        child_rel = (os.path.join(rel_dir, d) if rel_dir else d).replace(
+            "\\", "/"
+        )
+        dir_inherited.setdefault(child_rel, set()).update(inherited)
+
+    for sub_path, sub_cfgs in local_subdir_cfgs.items():
+        target_rel = os.path.normpath(
+            os.path.join(rel_dir, sub_path) if rel_dir else sub_path
+        ).replace("\\", "/")
+        dir_inherited.setdefault(target_rel, set()).update(
+            inherited | sub_cfgs
+        )
+
+
 def collect_makefile_configs(repo_dir: str) -> List[MakefileRow]:
     """Walks repo_dir top-down to extract file-level Makefile CONFIG_* guards.
 
@@ -226,7 +266,7 @@ def collect_makefile_configs(repo_dir: str) -> List[MakefileRow]:
         dirs[:] = sorted(
             d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS
         )
-        rel_dir = os.path.relpath(root, repo_root)
+        rel_dir = os.path.relpath(root, repo_root).replace("\\", "/")
         rel_dir = "" if rel_dir == "." else rel_dir
         inherited = dir_inherited.get(rel_dir, set())
 
@@ -242,22 +282,31 @@ def collect_makefile_configs(repo_dir: str) -> List[MakefileRow]:
                 os.path.join(root, makefile_name)
             )
 
-        for d in dirs:
-            child_rel = os.path.join(rel_dir, d) if rel_dir else d
-            dir_inherited[child_rel] = inherited | local_subdir_cfgs.get(
-                d, set()
-            )
+        _propagate_subdir_configs(
+            rel_dir, dirs, inherited, local_subdir_cfgs, dir_inherited
+        )
 
-        for c_file in (f for f in files if f.endswith(".c")):
-            all_cfgs = inherited | local_file_cfgs.get(c_file, set())
+        if inherited:
+            for c_file in (f for f in files if f.endswith(".c")):
+                c_abs = os.path.join(root, c_file)
+                rel_c = (
+                    os.path.join(rel_dir, c_file) if rel_dir else c_file
+                ).replace("\\", "/")
+                end_line = count_file_lines(c_abs)
+                for cfg in inherited:
+                    records.add((cfg, rel_c, 1, end_line, 0))
+
+        for c_key, f_cfgs in local_file_cfgs.items():
+            all_cfgs = inherited | f_cfgs
             if not all_cfgs:
                 continue
-            rel_c_path = (
-                os.path.join(rel_dir, c_file) if rel_dir else c_file
-            ).replace("\\", "/")
-            end_line = count_file_lines(os.path.join(root, c_file))
-            for cfg in sorted(all_cfgs):
-                records.add((cfg, rel_c_path, 1, end_line, 0))
+            c_abs = _resolve_c_file_path(repo_root, root, c_key)
+            if not c_abs:
+                continue
+            rel_c = os.path.relpath(c_abs, repo_root).replace("\\", "/")
+            end_line = count_file_lines(c_abs)
+            for cfg in all_cfgs:
+                records.add((cfg, rel_c, 1, end_line, 0))
 
     return sorted(records, key=lambda r: (r[1], r[0]))
 

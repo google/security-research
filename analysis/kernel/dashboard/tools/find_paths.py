@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code,too-many-lines
 """Find call graph paths from userspace syscall entry points to kernel lines.
 
 Uses CodeQL callgraph data in SQLite and optional Syzkaller coverage data.
@@ -9,9 +9,12 @@ import argparse
 from collections import deque
 import json
 import os
+import re
 import sqlite3
 import sys
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+CONFIG_TOKEN_RE = re.compile(r"\b(CONFIG_[A-Za-z0-9_]+)\b")
 
 INDEXES = [
     (
@@ -59,6 +62,16 @@ INDEXES = [
         "idx_ops_exprcall",
         "CREATE INDEX IF NOT EXISTS idx_ops_exprcall ON"
         " ops_targets(exprcall_file, exprcall_line)",
+    ),
+    (
+        "idx_configs_path",
+        "CREATE INDEX IF NOT EXISTS idx_configs_path ON"
+        " configs(path, ifdef, endif)",
+    ),
+    (
+        "idx_kconfig_sym",
+        "CREATE INDEX IF NOT EXISTS idx_kconfig_sym ON"
+        " kconfig_symbols(config)",
     ),
 ]
 
@@ -300,6 +313,104 @@ def get_callers(
     return results
 
 
+def _invert_config_expr(config: str) -> str:
+    """Inverts a CONFIG_* expression for the #else branch of a guard."""
+    if config.startswith("!") and " " not in config:
+        return config[1:]
+    if " " in config:
+        return f"!({config})"
+    return f"!{config}"
+
+
+def get_line_configs(
+    conn: sqlite3.Connection, file_path: str, line_number: Optional[int]
+) -> List[str]:
+    """Return all active CONFIG_* guards covering (file_path, line_number)."""
+    if line_number is None:
+        return []
+    clean_path = file_path.lstrip("/").replace("linux/", "")
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT config, ifdef, endif, else_
+            FROM configs
+            WHERE (path = ? OR path LIKE ?)
+              AND ? BETWEEN ifdef AND endif
+            ORDER BY ifdef ASC, config ASC
+        """,
+            (clean_path, f"%/{clean_path}", line_number),
+        )
+        rows = cur.fetchall()
+    except sqlite3.Error:
+        return []
+
+    seen: Set[str] = set()
+    active: List[str] = []
+    for cfg, _ifdef_l, _endif_l, else_l in rows:
+        if else_l and else_l > 0:
+            if line_number == else_l:
+                continue
+            eff = _invert_config_expr(cfg) if line_number > else_l else cfg
+        else:
+            eff = cfg
+        if eff not in seen:
+            seen.add(eff)
+            active.append(eff)
+    return active
+
+
+def get_kconfig_metadata(
+    conn: sqlite3.Connection, config_exprs: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """Lookup Kconfig symbol metadata for CONFIG_* tokens in config_exprs."""
+    tokens: Set[str] = set()
+    for expr in config_exprs:
+        tokens.update(CONFIG_TOKEN_RE.findall(expr))
+    if not tokens:
+        return {}
+
+    cur = conn.cursor()
+    placeholders = ",".join("?" for _ in tokens)
+    try:
+        cur.execute(
+            f"""
+            SELECT config, type, prompt, depends_on, select_list,
+                   default_val, build_val, kconfig_file, line_no
+            FROM kconfig_symbols
+            WHERE config IN ({placeholders})
+        """,
+            sorted(tokens),
+        )
+        rows = cur.fetchall()
+    except sqlite3.Error:
+        return {}
+
+    meta: Dict[str, Dict[str, Any]] = {}
+    for (
+        cfg,
+        ctype,
+        prompt,
+        deps,
+        sels,
+        defs,
+        bval,
+        kfile,
+        lno,
+    ) in rows:
+        meta[cfg] = {
+            "type": ctype,
+            "prompt": prompt,
+            "depends_on": deps,
+            "select_list": sels,
+            "default_val": defs,
+            "build_val": bval,
+            "kconfig_file": kfile,
+            "line_no": lno,
+        }
+    return meta
+
+
 def is_syscall_root(fn_name: str, target_syscall: Optional[str]) -> bool:
     """Check if fn_name corresponds to target_syscall or a syscall root."""
     if target_syscall:
@@ -365,6 +476,7 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
         "call_site_line": None,
         "call_type": "target",
         "details": "",
+        "configs": get_line_configs(conn, target_file, target_line),
         "syzk_covered": target_syzk_cov,
     }
 
@@ -392,8 +504,9 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
             is_allowed = not prune_to_reachable or caller_fn in reachable_set
             if is_allowed and caller_fn not in visited:
                 visited.add(caller_fn)
+                check_line = call_site_line or caller_line
                 step_cov = is_line_covered_by_syzkaller(
-                    syzk_conn, caller_file, call_site_line or caller_line
+                    syzk_conn, caller_file, check_line
                 )
                 step = {
                     "function": caller_fn,
@@ -402,6 +515,7 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
                     "call_site_line": call_site_line,
                     "call_type": call_type,
                     "details": details,
+                    "configs": get_line_configs(conn, caller_file, check_line),
                     "syzk_covered": step_cov,
                 }
                 new_path = [step] + path
@@ -432,6 +546,11 @@ def format_tree(  # pylint: disable=too-many-locals,too-many-branches,too-many-s
         f" syscall(s) ({', '.join(all_sys[:5])}"
         f"{'...' if len(all_sys) > 5 else ''})"
     )
+
+    if target_info.get("configs"):
+        out.append(
+            f"Kernel Configs (Target): {', '.join(target_info['configs'])}"
+        )
 
     syzk = target_info.get("syzkaller", {})
     if syzk.get("configured"):
@@ -490,6 +609,8 @@ def format_tree(  # pylint: disable=too-many-locals,too-many-branches,too-many-s
                     if step.get("syzk_covered")
                     else " [Static Only]"
                 )
+            cfg_list = step.get("configs", [])
+            cfg_tag = f" [Kconfig: {', '.join(cfg_list)}]" if cfg_list else ""
 
             type_info = f" [{ctype}]" if ctype and ctype != "target" else ""
             if details:
@@ -498,17 +619,18 @@ def format_tree(  # pylint: disable=too-many-locals,too-many-branches,too-many-s
 
             if i == 0:
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn} ({f}:{l}){syzk_tag}"
+                    f"{indent}└── [Syscall Entry] {fn}"
+                    f" ({f}:{l}){syzk_tag}{cfg_tag}"
                 )
             elif i == len(path) - 1:
                 out.append(
                     f"{indent}└── [Target Line] {fn}"
-                    f" ({f}:{l}){type_info}{syzk_tag}"
+                    f" ({f}:{l}){type_info}{syzk_tag}{cfg_tag}"
                 )
             else:
                 out.append(
                     f"{indent}└── {fn}"
-                    f" ({f}:{l}){call_info}{type_info}{syzk_tag}"
+                    f" ({f}:{l}){call_info}{type_info}{syzk_tag}{cfg_tag}"
                 )
 
     if show_repro and syzk.get("progs"):
@@ -643,6 +765,7 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
     syzk_info = get_syzkaller_coverage(
         syzk_conn, canonical_file, line_number, fn_span=(start_line, end_line)
     )
+    target_configs = get_line_configs(conn, canonical_file, line_number)
 
     target_info = {
         "function": fn_name,
@@ -650,6 +773,8 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
         "line": line_number,
         "span": (start_line, end_line),
         "all_syscalls": reachable_syscalls,
+        "configs": target_configs,
+        "kconfig_metadata": get_kconfig_metadata(conn, target_configs),
         "syzkaller": syzk_info,
     }
 
@@ -714,6 +839,12 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
         if path:
             root_sc = path[0]["function"]
             paths_by_syscall[root_sc] = path
+
+    all_cfg_exprs = list(target_configs)
+    for path in paths_by_syscall.values():
+        for step in path:
+            all_cfg_exprs.extend(step.get("configs", []))
+    target_info["kconfig_metadata"] = get_kconfig_metadata(conn, all_cfg_exprs)
 
     conn.close()
     if syzk_conn:

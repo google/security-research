@@ -145,6 +145,80 @@ endif
                 ],
             )
 
+    def test_collect_makefile_configs_relative_and_nested_subdirs(self):
+        """Verify nested subdirs (a/b/) and relative/included .o paths."""
+        with tempfile.TemporaryDirectory() as repo:
+            drm_dir = os.path.join(repo, "drivers", "gpu", "drm")
+            bridge_dir = os.path.join(drm_dir, "bridge")
+            amd_dir = os.path.join(drm_dir, "amd", "amdgpu")
+            disp_dir = os.path.join(drm_dir, "nouveau", "dispnv50")
+            os.makedirs(bridge_dir, exist_ok=True)
+            os.makedirs(amd_dir, exist_ok=True)
+            os.makedirs(disp_dir, exist_ok=True)
+
+            with open(
+                os.path.join(drm_dir, "Makefile"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write(
+                    "obj-$(CONFIG_DRM_AMDGPU) += amd/amdgpu/\n"
+                    "obj-$(CONFIG_DRM_KMS_HELPER) += drm_kms_helper.o\n"
+                    "drm_kms_helper-$(CONFIG_DRM_PANEL_BRIDGE) +="
+                    " bridge/panel.o\n"
+                )
+
+            with open(
+                os.path.join(amd_dir, "Makefile"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write("obj-y += amdgpu_drv.o\n")
+
+            with open(
+                os.path.join(disp_dir, "Kbuild"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write("nouveau-$(CONFIG_DEBUG_FS) += dispnv50/crc.o\n")
+
+            for path in (
+                os.path.join(bridge_dir, "panel.c"),
+                os.path.join(amd_dir, "amdgpu_drv.c"),
+                os.path.join(disp_dir, "crc.c"),
+            ):
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write("int x = 1;\nint y = 2;\n")
+
+            rows = kconfig_dump.collect_makefile_configs(repo)
+            self.assertEqual(
+                rows,
+                [
+                    (
+                        "CONFIG_DRM_AMDGPU",
+                        "drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c",
+                        1,
+                        2,
+                        0,
+                    ),
+                    (
+                        "CONFIG_DRM_KMS_HELPER",
+                        "drivers/gpu/drm/bridge/panel.c",
+                        1,
+                        2,
+                        0,
+                    ),
+                    (
+                        "CONFIG_DRM_PANEL_BRIDGE",
+                        "drivers/gpu/drm/bridge/panel.c",
+                        1,
+                        2,
+                        0,
+                    ),
+                    (
+                        "CONFIG_DEBUG_FS",
+                        "drivers/gpu/drm/nouveau/dispnv50/crc.c",
+                        1,
+                        2,
+                        0,
+                    ),
+                ],
+            )
+
 
 class TestKconfigAndStorage(unittest.TestCase):
     """Test Kconfig symbol extraction, .config parsing, and SQLite storage."""

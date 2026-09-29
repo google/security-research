@@ -30,6 +30,8 @@ try:
     from tools.find_paths import (
         ensure_indexes,
         get_enclosing_function,
+        get_kconfig_metadata,
+        get_line_configs,
         get_reachable_syscalls,
         get_callers,
         is_syscall_root,
@@ -40,6 +42,8 @@ except ImportError:
     from find_paths import (
         ensure_indexes,
         get_enclosing_function,
+        get_kconfig_metadata,
+        get_line_configs,
         get_reachable_syscalls,
         get_callers,
         is_syscall_root,
@@ -301,6 +305,117 @@ def get_call_site_gates(
     return deduplicate_gates(gates)
 
 
+def load_runtime_tunables(  # pylint: disable=too-many-locals
+    conn: sqlite3.Connection,
+) -> Tuple[
+    Dict[Tuple[str, int], List[Dict[str, Any]]],
+    Dict[str, List[Dict[str, Any]]],
+]:
+    """Load sysctl and module_param guards from conditions table."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND"
+        " name='conditions'"
+    )
+    if not cur.fetchone():
+        return {}, {}
+
+    cur.execute("""
+        SELECT type, argument, call_location, definition, condition, call
+        FROM conditions
+        WHERE type IN ('sysctl', 'module_param')
+          AND argument != '__this_module'
+    """)
+    rows = cur.fetchall()
+
+    call_tunables: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+    cond_files: Set[str] = set()
+    records = []
+
+    for c_type, arg, call_loc, def_loc, cond_loc, call_name in rows:
+        tun_obj = {
+            "type": c_type,
+            "argument": arg,
+            "cap_str": f"{c_type}({arg})",
+            "call": call_name,
+            "call_location": call_loc,
+            "definition": def_loc,
+            "condition": cond_loc,
+        }
+        records.append(tun_obj)
+
+        if call_loc:
+            m = LOCATION_RE.match(call_loc)
+            if m:
+                f, s_line, _, e_line, _ = m.groups()
+                f_clean = clean_file_path(f)
+                for l in range(int(s_line), int(e_line) + 1):
+                    call_tunables.setdefault((f_clean, l), []).append(tun_obj)
+
+        if cond_loc:
+            m = LOCATION_RE.match(cond_loc)
+            if m:
+                cond_files.add(clean_file_path(m.group(1)))
+
+    for k, vals in call_tunables.items():
+        call_tunables[k] = deduplicate_gates(vals)
+
+    func_tunables: Dict[str, List[Dict[str, Any]]] = {}
+    file_list = list(cond_files)
+    file_funcs: Dict[str, List[Tuple[str, int, int]]] = {}
+    for i in range(0, len(file_list), 500):
+        batch = file_list[i : i + 500]
+        placeholders = ",".join("?" for _ in batch)
+        cur.execute(
+            f"""
+            SELECT file_path, function_name, start_line, end_line
+            FROM function_locations
+            WHERE file_path IN ({placeholders})
+        """,
+            batch,
+        )
+        for f, fn, s, e in cur.fetchall():
+            file_funcs.setdefault(clean_file_path(f), []).append((fn, s, e))
+
+    for tun in records:
+        cond_loc = tun["condition"]
+        if not cond_loc:
+            continue
+        m = LOCATION_RE.match(cond_loc)
+        if not m:
+            continue
+        f_clean = clean_file_path(m.group(1))
+        cond_line = int(m.group(2))
+        for fn_name, s_line, e_line in file_funcs.get(f_clean, []):
+            if s_line <= cond_line <= e_line:
+                ft_obj = dict(tun)
+                ft_obj["check_line"] = cond_line
+                ft_obj["fn_span"] = (s_line, e_line)
+                func_tunables.setdefault(fn_name, []).append(ft_obj)
+
+    for fn, vals in func_tunables.items():
+        func_tunables[fn] = deduplicate_gates(vals)
+
+    return call_tunables, func_tunables
+
+
+def _collect_path_preconditions(
+    path: List[Dict[str, Any]],
+) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """Collect deduplicated CONFIG_* and runtime tunables across a path."""
+    seen_cfgs: Set[str] = set()
+    cfgs: List[str] = []
+    tuns: List[Dict[str, Any]] = []
+    for step in path:
+        for c in step.get("configs", []):
+            if c not in seen_cfgs:
+                seen_cfgs.add(c)
+                cfgs.append(c)
+        for t in step.get("tunables", []):
+            tuns.append(t)
+    return cfgs, deduplicate_gates(tuns)
+
+
 def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
     conn: sqlite3.Connection,
     target_fn: str,
@@ -312,6 +427,8 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
     target_syscall: Optional[str] = None,
     syzk_conn: Optional[sqlite3.Connection] = None,
     max_depth: int = 25,
+    call_tunables: Optional[Dict[Tuple[str, int], List[Dict[str, Any]]]] = None,
+    func_tunables: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Tuple[
     Optional[str], List[Dict[str, Any]], Optional[List[Dict[str, Any]]]
 ]:
@@ -348,6 +465,13 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
     target_gates = get_call_site_gates(
         call_gates, func_gates, target_file, target_line, caller_fn=target_fn
     )
+    target_tunables = get_call_site_gates(
+        call_tunables or {},
+        func_tunables or {},
+        target_file,
+        target_line,
+        caller_fn=target_fn,
+    )
 
     init_cost = 0
     for g in target_gates:
@@ -368,6 +492,8 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
         "call_type": "target",
         "details": "",
         "gates": target_gates,
+        "configs": get_line_configs(conn, target_file, target_line),
+        "tunables": target_tunables,
         "syzk_covered": target_syzk_cov,
     }
 
@@ -441,8 +567,16 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
             if new_cost < best_dist.get(caller_fn, float("inf")):
                 best_dist[caller_fn] = new_cost
                 counter += 1
+                check_line = call_site_line or caller_line
                 step_cov = is_line_covered_by_syzkaller(
-                    syzk_conn, caller_file, call_site_line or caller_line
+                    syzk_conn, caller_file, check_line
+                )
+                edge_tunables = get_call_site_gates(
+                    call_tunables or {},
+                    func_tunables or {},
+                    caller_file,
+                    call_site_line,
+                    caller_fn=caller_fn,
                 )
                 step = {
                     "function": caller_fn,
@@ -452,6 +586,8 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
                     "call_type": call_type,
                     "details": details,
                     "gates": edge_gates,
+                    "configs": get_line_configs(conn, caller_file, check_line),
+                    "tunables": edge_tunables,
                     "syzk_covered": step_cov,
                 }
                 heapq.heappush(
@@ -550,6 +686,7 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
     syzk_info = get_syzkaller_coverage(
         syzk_conn, canonical_file, line_number, fn_span=(start_line, end_line)
     )
+    target_configs = get_line_configs(conn, canonical_file, line_number)
 
     target_info = {
         "function": fn_name,
@@ -558,6 +695,8 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
         "span": (start_line, end_line),
         "is_function_entry": is_function_entry,
         "all_syscalls": reachable_syscalls,
+        "configs": target_configs,
+        "kconfig_metadata": get_kconfig_metadata(conn, target_configs),
         "syzkaller": syzk_info,
     }
 
@@ -571,7 +710,9 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
     call_gates, func_gates, cap_map = load_condition_gates(
         conn, verbose=verbose
     )
+    call_tunables, func_tunables = load_runtime_tunables(conn)
     target_info["internal_gates"] = func_gates.get(fn_name, [])
+    target_info["internal_tunables"] = func_tunables.get(fn_name, [])
 
     all_results = []
     primary_result = {}
@@ -603,12 +744,17 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
                 target_syscall=sc,
                 syzk_conn=syzk_conn,
                 max_depth=max_depth,
+                call_tunables=call_tunables,
+                func_tunables=func_tunables,
             )
             if path:
+                p_cfgs, p_tuns = _collect_path_preconditions(path)
                 res = {
                     "syscall": sc,
                     "verdict": verdict,
                     "gates": gates,
+                    "configs": p_cfgs,
+                    "tunables": p_tuns,
                     "path": path,
                 }
                 all_results.append(res)
@@ -633,12 +779,17 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
                 target_syscall=sc,
                 syzk_conn=syzk_conn,
                 max_depth=max_depth,
+                call_tunables=call_tunables,
+                func_tunables=func_tunables,
             )
             if path:
+                p_cfgs, p_tuns = _collect_path_preconditions(path)
                 all_results.append({
                     "syscall": sc,
                     "verdict": verdict,
                     "gates": gates,
+                    "configs": p_cfgs,
+                    "tunables": p_tuns,
                     "path": path,
                 })
 
@@ -684,13 +835,18 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
             target_syscall=None,
             syzk_conn=syzk_conn,
             max_depth=max_depth,
+            call_tunables=call_tunables,
+            func_tunables=func_tunables,
         )
         if path:
             root_sc = path[0]["function"]
+            p_cfgs, p_tuns = _collect_path_preconditions(path)
             primary_result = {
                 "syscall": root_sc,
                 "verdict": verdict,
                 "gates": gates,
+                "configs": p_cfgs,
+                "tunables": p_tuns,
                 "path": path,
             }
             all_results = [primary_result]
@@ -698,11 +854,49 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
         else:
             overall_verdict = "UNREACHABLE"
 
+    all_cfg_exprs = list(target_configs)
+    for res in all_results:
+        all_cfg_exprs.extend(res.get("configs", []))
+    target_info["kconfig_metadata"] = get_kconfig_metadata(conn, all_cfg_exprs)
+
     conn.close()
     if syzk_conn:
         syzk_conn.close()
 
     return target_info, overall_verdict, primary_result, all_results
+
+
+def _format_kconfig_section(
+    target_info: Dict[str, Any], primary_result: Dict[str, Any], out: List[str]
+) -> None:
+    """Append Kernel Configs and Runtime Tunable sections to summary lines."""
+    path_cfgs = primary_result.get("configs") or target_info.get("configs", [])
+    kmeta = target_info.get("kconfig_metadata", {})
+    if path_cfgs:
+        out.append("\nKernel Config Preconditions (CONFIG_*):")
+        for cfg_expr in path_cfgs:
+            info = kmeta.get(cfg_expr)
+            if info:
+                details = []
+                if info.get("build_val"):
+                    details.append(f".config={info['build_val']}")
+                if info.get("depends_on"):
+                    details.append(f"depends on: {info['depends_on']}")
+                suffix = f" ({'; '.join(details)})" if details else ""
+                out.append(f"  * {cfg_expr}{suffix}")
+            else:
+                out.append(f"  * {cfg_expr}")
+
+    path_tuns = primary_result.get("tunables") or target_info.get(
+        "internal_tunables", []
+    )
+    if path_tuns:
+        out.append(
+            "\nRuntime Tunable Preconditions (sysctl / module_param):"
+        )
+        for t in path_tuns:
+            t_loc = t.get("condition") or t.get("definition") or "unknown"
+            out.append(f"  * {t['cap_str']} at {t_loc}")
 
 
 def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -833,19 +1027,35 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
             else:
                 gate_str = " [UNGATED]"
 
+            step_cfgs = step.get("configs", [])
+            cfg_str = (
+                f" [Kconfig: {', '.join(step_cfgs)}]" if step_cfgs else ""
+            )
+            step_tuns = step.get("tunables", [])
+            tun_str = (
+                f" [Tunable: {', '.join(t['cap_str'] for t in step_tuns)}]"
+                if step_tuns
+                else ""
+            )
+
             call_info = f" [calls at line {cs}]" if cs else ""
             indent = "  " * (i + 1)
 
             if i == 0:
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn} ({f}:{l}){gate_str}"
+                    f"{indent}└── [Syscall Entry] {fn}"
+                    f" ({f}:{l}){gate_str}{cfg_str}{tun_str}"
                 )
             elif i == len(path) - 1:
                 out.append(
-                    f"{indent}└── [Target Line]   {fn} ({f}:{l}){gate_str}"
+                    f"{indent}└── [Target Line]   {fn}"
+                    f" ({f}:{l}){gate_str}{cfg_str}{tun_str}"
                 )
             else:
-                out.append(f"{indent}└── {fn} ({f}:{l}){call_info}{gate_str}")
+                out.append(
+                    f"{indent}└── {fn}"
+                    f" ({f}:{l}){call_info}{gate_str}{cfg_str}{tun_str}"
+                )
 
         all_gates = primary_result.get("gates", [])
         if all_gates:
@@ -857,6 +1067,11 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
                 out.append(f"  * {g['cap_str']} at {c_loc}")
         else:
             out.append("\nGate Details: None (All steps completely ungated)")
+
+        _format_kconfig_section(target_info, primary_result, out)
+    elif target_info.get("configs") or target_info.get("internal_tunables"):
+        out.append("-" * 72)
+        _format_kconfig_section(target_info, primary_result, out)
 
     if len(all_results) > 1:
         out.append("-" * 72)
@@ -911,18 +1126,33 @@ def format_tree(  # pylint: disable=too-many-locals
                 if gates
                 else " [UNGATED]"
             )
+            step_cfgs = step.get("configs", [])
+            cfg_tag = (
+                f" [Kconfig: {', '.join(step_cfgs)}]" if step_cfgs else ""
+            )
+            step_tuns = step.get("tunables", [])
+            tun_tag = (
+                f" [Tunable: {', '.join(t['cap_str'] for t in step_tuns)}]"
+                if step_tuns
+                else ""
+            )
             call_info = f" [calls at L{cs}]" if cs else ""
 
             if i == 0:
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn} ({f}:{l}){gate_tag}"
+                    f"{indent}└── [Syscall Entry] {fn}"
+                    f" ({f}:{l}){gate_tag}{cfg_tag}{tun_tag}"
                 )
             elif i == len(path) - 1:
                 out.append(
-                    f"{indent}└── [Target Line] {fn} ({f}:{l}){gate_tag}"
+                    f"{indent}└── [Target Line] {fn}"
+                    f" ({f}:{l}){gate_tag}{cfg_tag}{tun_tag}"
                 )
             else:
-                out.append(f"{indent}└── {fn} ({f}:{l}){call_info}{gate_tag}")
+                out.append(
+                    f"{indent}└── {fn}"
+                    f" ({f}:{l}){call_info}{gate_tag}{cfg_tag}{tun_tag}"
+                )
 
     return "\n".join(out)
 
