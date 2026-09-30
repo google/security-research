@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """pytest wiring for the dashboard data-quality tests.
 
 Supports three invocation modes:
@@ -70,11 +71,12 @@ _OPTIONS = [
     ("--syscall-node-oracle", "Reference syscall_node dump (6.1.111 only)"),
     ("--function-locations", "functions.ql / function_locations CSV"),
     ("--ops-targets", "ops_edges.ql / ops_targets CSV"),
+    ("--async-edges", "async-edges.ql / async_edges CSV"),
     ("--configs", "kernel-configs-needed.ql / configs CSV"),
     ("--baseline", "baselines/<kernel>.json recorded from a validated run"),
 ]
 
-# Maps all 13 CodeQL query stems (and table aliases) to their test module
+# Maps all 14 CodeQL query stems (and table aliases) to their test module
 QUERY_TO_TEST_MODULE = {
     "functions": "test_functions.py",
     "function_locations": "test_functions.py",
@@ -82,6 +84,8 @@ QUERY_TO_TEST_MODULE = {
     "configs": "test_kernel_configs_needed.py",
     "ops_edges": "test_ops_edges.py",
     "ops_targets": "test_ops_edges.py",
+    "async-edges": "test_async_edges.py",
+    "async_edges": "test_async_edges.py",
     "allocs": "test_allocs.py",
     "allocations": "test_allocations.py",
     "kmalloc_calls": "test_allocations.py",
@@ -203,6 +207,12 @@ OPS_TARGETS_COLS = [
     "exprcall_parent_end",
 ]
 CONFIGS_COLS = ["config", "path", "ifdef", "endif", "else_"]
+ASYNC_EDGES_CSV_COLS = [
+    "caller", "callee", "mechanism", "form", "file", "line",
+]
+ASYNC_EDGES_DB_COLS = [
+    "caller", "callee", "mechanism", "context", "form", "file", "line",
+]
 
 
 def _resolve_file(
@@ -976,4 +986,32 @@ def configs(pytestconfig, sqlite_db):
 
     return pytest.skip(
         "configs not supplied (pass --configs, --results-dir, or --sqlite-db)"
+    )
+
+
+@pytest.fixture(scope="session")
+def async_edges(pytestconfig, sqlite_db):
+    """Load `async_edges` (`async-edges.ql`) rows from CSV or SQLite DB."""
+    path = _resolve_file(
+        pytestconfig,
+        "--async-edges",
+        ["async-edges.csv", "async_edges.csv"],
+        "async_edges output",
+    )
+    if path:
+        return load_rows(path, ASYNC_EDGES_CSV_COLS)
+
+    if _has_sqlite_table(sqlite_db, "async_edges"):
+        return _query_sqlite_table(
+            sqlite_db,
+            """
+            SELECT caller, callee, mechanism, context, form, file, line
+            FROM async_edges
+            """,
+            ASYNC_EDGES_DB_COLS,
+        )
+
+    return pytest.skip(
+        "async_edges not supplied (pass --async-edges, --results-dir, "
+        "or --sqlite-db)"
     )

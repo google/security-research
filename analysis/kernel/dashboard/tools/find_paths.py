@@ -73,6 +73,14 @@ INDEXES = [
         "CREATE INDEX IF NOT EXISTS idx_kconfig_sym ON"
         " kconfig_symbols(config)",
     ),
+    (
+        "idx_async_callee",
+        "CREATE INDEX IF NOT EXISTS idx_async_callee ON async_edges(callee)",
+    ),
+    (
+        "idx_async_caller",
+        "CREATE INDEX IF NOT EXISTS idx_async_caller ON async_edges(caller)",
+    ),
 ]
 
 
@@ -233,22 +241,60 @@ def get_enclosing_function(
 
 
 def get_reachable_syscalls(
-    conn: sqlite3.Connection, function_name: str
+    conn: sqlite3.Connection, function_name: str, max_bridge_depth: int = 6
 ) -> List[str]:
-    """Return all system calls capable of reaching function_name."""
+    """Return all system calls capable of reaching function_name.
+
+    If function_name is not directly in syscall_node (e.g. an async callback or
+    indirect ops target), walks backward up to max_bridge_depth hops across
+    direct, indirect, and async callers to find ancestors in syscall_node.
+    """
     cur = conn.cursor()
     cur.execute(
         "SELECT DISTINCT syscall FROM syscall_node WHERE function = ? ORDER BY"
         " syscall",
         (function_name,),
     )
-    return [r[0] for r in cur.fetchall()]
+    direct = [r[0] for r in cur.fetchall()]
+    if direct:
+        return direct
+
+    syscalls: Set[str] = set()
+    queue = deque([(function_name, 0)])
+    visited: Set[str] = {function_name}
+
+    while queue:
+        curr_fn, depth = queue.popleft()
+        if is_syscall_root(curr_fn, None):
+            syscalls.add(curr_fn)
+            continue
+        if depth >= max_bridge_depth:
+            continue
+
+        for caller_fn, *_ in get_callers(conn, curr_fn):
+            if caller_fn.startswith("<file-scope:") or caller_fn in visited:
+                continue
+            visited.add(caller_fn)
+            cur.execute(
+                "SELECT DISTINCT syscall FROM syscall_node WHERE function = ?",
+                (caller_fn,),
+            )
+            caller_syscalls = [r[0] for r in cur.fetchall()]
+            if caller_syscalls:
+                syscalls.update(caller_syscalls)
+            else:
+                queue.append((caller_fn, depth + 1))
+
+        if syscalls:
+            break
+
+    return sorted(syscalls)
 
 
-def get_callers(
+def get_callers(  # pylint: disable=too-many-locals
     conn: sqlite3.Connection, function_name: str
 ) -> List[Tuple[str, str, int, int, str, str]]:
-    """Find all callers invoking function_name directly or indirectly.
+    """Find all callers invoking function_name directly, indirectly, or async.
 
     Returns list of tuples:
       (caller_fn, caller_file, caller_line, call_site_line, call_type, details)
@@ -309,6 +355,63 @@ def get_callers(
                 "indirect",
                 f"{parent}->{field}",
             ))
+
+    # 3. Asynchronous callers from async_edges
+    try:
+        cur.execute(
+            """
+            SELECT DISTINCT a.caller, a.mechanism, a.form, a.file, a.line,
+                            a.context
+            FROM async_edges a
+            WHERE a.callee = ?
+        """,
+            (function_name,),
+        )
+        async_rows = cur.fetchall()
+    except sqlite3.Error:
+        async_rows = []
+
+    for (
+        caller_fn,
+        mechanism,
+        form,
+        reg_file,
+        reg_line,
+        context,
+    ) in async_rows:
+        if caller_fn.startswith("<file-scope:"):
+            continue
+        cur.execute(
+            """
+            SELECT file_path, start_line
+            FROM function_locations
+            WHERE function_name = ? AND file_path = ?
+            LIMIT 1
+        """,
+            (caller_fn, reg_file),
+        )
+        fn_row = cur.fetchone()
+        if not fn_row:
+            cur.execute(
+                """
+                SELECT file_path, start_line
+                FROM function_locations
+                WHERE function_name = ?
+                LIMIT 1
+            """,
+                (caller_fn,),
+            )
+            fn_row = cur.fetchone()
+        caller_file = fn_row[0] if fn_row else reg_file
+        caller_line = fn_row[1] if fn_row else reg_line
+        results.append((
+            caller_fn,
+            caller_file,
+            caller_line,
+            reg_line,
+            "async",
+            f"{mechanism}/{form} ({context})",
+        ))
 
     return results
 
@@ -447,7 +550,6 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
     cur = conn.cursor()
 
     reachable_set = None
-    prune_to_reachable = False
     if target_syscall:
         cur.execute(
             "SELECT DISTINCT function FROM syscall_node WHERE syscall = ?",
@@ -461,9 +563,6 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
         )
         for prefix in ["__do_sys_", "__se_sys_", "__x64_sys_", "__ia32_sys_"]:
             reachable_set.add(f"{prefix}{base_name}")
-
-        if target_fn in reachable_set:
-            prune_to_reachable = True
 
     target_syzk_cov = is_line_covered_by_syzkaller(
         syzk_conn, target_file, target_line
@@ -501,7 +600,12 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
             call_type,
             details,
         ) in callers:
-            is_allowed = not prune_to_reachable or caller_fn in reachable_set
+            is_allowed = (
+                reachable_set is None
+                or curr_fn not in reachable_set
+                or caller_fn in reachable_set
+                or call_type in ("indirect", "async")
+            )
             if is_allowed and caller_fn not in visited:
                 visited.add(caller_fn)
                 check_line = call_site_line or caller_line

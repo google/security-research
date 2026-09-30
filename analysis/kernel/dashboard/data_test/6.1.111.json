@@ -9,6 +9,9 @@
   "ops_targets": {
     "rows": 52991
   },
+  "async_edges": {
+    "rows": 3227
+  },
   "allocs": {
     "rows": 4479,
     "dynamic_ratio": 0.395,

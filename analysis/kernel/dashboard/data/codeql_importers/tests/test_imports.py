@@ -20,6 +20,7 @@ if PARENT_DIR not in sys.path:
 import import_all_calls
 import import_allocations
 import import_allocs
+import import_async_edges
 import import_conditions
 import import_conditions_reachable
 import import_configs
@@ -715,6 +716,56 @@ class TestImportAllCalls(BaseImporterTest):
         self.assertEqual(db_locs[1], ("net/socket.c", "call to callee_fn"))
         rule_row = self.fetch_one("SELECT rule_id FROM edges")
         self.assertEqual(rule_row[0], "callgraph-all")
+
+
+class TestImportAsyncEdges(BaseImporterTest):
+    """Tests for `import_async_edges.py`."""
+
+    def test_import_async_edges_to_db(self):
+        """Verifies importing async_edges CSV with context & prefix trimming."""
+        self.write_test_csv(
+            "caller,callee,mechanism,form,file,line\n"
+            '"fput","____fput","task_work","arg",'
+            '"/work/linux/fs/file_table.c","527"\n'
+            '"<file-scope:/work/linux/security/keys/gc.c>","key_gc_timer_func",'
+            '"timer","init","/work/linux/security/keys/gc.c","28"\n'
+            '"bad_line_fn","cb","workqueue","assign",'
+            '"/work/linux/kernel/workqueue.c","not_a_number"\n'
+            '"short_row"\n'
+        )
+
+        count = import_async_edges.import_async_edges_to_db(
+            self.csv_path, self.db_path
+        )
+        self.assertEqual(count, 2)
+
+        rows = self.fetch_all(
+            "SELECT caller, callee, mechanism, context, form, file, line "
+            "FROM async_edges ORDER BY line ASC"
+        )
+        self.assertEqual(
+            rows,
+            [
+                (
+                    "<file-scope:security/keys/gc.c>",
+                    "key_gc_timer_func",
+                    "timer",
+                    "softirq",
+                    "init",
+                    "security/keys/gc.c",
+                    28,
+                ),
+                (
+                    "fput",
+                    "____fput",
+                    "task_work",
+                    "process",
+                    "arg",
+                    "fs/file_table.c",
+                    527,
+                ),
+            ],
+        )
 
 
 if __name__ == "__main__":

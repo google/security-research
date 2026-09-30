@@ -444,7 +444,6 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
     """
     cur = conn.cursor()
     reachable_set: Optional[Set[str]] = None
-    prune_to_reachable = False
 
     if target_syscall:
         cur.execute(
@@ -458,8 +457,6 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
         )
         for prefix in ["__do_sys_", "__se_sys_", "__x64_sys_", "__ia32_sys_"]:
             reachable_set.add(f"{prefix}{base_name}")
-        if target_fn in reachable_set:
-            prune_to_reachable = True
 
     # 1. Check if the target line itself is already gated
     target_gates = get_call_site_gates(
@@ -545,7 +542,12 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
             call_type,
             details,
         ) in callers:
-            if prune_to_reachable and caller_fn not in reachable_set:
+            if (
+                reachable_set is not None
+                and curr_fn in reachable_set
+                and caller_fn not in reachable_set
+                and call_type not in ("indirect", "async")
+            ):
                 continue
 
             edge_gates = get_call_site_gates(

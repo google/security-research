@@ -378,6 +378,51 @@ class TestFindPaths(unittest.TestCase):
             "[Kconfig: CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH]", tree
         )
 
+    def test_async_edges_path_resolution(self):
+        """Verify async_edges bridges asynchronous callbacks to syscalls."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE async_edges (
+                caller TEXT NOT NULL,
+                callee TEXT NOT NULL,
+                mechanism TEXT NOT NULL,
+                form TEXT NOT NULL,
+                file TEXT NOT NULL,
+                line INTEGER NOT NULL,
+                context TEXT NOT NULL
+            )
+        """)
+        cur.execute(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            ("async_work_fn", "fs/internal.c", 300, 320),
+        )
+        cur.execute(
+            "INSERT INTO async_edges VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "target_worker",
+                "async_work_fn",
+                "workqueue",
+                "arg",
+                "fs/internal.c",
+                130,
+                "process",
+            ),
+        )
+        self.conn.commit()
+
+        syscalls = find_paths.get_reachable_syscalls(self.conn, "async_work_fn")
+        self.assertIn("__do_sys_foo", syscalls)
+
+        target_info, paths = find_paths.find_paths_to_line(
+            self.db_path, "fs/internal.c", 310, target_syscall="__do_sys_foo"
+        )
+        self.assertEqual(target_info["function"], "async_work_fn")
+        self.assertIn("__do_sys_foo", paths)
+        path = paths["__do_sys_foo"]
+        self.assertEqual(path[-2]["function"], "target_worker")
+        self.assertEqual(path[-2]["call_type"], "async")
+        self.assertEqual(path[-2]["details"], "workqueue/arg (process)")
+
 
 if __name__ == "__main__":
     unittest.main()

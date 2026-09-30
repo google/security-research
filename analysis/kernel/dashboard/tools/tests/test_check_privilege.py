@@ -652,6 +652,50 @@ class TestCheckPrivilege(
         self.assertIn("sysctl(sysctl_unpriv_enabled)", summary)
         self.assertIn("module_param(allow_experimental)", summary)
 
+    def test_async_edges_privilege_resolution(self):
+        """Verify async_edges bridges callbacks and respects gates."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE async_edges (
+                caller TEXT NOT NULL,
+                callee TEXT NOT NULL,
+                mechanism TEXT NOT NULL,
+                form TEXT NOT NULL,
+                file TEXT NOT NULL,
+                line INTEGER NOT NULL,
+                context TEXT NOT NULL
+            )
+        """)
+        cur.execute(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            ("admin_rcu_cb", "fs/admin.c", 200, 220),
+        )
+        cur.execute(
+            "INSERT INTO async_edges VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "admin_worker",
+                "admin_rcu_cb",
+                "rcu",
+                "arg",
+                "fs/admin.c",
+                55,
+                "softirq",
+            ),
+        )
+        self.conn.commit()
+
+        target_info, verdict, primary, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "fs/admin.c", 210
+            )
+        )
+        self.assertEqual(target_info["function"], "admin_rcu_cb")
+        self.assertEqual(verdict, "REACHABLE, BUT ONLY BEHIND CAP_SYS_ADMIN")
+        self.assertEqual(primary["syscall"], "__do_sys_admin")
+        self.assertEqual(primary["path"][-2]["function"], "admin_worker")
+        self.assertEqual(primary["path"][-2]["call_type"], "async")
+        self.assertEqual(primary["path"][-2]["details"], "rcu/arg (softirq)")
+
 
 if __name__ == "__main__":
     unittest.main()
