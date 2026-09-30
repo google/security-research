@@ -23,14 +23,16 @@ MECHANISM_CONTEXT = {
     "io_uring": "process",
     "ipi": "ipi",
     "irq": "hard_irq",
-    "kref": "process",
+    "kref": "inline",
     "kthread": "kthread",
     "kthread_worker": "kthread",
     "napi": "softirq",
     "netfilter": "softirq",
+    "nf_hook_inline": "inline",
     "notifier": "process",
     "poll": "process",
     "rcu": "softirq",
+    "rhashtable_destroy": "inline",
     "skb": "softirq",
     "socket": "softirq",
     "softirq": "softirq",
@@ -64,20 +66,23 @@ def import_async_edges_to_db(csv_filename: str, db_name: str) -> int:
     for row in rows:
         if len(row) >= 6:
             try:
-                caller = _trim_caller(row[0], prefix)
-                callee = row[1]
-                mechanism = row[2]
-                form = row[3]
-                file_path = trim_filename(row[4], prefix)
                 line = int(row[5])
-                context = MECHANISM_CONTEXT.get(mechanism, "unknown")
-                data.append(
-                    (caller, callee, mechanism, context, form, file_path, line)
-                )
             except ValueError:
                 logging.warning(
                     "Skipping row with non-integer line number: %s", row
                 )
+                continue
+            data.append(
+                (
+                    _trim_caller(row[0], prefix),
+                    row[1],
+                    row[2],
+                    MECHANISM_CONTEXT.get(row[2], "unknown"),
+                    row[3],
+                    trim_filename(row[4], prefix),
+                    line,
+                )
+            )
         else:
             logging.warning("Skipping invalid row: %s", row)
 

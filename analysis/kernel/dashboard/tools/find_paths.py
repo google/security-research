@@ -285,9 +285,6 @@ def get_reachable_syscalls(
             else:
                 queue.append((caller_fn, depth + 1))
 
-        if syscalls:
-            break
-
     return sorted(syscalls)
 
 
@@ -301,6 +298,7 @@ def get_callers(  # pylint: disable=too-many-locals
     """
     cur = conn.cursor()
     results = []
+    seen_sites: Set[Tuple[str, int]] = set()
 
     # 1. Direct callers from edges + locations
     cur.execute(
@@ -319,6 +317,10 @@ def get_callers(  # pylint: disable=too-many-locals
     )
 
     for caller_fn, caller_file, caller_line, call_site_line in cur.fetchall():
+        site_key = (caller_fn, call_site_line)
+        if site_key in seen_sites:
+            continue
+        seen_sites.add(site_key)
         results.append(
             (caller_fn, caller_file, caller_line, call_site_line, "direct", "")
         )
@@ -347,6 +349,10 @@ def get_callers(  # pylint: disable=too-many-locals
         fn_row = cur.fetchone()
         if fn_row:
             caller_fn, caller_file, caller_line = fn_row
+            site_key = (caller_fn, expr_line)
+            if site_key in seen_sites:
+                continue
+            seen_sites.add(site_key)
             results.append((
                 caller_fn,
                 caller_file,
@@ -381,6 +387,10 @@ def get_callers(  # pylint: disable=too-many-locals
     ) in async_rows:
         if caller_fn.startswith("<file-scope:"):
             continue
+        site_key = (caller_fn, reg_line)
+        if site_key in seen_sites:
+            continue
+        seen_sites.add(site_key)
         cur.execute(
             """
             SELECT file_path, start_line
@@ -490,26 +500,16 @@ def get_kconfig_metadata(
         return {}
 
     meta: Dict[str, Dict[str, Any]] = {}
-    for (
-        cfg,
-        ctype,
-        prompt,
-        deps,
-        sels,
-        defs,
-        bval,
-        kfile,
-        lno,
-    ) in rows:
-        meta[cfg] = {
-            "type": ctype,
-            "prompt": prompt,
-            "depends_on": deps,
-            "select_list": sels,
-            "default_val": defs,
-            "build_val": bval,
-            "kconfig_file": kfile,
-            "line_no": lno,
+    for row in rows:
+        meta[row[0]] = {
+            "type": row[1],
+            "prompt": row[2],
+            "depends_on": row[3],
+            "select_list": row[4],
+            "default_val": row[5],
+            "build_val": row[6],
+            "kconfig_file": row[7],
+            "line_no": row[8],
         }
     return meta
 

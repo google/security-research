@@ -729,6 +729,8 @@ class TestImportAsyncEdges(BaseImporterTest):
             '"/work/linux/fs/file_table.c","527"\n'
             '"<file-scope:/work/linux/security/keys/gc.c>","key_gc_timer_func",'
             '"timer","init","/work/linux/security/keys/gc.c","28"\n'
+            '"__clk_put","__clk_release","kref","arg",'
+            '"/work/linux/drivers/clk/clk.c","400"\n'
             '"bad_line_fn","cb","workqueue","assign",'
             '"/work/linux/kernel/workqueue.c","not_a_number"\n'
             '"short_row"\n'
@@ -737,7 +739,7 @@ class TestImportAsyncEdges(BaseImporterTest):
         count = import_async_edges.import_async_edges_to_db(
             self.csv_path, self.db_path
         )
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 3)
 
         rows = self.fetch_all(
             "SELECT caller, callee, mechanism, context, form, file, line "
@@ -754,6 +756,15 @@ class TestImportAsyncEdges(BaseImporterTest):
                     "init",
                     "security/keys/gc.c",
                     28,
+                ),
+                (
+                    "__clk_put",
+                    "__clk_release",
+                    "kref",
+                    "inline",
+                    "arg",
+                    "drivers/clk/clk.c",
+                    400,
                 ),
                 (
                     "fput",

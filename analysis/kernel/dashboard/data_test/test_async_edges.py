@@ -2,8 +2,9 @@
 
 Validates asynchronous callback edges across Form A (registrar argument),
 Form B (struct field assignment), and Form C (designated struct initializer),
-including per-mechanism coverage, canonical kernel spot-checks, cross-table
-function resolution, and source-code matching heuristics across kernel versions.
+including per-mechanism coverage, inline vs. deferred context taxonomy (A2),
+USB subsystem gating (C1), tightened source-code verification (C2),
+CVE ground-truth callback recall (B2), and cross-table function resolution.
 """
 
 from __future__ import annotations
@@ -16,12 +17,15 @@ from common import load_baseline, pct, report, top_counts
 import pytest
 
 VALID_FORMS = {"arg", "assign", "init"}
-VALID_CONTEXTS = {"kthread", "softirq", "hard_irq", "ipi", "process"}
+VALID_CONTEXTS = {"kthread", "softirq", "hard_irq", "ipi", "process", "inline"}
+INLINE_MECHANISMS = {"kref", "nf_hook_inline", "rhashtable_destroy"}
 INTERNAL_TRAMPOLINES = {
     "delayed_work_timer_fn",
     "kthread_delayed_work_timer_fn",
     "rcu_work_rcufn",
 }
+
+USB_MIN_COUNT_WHEN_ENABLED = 20
 
 # Minimum expected edges per active mechanism across 6.1 - 6.18 x86_64 builds
 EXPECTED_MECHANISM_MIN_COUNTS = {
@@ -38,9 +42,11 @@ EXPECTED_MECHANISM_MIN_COUNTS = {
     "kthread_worker": 5,
     "napi": 15,
     "netfilter": 120,
+    "nf_hook_inline": 40,
     "notifier": 150,
     "poll": 8,
     "rcu": 150,
+    "rhashtable_destroy": 5,
     "skb": 15,
     "socket": 40,
     "softirq": 10,
@@ -69,14 +75,42 @@ CANONICAL_EDGES = [
     ("acpi_processor_driver_init", "acpi_soft_cpu_online", "cpuhp", "arg"),
 ]
 
-_MACRO_KEYWORDS = (
-    "DEFINE_WAIT",
-    "init_wait",
-    "DECLARE_",
-    "INIT_",
-    "_INIT",
-    "##",
-)
+# Ground-truth async callbacks from historical Linux kernel UAF / race CVEs
+# (Recommendation B2: CVE recall check across net, io_uring, fs, keys, crypto)
+CVE_CALLBACK_GROUND_TRUTH = [
+    ("io_ring_exit_work", "workqueue"),
+    ("io_tctx_exit_cb", "task_work"),
+    ("____fput", "task_work"),
+    ("delayed_fput", "workqueue"),
+    ("gc_worker", "workqueue"),
+    ("neigh_timer_handler", "timer"),
+    ("neigh_periodic_work", "workqueue"),
+    ("tcp_write_timer", "timer"),
+    ("tcp_delack_timer", "timer"),
+    ("tcp_keepalive_timer", "timer"),
+    ("xfrm_state_gc_task", "workqueue"),
+    ("xfrm_policy_timer", "timer"),
+    ("in6_dev_finish_destroy_rcu", "rcu"),
+    ("ip_expire", "timer"),
+    ("ip6_frag_expire", "timer"),
+    ("key_garbage_collector", "workqueue"),
+    ("key_gc_timer_func", "timer"),
+    ("cryptd_queue_worker", "workqueue"),
+    ("call_usermodehelper_exec_work", "workqueue"),
+    ("rht_deferred_worker", "workqueue"),
+    ("bdev_free_inode", "rcu"),
+    ("ext4_free_in_core_inode", "rcu"),
+]
+
+# Narrowed default-callback macros that expand a standard kernel callback
+# without spelling the callback identifier at the invocation site (C2).
+_DEFAULT_CB_MACROS = {
+    "autoremove_wake_function": ("DEFINE_WAIT", "init_wait"),
+    "default_wake_function": ("DEFINE_WAIT", "DECLARE_WAIT"),
+    "woken_wake_function": ("DEFINE_WAIT_FUNC",),
+    "wake_bit_function": ("DEFINE_WAIT_BIT", "__init_waitqueue_func_entry"),
+    "__pollwait": ("poll_initwait", "init_poll_funcptr"),
+}
 
 
 def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
@@ -106,17 +140,24 @@ def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
     return None
 
 
-def _verify_edge_in_source(row: dict, src_path: str) -> bool:
-    """Heuristic verifying an async_edges row against its C source file."""
+def _verify_edge_in_source(row: dict, src_path: str) -> str | None:
+    """Verify an async_edges row against its C source file (Recommendation C2).
+
+    Returns:
+      - "direct" if `row["callee"]` appears literally in the local window
+      - "macro" if matched via a known default-callback macro or a file-local
+        `#define` whose body references `callee` or token-pasting `##`
+      - None if unverified
+    """
     try:
         line_no = int(row["line"])
         with open(src_path, encoding="utf-8", errors="replace") as src_file:
             lines = src_file.readlines()
     except (OSError, ValueError):
-        return False
+        return None
 
     if not 1 <= line_no <= len(lines):
-        return False
+        return None
 
     callee = row["callee"]
     start = max(0, line_no - 20)
@@ -125,24 +166,27 @@ def _verify_edge_in_source(row: dict, src_path: str) -> bool:
 
     # 1. Direct appearance of callback identifier in local source window
     if callee in window:
-        return True
+        return "direct"
 
-    # 2. Standard kernel initializer macro that embeds a default callback
-    if any(kw in window for kw in _MACRO_KEYWORDS):
-        return True
+    # 2. Narrowed default-callback macros (e.g., DEFINE_WAIT -> autoremove)
+    allowed_macros = _DEFAULT_CB_MACROS.get(callee, ())
+    if any(macro_kw in window for macro_kw in allowed_macros):
+        return "macro"
 
-    # 3. File-local helper macro (e.g., `#define node_free(n) call_rcu(...)`)
-    # defined earlier in the same source file and invoked in the local window.
-    full_source = "".join(lines[: line_no + 5])
-    if callee in full_source:
-        for match in re.finditer(
-            r"#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b", full_source
+    # 3. File-local helper macro defined earlier in the same file whose body
+    # references `callee` or token-pastes `##`
+    prefix_source = "".join(lines[: line_no + 5])
+    macro_def_re = re.compile(
+        r"#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b([^\n]*(?:\\\n[^\n]*)*)"
+    )
+    for match in macro_def_re.finditer(prefix_source):
+        macro_name, macro_body = match.group(1), match.group(2)
+        if macro_name in window and (
+            callee in macro_body or "##" in macro_body
         ):
-            macro_name = match.group(1)
-            if macro_name in window:
-                return True
+            return "macro"
 
-    return False
+    return None
 
 
 def test_async_edges_not_empty(async_edges, kernel):
@@ -154,7 +198,7 @@ def test_async_edges_not_empty(async_edges, kernel):
 
 
 def test_async_edges_fields_and_forms_valid(async_edges):
-    """Verify all columns, registration forms, and contexts are valid."""
+    """Verify columns, forms, and inline vs. deferred contexts (A2)."""
     blank_caller = sum(1 for r in async_edges if not r["caller"])
     blank_callee = sum(1 for r in async_edges if not r["callee"])
     blank_mech = sum(1 for r in async_edges if not r["mechanism"])
@@ -172,6 +216,14 @@ def test_async_edges_fields_and_forms_valid(async_edges):
         for r in async_edges
         if "context" in r and r["context"] not in VALID_CONTEXTS
     ]
+    bad_inline_taxonomy = [
+        (r["mechanism"], r["context"])
+        for r in async_edges
+        if "context" in r
+        and (
+            (r["mechanism"] in INLINE_MECHANISMS) != (r["context"] == "inline")
+        )
+    ]
 
     report(
         "field & form validity",
@@ -182,6 +234,7 @@ def test_async_edges_fields_and_forms_valid(async_edges):
             "invalid forms": len(bad_forms),
             "invalid lines": len(bad_lines),
             "invalid contexts": len(bad_contexts),
+            "inline taxonomy mismatches": len(bad_inline_taxonomy),
             "trampoline leaks": len(trampoline_hits),
         },
     )
@@ -191,6 +244,9 @@ def test_async_edges_fields_and_forms_valid(async_edges):
     assert not bad_forms, f"unexpected form values: {set(bad_forms)}"
     assert not bad_lines, f"invalid line numbers: {bad_lines[:5]}"
     assert not bad_contexts, f"invalid context values: {set(bad_contexts)}"
+    assert not bad_inline_taxonomy, (
+        f"inline vs deferred context mismatch: {bad_inline_taxonomy[:5]}"
+    )
     assert not trampoline_hits, (
         f"internal work trampolines leaked into async_edges: "
         f"{trampoline_hits[:5]}"
@@ -203,6 +259,11 @@ def test_async_edges_no_self_or_degenerate_edges(async_edges):
     file_scope_rows = [
         r for r in async_edges if r["caller"].startswith("<file-scope:")
     ]
+    init_fn_rows = [
+        r
+        for r in async_edges
+        if r["form"] == "init" and not r["caller"].startswith("<file-scope:")
+    ]
     bad_file_scope = [
         r
         for r in file_scope_rows
@@ -213,28 +274,48 @@ def test_async_edges_no_self_or_degenerate_edges(async_edges):
         "self & file-scope edges",
         {
             "self edges": len(self_edges),
+            "Form C function-bridged rows": len(init_fn_rows),
             "file-scope rows": len(file_scope_rows),
             "malformed file-scope": len(bad_file_scope),
         },
     )
     assert not self_edges, f"found degenerate self-edges: {self_edges[:5]}"
-    assert file_scope_rows, "expected Form C static initializers at file scope"
+    assert init_fn_rows, (
+        "expected Form C static initializers bridged to functions"
+    )
+    assert file_scope_rows, "expected unreferenced Form C tables at file scope"
     assert not bad_file_scope, (
         f"malformed <file-scope:...> callers: {bad_file_scope[:5]}"
     )
 
 
-def test_async_edges_all_core_mechanisms_populated(async_edges):
+def test_async_edges_all_core_mechanisms_populated(
+    async_edges, function_locations
+):
     """Verify every catalog mechanism meets its minimum expected edge count."""
     counts = collections.Counter(r["mechanism"] for r in async_edges)
-    report("top async mechanisms", top_counts(async_edges, "mechanism", 25))
+    usb_compiled = any(
+        "drivers/usb/core/" in r["file_path"] for r in function_locations
+    )
+
+    report("top async mechanisms", top_counts(async_edges, "mechanism", 30))
     report("registration forms", top_counts(async_edges, "form", 5))
+    report(
+        "usb subsystem gate (C1)",
+        {
+            "drivers/usb/core/ compiled in DB": usb_compiled,
+            "usb async edges": counts.get("usb", 0),
+        },
+    )
 
     below_min = {
         mech: (counts.get(mech, 0), min_cnt)
         for mech, min_cnt in EXPECTED_MECHANISM_MIN_COUNTS.items()
         if counts.get(mech, 0) < min_cnt
     }
+    if usb_compiled and counts.get("usb", 0) < USB_MIN_COUNT_WHEN_ENABLED:
+        below_min["usb"] = (counts.get("usb", 0), USB_MIN_COUNT_WHEN_ENABLED)
+
     assert not below_min, (
         f"mechanisms below minimum threshold (actual, min): {below_min}"
     )
@@ -256,7 +337,7 @@ def test_async_edges_canonical_kernel_callbacks_present(async_edges):
         and r["form"] == "arg"
         for r in async_edges
     )
-    # Also verify socket default callbacks (sock_init_data / sock_init_data_uid)
+    # Verify socket default callbacks (sock_init_data / sock_init_data_uid)
     has_sock_def_readable = any(
         r["callee"] == "sock_def_readable"
         and r["mechanism"] == "socket"
@@ -284,6 +365,34 @@ def test_async_edges_canonical_kernel_callbacks_present(async_edges):
     assert has_fput_task_work, "missing fput/__fput_deferred -> ____fput"
     assert has_sock_def_readable, "missing socket assign -> sock_def_readable"
     assert has_skb_sock_wfree, "missing skb assign -> sock_wfree"
+
+
+def test_async_edges_cve_callback_recall(async_edges):
+    """Verify recall against ground-truth CVE async callbacks (B2)."""
+    by_callee_mech = {
+        (r["callee"], r["mechanism"]) for r in async_edges
+    }
+    recalled = [
+        item for item in CVE_CALLBACK_GROUND_TRUTH if item in by_callee_mech
+    ]
+    missing = [
+        item
+        for item in CVE_CALLBACK_GROUND_TRUTH
+        if item not in by_callee_mech
+    ]
+    recall_pct = pct(len(recalled), len(CVE_CALLBACK_GROUND_TRUTH))
+
+    report(
+        "CVE async callback recall (B2)",
+        {
+            "ground-truth CVE callbacks": len(CVE_CALLBACK_GROUND_TRUTH),
+            "recalled": len(recalled),
+            "recall %": f"{recall_pct:.1f}%",
+        },
+    )
+    assert not missing, (
+        f"missed ground-truth CVE async callbacks: {missing}"
+    )
 
 
 def test_async_edges_callees_resolve_to_known_functions(
@@ -318,7 +427,7 @@ def test_async_edges_callees_resolve_to_known_functions(
 
 
 def test_async_edges_source_code_verification_heuristic(async_edges, kernel):
-    """Verify stratified sample of async edges against kernel C source files."""
+    """Verify stratified sample of async edges against kernel C source (C2)."""
     by_pair = collections.defaultdict(list)
     for row in async_edges:
         by_pair[(row["mechanism"], row["form"])].append(row)
@@ -328,7 +437,8 @@ def test_async_edges_source_code_verification_heuristic(async_edges, kernel):
     for key in sorted(by_pair):
         sampled.extend(by_pair[key][:10])
 
-    verified = 0
+    direct_matches = 0
+    macro_matches = 0
     checked = 0
     unmatched_samples = []
     for row in sampled:
@@ -336,25 +446,34 @@ def test_async_edges_source_code_verification_heuristic(async_edges, kernel):
         if not src_path:
             continue
         checked += 1
-        if _verify_edge_in_source(row, src_path):
-            verified += 1
+        kind = _verify_edge_in_source(row, src_path)
+        if kind == "direct":
+            direct_matches += 1
+        elif kind == "macro":
+            macro_matches += 1
         else:
             unmatched_samples.append(row)
 
     if checked == 0:
         pytest.skip("kernel source files not available on disk")
 
-    match_rate = pct(verified, checked)
+    verified = direct_matches + macro_matches
+    direct_rate = pct(direct_matches, checked)
+    total_rate = pct(verified, checked)
     report(
-        "source-code heuristic verification",
+        "source-code heuristic verification (C2)",
         {
             "sampled edges": checked,
-            "verified in C source": verified,
-            "match rate %": f"{match_rate:.1f}%",
+            "direct symbol matches": f"{direct_matches} ({direct_rate:.1f}%)",
+            "macro-expanded matches": macro_matches,
+            "total verified": f"{verified} ({total_rate:.1f}%)",
         },
     )
-    assert match_rate >= 99.0, (
-        f"source verification rate {match_rate:.1f}% < 99.0%; "
+    assert direct_rate >= 90.0, (
+        f"direct symbol match rate {direct_rate:.1f}% < 90.0%"
+    )
+    assert total_rate >= 98.0, (
+        f"total source verification rate {total_rate:.1f}% < 98.0%; "
         f"unmatched samples: {unmatched_samples[:5]}"
     )
 
