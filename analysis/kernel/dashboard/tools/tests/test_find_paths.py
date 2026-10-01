@@ -474,11 +474,23 @@ class TestFindPaths(unittest.TestCase):
                 ),
             ],
         )
+        # Also insert a direct edge at the same call site (target_worker:130)
+        # to verify deduplication upgrades "direct" to the richer "async" label.
+        cur.executemany(
+            "INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (10, 1, "target_worker", "fs/internal.c", 100, 1, 150, 1),
+                (11, 1, "async_work_fn", "fs/internal.c", 130, 1, 130, 10),
+            ],
+        )
+        cur.execute("INSERT INTO edges VALUES (?, ?, ?, ?)", (10, 10, 11, "r"))
         self.conn.commit()
 
         callers = find_paths.get_callers(self.conn, "async_work_fn")
         tw_callers = [c for c in callers if c[0] == "target_worker"]
         self.assertEqual(len(tw_callers), 1)
+        self.assertEqual(tw_callers[0][4], "async")
+        self.assertIn("workqueue/", tw_callers[0][5])
 
         all_syscalls = find_paths.get_reachable_syscalls(
             self.conn, "async_work_fn"

@@ -288,6 +288,25 @@ def get_reachable_syscalls(
     return sorted(syscalls)
 
 
+_CALL_TYPE_PRIORITY = {"direct": 0, "indirect": 1, "async": 2}
+
+
+def _record_caller_site(
+    results: List[Tuple[str, str, int, int, str, str]],
+    seen_sites: Dict[Tuple[str, int], int],
+    site_key: Tuple[str, int],
+    entry: Tuple[str, str, int, int, str, str],
+) -> None:
+    """Append caller entry or upgrade an existing site with a richer label."""
+    if site_key in seen_sites:
+        idx = seen_sites[site_key]
+        if _CALL_TYPE_PRIORITY[entry[4]] > _CALL_TYPE_PRIORITY[results[idx][4]]:
+            results[idx] = entry
+        return
+    seen_sites[site_key] = len(results)
+    results.append(entry)
+
+
 def get_callers(  # pylint: disable=too-many-locals
     conn: sqlite3.Connection, function_name: str
 ) -> List[Tuple[str, str, int, int, str, str]]:
@@ -297,8 +316,8 @@ def get_callers(  # pylint: disable=too-many-locals
       (caller_fn, caller_file, caller_line, call_site_line, call_type, details)
     """
     cur = conn.cursor()
-    results = []
-    seen_sites: Set[Tuple[str, int]] = set()
+    results: List[Tuple[str, str, int, int, str, str]] = []
+    seen_sites: Dict[Tuple[str, int], int] = {}
 
     # 1. Direct callers from edges + locations
     cur.execute(
@@ -317,12 +336,11 @@ def get_callers(  # pylint: disable=too-many-locals
     )
 
     for caller_fn, caller_file, caller_line, call_site_line in cur.fetchall():
-        site_key = (caller_fn, call_site_line)
-        if site_key in seen_sites:
-            continue
-        seen_sites.add(site_key)
-        results.append(
-            (caller_fn, caller_file, caller_line, call_site_line, "direct", "")
+        _record_caller_site(
+            results,
+            seen_sites,
+            (caller_fn, call_site_line),
+            (caller_fn, caller_file, caller_line, call_site_line, "direct", ""),
         )
 
     # 2. Indirect callers from ops_targets
@@ -349,18 +367,19 @@ def get_callers(  # pylint: disable=too-many-locals
         fn_row = cur.fetchone()
         if fn_row:
             caller_fn, caller_file, caller_line = fn_row
-            site_key = (caller_fn, expr_line)
-            if site_key in seen_sites:
-                continue
-            seen_sites.add(site_key)
-            results.append((
-                caller_fn,
-                caller_file,
-                caller_line,
-                expr_line,
-                "indirect",
-                f"{parent}->{field}",
-            ))
+            _record_caller_site(
+                results,
+                seen_sites,
+                (caller_fn, expr_line),
+                (
+                    caller_fn,
+                    caller_file,
+                    caller_line,
+                    expr_line,
+                    "indirect",
+                    f"{parent}->{field}",
+                ),
+            )
 
     # 3. Asynchronous callers from async_edges
     try:
@@ -387,10 +406,6 @@ def get_callers(  # pylint: disable=too-many-locals
     ) in async_rows:
         if caller_fn.startswith("<file-scope:"):
             continue
-        site_key = (caller_fn, reg_line)
-        if site_key in seen_sites:
-            continue
-        seen_sites.add(site_key)
         cur.execute(
             """
             SELECT file_path, start_line
@@ -414,14 +429,19 @@ def get_callers(  # pylint: disable=too-many-locals
             fn_row = cur.fetchone()
         caller_file = fn_row[0] if fn_row else reg_file
         caller_line = fn_row[1] if fn_row else reg_line
-        results.append((
-            caller_fn,
-            caller_file,
-            caller_line,
-            reg_line,
-            "async",
-            f"{mechanism}/{form} ({context})",
-        ))
+        _record_caller_site(
+            results,
+            seen_sites,
+            (caller_fn, reg_line),
+            (
+                caller_fn,
+                caller_file,
+                caller_line,
+                reg_line,
+                "async",
+                f"{mechanism}/{form} ({context})",
+            ),
+        )
 
     return results
 

@@ -321,7 +321,9 @@ def test_async_edges_all_core_mechanisms_populated(
     )
 
 
-def test_async_edges_canonical_kernel_callbacks_present(async_edges):
+def test_async_edges_canonical_kernel_callbacks_present(
+    async_edges, function_locations
+):
     """Spot-check canonical kernel async registrations across subsystems."""
     edge_set = {
         (r["caller"], r["callee"], r["mechanism"], r["form"])
@@ -350,21 +352,34 @@ def test_async_edges_canonical_kernel_callbacks_present(async_edges):
         and r["form"] == "assign"
         for r in async_edges
     )
+    usb_compiled = any(
+        "drivers/usb/core/" in r["file_path"] for r in function_locations
+    )
+    has_usb_canonical = (not usb_compiled) or any(
+        r["callee"] in ("sg_complete", "usb_api_blocking_completion")
+        and r["mechanism"] == "usb"
+        for r in async_edges
+    )
 
     report(
         "canonical spot-checks",
         {
-            "checked": len(CANONICAL_EDGES) + 3,
+            "checked": len(CANONICAL_EDGES) + 3 + (1 if usb_compiled else 0),
             "missing": len(missing)
             + (0 if has_fput_task_work else 1)
             + (0 if has_sock_def_readable else 1)
-            + (0 if has_skb_sock_wfree else 1),
+            + (0 if has_skb_sock_wfree else 1)
+            + (0 if has_usb_canonical else 1),
         },
     )
     assert not missing, f"missing canonical async edges: {missing}"
     assert has_fput_task_work, "missing fput/__fput_deferred -> ____fput"
     assert has_sock_def_readable, "missing socket assign -> sock_def_readable"
     assert has_skb_sock_wfree, "missing skb assign -> sock_wfree"
+    assert has_usb_canonical, (
+        "missing canonical usb core callback (sg_complete / "
+        "usb_api_blocking_completion)"
+    )
 
 
 def test_async_edges_cve_callback_recall(async_edges):

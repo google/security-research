@@ -5,8 +5,8 @@
  * Form A (`asyncRegistrarArg`) and Form B/C (`asyncCallbackField`) catalogs.
  *
  * Known structural limits (explicit non-goals without whole-program dataflow):
- *   1. Function pointers flowing through local/global variables or ternaries
- *      (`fn = cond ? a : b; register(fn)`) rather than a direct FunctionAccess.
+ *   1. Function pointers flowing through intermediate local/global variables
+ *      (`fn = cb; register(fn)`) rather than an inline expression at the site.
  *   2. Unlisted subsystem-private registrars or callback structs not in the
  *      catalog.
  *   3. Runtime-indexed dispatch tables / bytecode interpreters where no single
@@ -27,16 +27,27 @@ predicate isInternalWorkTrampoline(Function f) {
 }
 
 /**
- * Resolves an expression (unwrapping implicit/explicit casts and address-of `&fn`)
- * to a defined callback function, excluding internal macro trampolines.
+ * Resolves an expression (unwrapping implicit/explicit casts, parenthesized
+ * expressions, ternary `cond ? a : b` branches, comma `(a, b)` expressions,
+ * and address-of `&fn`) to a defined callback function, excluding internal
+ * macro trampolines.
  */
 predicate resolveCallback(Expr expr, Function cb) {
-  exists(Expr e | e = expr.getUnconverted() |
-    cb = e.(FunctionAccess).getTarget() or
-    cb = e.(AddressOfExpr).getAddressable()
-  ) and
   cb.hasDefinition() and
-  not isInternalWorkTrampoline(cb)
+  not isInternalWorkTrampoline(cb) and
+  exists(Expr e | e = expr.getUnconverted() |
+    cb = e.(FunctionAccess).getTarget()
+    or
+    cb = e.(AddressOfExpr).getAddressable()
+    or
+    cb = e.(AddressOfExpr).getOperand().getUnconverted().(FunctionAccess).getTarget()
+    or
+    resolveCallback(e.(ConditionalExpr).getThen(), cb)
+    or
+    resolveCallback(e.(ConditionalExpr).getElse(), cb)
+    or
+    resolveCallback(e.(CommaExpr).getRightOperand(), cb)
+  )
 }
 
 /**
@@ -119,43 +130,105 @@ predicate isRcuCallbackHeadAssign(FieldAccess fa, Function cb) {
 }
 
 /**
- * Resolves a file-scope `ClassAggregateLiteral` (Form C static initializer,
- * e.g., `DECLARE_WORK`, `static struct notifier_block`, or
- * `static const struct nf_hook_ops[]`) to an enclosing function that passes
- * the initialized file-scope variable to a registration or scheduling call.
- *
- * Excludes teardown/unregistration calls (`unregister_*`, `cancel_*`, etc.)
- * so the edge links the callback to its registering/scheduling caller rather
- * than module cleanup.
+ * Holds if `cal` is a file-scope `ClassAggregateLiteral` that initializes at
+ * least one cataloged `asyncCallbackField`.
  */
-predicate staticInitRegistrarCaller(ClassAggregateLiteral cal, Function callerFn) {
+predicate isFileScopeAsyncInit(ClassAggregateLiteral cal) {
   not exists(cal.getEnclosingFunction()) and
   exists(Field fld, string s, string f, string m |
     asyncCallbackField(s, f, m) and
     fld.getName() = f and
     fieldInStruct(fld, s) and
     exists(cal.getAFieldExpr(fld))
-  ) and
-  exists(GlobalOrNamespaceVariable v, Expr initExpr, VariableAccess va, Expr arg, FunctionCall fc |
-    (
-      initExpr = cal or
-      initExpr = cal.getParent() or
-      initExpr = cal.getParent().(Expr).getParent()
-    ) and
-    v.getInitializer().getExpr() = initExpr and
+  )
+}
+
+/**
+ * Holds if `result` is `cal` or an enclosing aggregate/parent expression of a
+ * file-scope async initializer `cal` (arbitrary nesting depth).
+ */
+Expr asyncInitAncestor(ClassAggregateLiteral cal) {
+  isFileScopeAsyncInit(cal) and result = cal
+  or
+  result = asyncInitAncestor(cal).getParent()
+}
+
+/**
+ * Holds if `result` is a `VariableAccess` `va` to a file-scope variable `v`
+ * initialized by `cal`, or an enclosing expression of `va` (walking through
+ * casts, field/array accesses, ternaries, and GCC statement-expressions such
+ * as `this_cpu_ptr(&v)`, while excluding `sizeof`/`alignof` operands like
+ * `ARRAY_SIZE(v)`).
+ */
+Expr asyncInitVarExpr(ClassAggregateLiteral cal, VariableAccess va) {
+  exists(GlobalOrNamespaceVariable v |
+    v.getInitializer().getExpr() = asyncInitAncestor(cal) and
     va.getTarget() = v and
+    result = va
+  )
+  or
+  exists(Expr prev |
+    prev = asyncInitVarExpr(cal, va) and
     (
-      arg = va or
-      arg = va.getParent() or
-      arg = va.getParent().(Expr).getParent()
+      result = prev.getParent()
+      or
+      result.(StmtExpr).getStmt().getAChild*() = prev
     ) and
-    fc.getAnArgument() = arg and
-    callerFn = fc.getEnclosingFunction() and
-    not fc.getTarget()
-        .getName()
-        .matches([
-            "%unregister%", "%cancel%", "%flush%", "%del_timer%", "%destroy%", "%free%", "%stop%"
-          ])
+    not result instanceof SizeofOperator and
+    not result instanceof AlignofOperator
+  )
+}
+
+/**
+ * Holds if `f` is an unregistration, cancellation, flushing, or synchronous
+ * wait/teardown helper rather than a callback registration or scheduling call.
+ */
+predicate isUnregisterOrCancelCall(Function f) {
+  f.getName()
+      .matches([
+          "%unregister%", "%cancel%", "%flush%", "%del_timer%", "%timer_delete%",
+          "%destroy%", "%free%", "%stop%", "%remove%", "%disable%", "%kill%",
+          "%unreplay%", "irq_work_sync", "task_work_cancel%"
+        ])
+}
+
+/**
+ * Holds if `f` is a dedicated unregistration/cancellation wrapper whose local
+ * pointer assignments (`ops = ip_vs_ops4`) are solely for teardown.
+ */
+predicate isUnregisterOrCancelCaller(Function f) {
+  f.getName().matches(["%unregister%", "%cancel%", "%unreplay%"])
+}
+
+/**
+ * Resolves a file-scope `ClassAggregateLiteral` (Form C static initializer,
+ * e.g., `DECLARE_WORK`, `static struct notifier_block`, or
+ * `static const struct nf_hook_ops[]`) to an enclosing function that passes
+ * or assigns the initialized file-scope variable to a registration or
+ * scheduling site.
+ */
+predicate staticInitRegistrarCaller(ClassAggregateLiteral cal, Function callerFn) {
+  exists(VariableAccess va, Expr useExpr |
+    useExpr = asyncInitVarExpr(cal, va) and
+    (
+      exists(FunctionCall fc |
+        fc.getAnArgument() = useExpr and
+        callerFn = fc.getEnclosingFunction() and
+        not isUnregisterOrCancelCall(fc.getTarget())
+      )
+      or
+      exists(AssignExpr ae |
+        ae.getRValue() = useExpr and
+        callerFn = ae.getEnclosingFunction() and
+        not isUnregisterOrCancelCaller(callerFn)
+      )
+      or
+      exists(LocalScopeVariable lv |
+        lv.getInitializer().getExpr() = useExpr and
+        callerFn = lv.getFunction() and
+        not isUnregisterOrCancelCaller(callerFn)
+      )
+    )
   )
 }
 
@@ -355,11 +428,7 @@ predicate asyncCallbackField(string structName, string fieldName, string mechani
     or
     structName = "virtqueue_info" and fieldName = "callback"
     or
-    structName = "vhost_virtqueue" and fieldName = "handle_kick"
-    or
     structName = "perf_event" and fieldName = "overflow_handler"
-    or
-    structName = "kvm_vcpu_arch" and fieldName = "complete_userspace_io"
     or
     structName = "ice_vsi" and fieldName = "irq_handler"
     or
@@ -397,20 +466,19 @@ predicate asyncCallbackField(string structName, string fieldName, string mechani
   mechanism = "notifier"
   or
   (
+    // Note: `struct rcu_head` is `#define rcu_head callback_head` in <linux/types.h>
+    // and is disambiguated to "rcu" via `isRcuCallbackHeadAssign`.
     structName = "callback_head" and fieldName = "func"
     or
     structName = "delayed_call" and fieldName = "fn"
     or
     structName = "restart_block" and fieldName = "fn"
+    or
+    structName = "kvm_vcpu_arch" and fieldName = "complete_userspace_io"
   ) and
   mechanism = "task_work"
   or
-  (
-    structName = "rcu_head" and fieldName = "func"
-    or
-    structName = "super_operations" and fieldName = "free_inode"
-  ) and
-  mechanism = "rcu"
+  structName = "super_operations" and fieldName = "free_inode" and mechanism = "rcu"
   or
   structName = "urb" and fieldName = "complete" and mechanism = "usb"
   or
@@ -425,7 +493,12 @@ predicate asyncCallbackField(string structName, string fieldName, string mechani
   fieldName = "func" and
   mechanism = "waitqueue"
   or
-  structName = "poll_table_struct" and fieldName = "_qproc" and mechanism = "poll"
+  (
+    structName = "poll_table_struct" and fieldName = "_qproc"
+    or
+    structName = "vhost_virtqueue" and fieldName = "handle_kick"
+  ) and
+  mechanism = "poll"
   or
   (
     structName = "sock" and
