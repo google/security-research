@@ -497,6 +497,67 @@ class TestFindPaths(unittest.TestCase):
         )
         self.assertEqual(all_syscalls, ["__do_sys_bar", "__do_sys_foo"])
 
+    def test_entry_node_reachability_and_path(self):
+        """Verify entry_node reachability and path resolution."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE entry_node (
+                entry_kind TEXT NOT NULL,
+                entry TEXT NOT NULL,
+                function TEXT NOT NULL,
+                entry_location TEXT NOT NULL,
+                function_location TEXT NOT NULL
+            )
+        """)
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("ip_rcv", "net/ipv4/ip_input.c", 500, 540),
+                ("tcp_v4_rcv", "net/ipv4/tcp_ipv4.c", 2000, 2100),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO entry_node VALUES (?, ?, ?, ?, ?)",
+            (
+                "net_rx",
+                "ip_rcv",
+                "tcp_v4_rcv",
+                "net/ipv4/ip_input.c:500",
+                "net/ipv4/tcp_ipv4.c:2000",
+            ),
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (20, "ip_rcv", "net/ipv4/ip_input.c", 500),
+                (21, "call to tcp_v4_rcv", "net/ipv4/ip_input.c", 525),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            (20, 21, "callgraph-all"),
+        )
+        self.conn.commit()
+
+        entries = find_paths.get_reachable_entries(self.conn, "tcp_v4_rcv")
+        self.assertEqual(
+            entries, [{"entry_kind": "net_rx", "entry": "ip_rcv"}]
+        )
+
+        target_info, paths = find_paths.find_paths_to_line(
+            self.db_path, "net/ipv4/tcp_ipv4.c", 2050
+        )
+        self.assertEqual(target_info["function"], "tcp_v4_rcv")
+        self.assertEqual(len(target_info["all_entries"]), 1)
+        self.assertIn("ip_rcv", paths)
+        self.assertEqual(paths["ip_rcv"][0]["entry_kind"], "net_rx")
+
+        tree = find_paths.format_tree(paths, target_info)
+        self.assertIn("[Entry: net_rx] ip_rcv", tree)
+        self.assertIn("Non-Syscall Entries (CodeQL):", tree)
+
 
 if __name__ == "__main__":
     unittest.main()

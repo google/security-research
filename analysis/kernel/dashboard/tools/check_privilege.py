@@ -32,11 +32,14 @@ try:
         get_enclosing_function,
         get_kconfig_metadata,
         get_line_configs,
+        get_reachable_entries,
         get_reachable_syscalls,
         get_callers,
+        is_entry_root,
         is_syscall_root,
         is_line_covered_by_syzkaller,
         get_syzkaller_coverage,
+        load_entry_roots,
     )
 except ImportError:
     from find_paths import (
@@ -44,19 +47,118 @@ except ImportError:
         get_enclosing_function,
         get_kconfig_metadata,
         get_line_configs,
+        get_reachable_entries,
         get_reachable_syscalls,
         get_callers,
+        is_entry_root,
         is_syscall_root,
         is_line_covered_by_syzkaller,
         get_syzkaller_coverage,
+        load_entry_roots,
     )
 
 LOCATION_RE = re.compile(r"^(.+):(\d+):(\d+):(\d+):(\d+)$")
 
 # Cost model for Dijkstra path finding (favoring unprivileged/ungated paths)
 COST_UNGATED = 1
+COST_INDIRECT_ENTRY = 500
 COST_NS_CAPABLE = 10_000
+COST_PHYSICAL = 500_000
 COST_CAPABLE = 1_000_000
+
+
+def get_entry_precondition(
+    entry_name: str, entry_kind: str = "syscall"
+) -> Dict[str, Any]:
+    """Return 2D entry precondition metadata for an entry root.
+
+    Dimension 1: attacker_position & baseline cost/gate floor.
+    Dimension 2: trigger_directness ('direct' vs 'indirect').
+    """
+    if entry_kind == "net_rx":
+        if entry_name == "packet_rcv":
+            return {
+                "entry_kind": entry_kind,
+                "attacker_position": "local, CAP_NET_RAW",
+                "trigger_directness": "direct",
+                "baseline_cost": COST_CAPABLE,
+                "baseline_gate": {
+                    "type": "capable",
+                    "argument": "CAP_NET_RAW",
+                    "cap_str": "capable(CAP_NET_RAW)",
+                    "call": "packet_create (entry baseline)",
+                    "call_location": "entry_baseline:packet_rcv",
+                    "definition": "entry_baseline:packet_rcv",
+                    "condition": "entry_baseline:packet_rcv",
+                },
+                "entry_note": (
+                    "AF_PACKET RX handler (socket creation gated by"
+                    " ns_capable/capable(CAP_NET_RAW))"
+                ),
+            }
+        return {
+            "entry_kind": entry_kind,
+            "attacker_position": "remote, unauthenticated",
+            "trigger_directness": "direct",
+            "baseline_cost": 0,
+            "baseline_gate": None,
+            "entry_note": (
+                "Network RX handler (remote / unauthenticated packet delivery)"
+            ),
+        }
+    if entry_kind in ("vfs_writeback", "vfs_reclaim"):
+        return {
+            "entry_kind": entry_kind,
+            "attacker_position": "local, unprivileged",
+            "trigger_directness": "indirect",
+            "baseline_cost": COST_INDIRECT_ENTRY,
+            "baseline_gate": None,
+            "entry_note": (
+                "Indirect kernel-thread trigger (dirty-page writeback or"
+                " memory pressure)"
+            ),
+        }
+    if entry_kind == "bpf_entry":
+        return {
+            "entry_kind": entry_kind,
+            "attacker_position": "local, CAP_BPF (default)",
+            "trigger_directness": "direct",
+            "baseline_cost": COST_CAPABLE,
+            "baseline_gate": {
+                "type": "capable",
+                "argument": "CAP_BPF",
+                "cap_str": "capable(CAP_BPF)",
+                "call": "sys_bpf (entry baseline)",
+                "call_location": f"entry_baseline:{entry_name}",
+                "definition": f"entry_baseline:{entry_name}",
+                "condition": f"entry_baseline:{entry_name}",
+            },
+            "entry_note": (
+                "BPF helper/kfunc (requires BPF program load;"
+                " CAP_BPF/CAP_SYS_ADMIN when"
+                " kernel.unprivileged_bpf_disabled != 0)"
+            ),
+        }
+    if entry_kind == "device_usb":
+        return {
+            "entry_kind": entry_kind,
+            "attacker_position": "physical / malicious-device",
+            "trigger_directness": "direct",
+            "baseline_cost": COST_PHYSICAL,
+            "baseline_gate": None,
+            "entry_note": (
+                "USB driver probe/disconnect (requires physical USB / BadUSB /"
+                " usbip / gadget access)"
+            ),
+        }
+    return {
+        "entry_kind": entry_kind,
+        "attacker_position": "local, unprivileged",
+        "trigger_directness": "direct",
+        "baseline_cost": 0,
+        "baseline_gate": None,
+        "entry_note": "",
+    }
 
 
 def clean_file_path(path: str) -> str:
@@ -305,7 +407,7 @@ def get_call_site_gates(
     return deduplicate_gates(gates)
 
 
-def load_runtime_tunables(  # pylint: disable=too-many-locals
+def load_runtime_tunables(  # pylint: disable=too-many-locals,too-many-branches
     conn: sqlite3.Connection,
 ) -> Tuple[
     Dict[Tuple[str, int], List[Dict[str, Any]]],
@@ -416,6 +518,64 @@ def _collect_path_preconditions(
     return cfgs, deduplicate_gates(tuns)
 
 
+def _finalize_root_path(
+    root_fn: str,
+    entry_kind: str,
+    path: List[Dict[str, Any]],
+    cap_map: Optional[Dict[str, str]],
+) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Attach 2D entry metadata and baseline gates to a completed root path."""
+    pre = get_entry_precondition(root_fn, entry_kind)
+    path_copy = [dict(s) for s in path]
+    path_copy[0]["entry_kind"] = entry_kind
+    path_copy[0]["attacker_position"] = pre["attacker_position"]
+    path_copy[0]["trigger_directness"] = pre["trigger_directness"]
+    path_copy[0]["entry_note"] = pre["entry_note"]
+    root_gates = list(path_copy[0].get("gates", []))
+    if pre["baseline_gate"] is not None:
+        root_gates.append(pre["baseline_gate"])
+        path_copy[0]["gates"] = deduplicate_gates(root_gates)
+
+    all_path_gates = []
+    for step in path_copy:
+        for g in step.get("gates", []):
+            all_path_gates.append(g)
+    all_path_gates = deduplicate_gates(all_path_gates)
+    verdict = classify_gates(
+        all_path_gates, cap_map=cap_map, entry_kind=entry_kind
+    )
+    return verdict, all_path_gates, path_copy
+
+
+def _build_result_record(
+    sc: str,
+    verdict: Optional[str],
+    gates: List[Dict[str, Any]],
+    path: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build a result dictionary enriched with 2D entry precondition fields."""
+    p_cfgs, p_tuns = _collect_path_preconditions(path)
+    root_step = path[0]
+    ekind = root_step.get("entry_kind", "syscall")
+    pre = get_entry_precondition(root_step["function"], ekind)
+    return {
+        "syscall": sc,
+        "entry_kind": ekind,
+        "attacker_position": root_step.get(
+            "attacker_position", pre["attacker_position"]
+        ),
+        "trigger_directness": root_step.get(
+            "trigger_directness", pre["trigger_directness"]
+        ),
+        "entry_note": root_step.get("entry_note", pre["entry_note"]),
+        "verdict": verdict,
+        "gates": gates,
+        "configs": p_cfgs,
+        "tunables": p_tuns,
+        "path": path,
+    }
+
+
 def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
     conn: sqlite3.Connection,
     target_fn: str,
@@ -432,18 +592,21 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
 ) -> Tuple[
     Optional[str], List[Dict[str, Any]], Optional[List[Dict[str, Any]]]
 ]:
-    """Search for optimal path from syscalls to target_fn:target_line.
+    """Search for optimal path from syscalls/entries to target_fn:target_line.
 
     Uses Dijkstra search with edge weights:
       - Ungated hop: 1
+      - Indirect entry baseline (vfs_writeback / vfs_reclaim): 500
       - ns_capable hop: 10,000
-      - capable (root) hop: 1,000,000
+      - Physical USB entry baseline: 500,000
+      - capable (root) hop or CAP_BPF/CAP_NET_RAW entry baseline: 1,000,000
 
     Guarantees finding an ungated path first if one exists, otherwise finds
-    minimal capability requirement.
+    minimal capability requirement across all reaching paths.
     """
     cur = conn.cursor()
     reachable_set: Optional[Set[str]] = None
+    entry_roots = load_entry_roots(conn)
 
     if target_syscall:
         cur.execute(
@@ -451,6 +614,15 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
             (target_syscall,),
         )
         reachable_set = {r[0] for r in cur.fetchall()}
+        try:
+            cur.execute(
+                "SELECT DISTINCT function FROM entry_node"
+                " WHERE entry = ? OR entry_kind = ?",
+                (target_syscall, target_syscall),
+            )
+            reachable_set.update(r[0] for r in cur.fetchall())
+        except sqlite3.Error:
+            pass
         reachable_set.add(target_syscall)
         base_name = target_syscall.replace("__do_sys_", "").replace(
             "__se_sys_", ""
@@ -496,9 +668,7 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
 
     # If the target function itself IS a syscall entry point
     if is_syscall_root(target_fn, target_syscall):
-        all_gates = list(target_gates)
-        verdict = classify_gates(all_gates, cap_map=cap_map)
-        return verdict, all_gates, [start_step]
+        return _finalize_root_path(target_fn, "syscall", [start_step], cap_map)
 
     # Priority queue:
     # (cost, hop_count, tie_breaker, curr_fn, curr_file, curr_line, path)
@@ -512,28 +682,58 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
         target_line,
         [start_step],
     )]
-    best_dist = {target_fn: init_cost}
+    best_dist: Dict[str, float] = {target_fn: init_cost}
 
     while pq:
-        cost, hops, _, curr_fn, _curr_file, _curr_line, path = heapq.heappop(pq)
+        cost, hops, _, curr_fn, curr_file, _curr_line, path = heapq.heappop(pq)
+
+        if curr_fn == "__TERMINAL__":
+            return _finalize_root_path(
+                path[0]["function"], curr_file, path, cap_map
+            )
 
         if cost > best_dist.get(curr_fn, float("inf")):
             continue
 
         if is_syscall_root(curr_fn, target_syscall):
-            # Collect all gates encountered across the entire path
-            all_path_gates = []
-            for step in path:
-                for g in step.get("gates", []):
-                    all_path_gates.append(g)
-            all_path_gates = deduplicate_gates(all_path_gates)
-            verdict = classify_gates(all_path_gates, cap_map=cap_map)
-            return verdict, all_path_gates, path
+            return _finalize_root_path(curr_fn, "syscall", path, cap_map)
+
+        entry_kind = is_entry_root(curr_fn, target_syscall, entry_roots)
+        if entry_kind:
+            pre = get_entry_precondition(curr_fn, entry_kind)
+            base_cost = pre["baseline_cost"]
+            if base_cost == 0:
+                return _finalize_root_path(curr_fn, entry_kind, path, cap_map)
+            term_cost = cost + base_cost
+            if term_cost < best_dist.get("__TERMINAL__", float("inf")):
+                best_dist["__TERMINAL__"] = term_cost
+                counter += 1
+                heapq.heappush(
+                    pq,
+                    (
+                        term_cost,
+                        hops,
+                        counter,
+                        "__TERMINAL__",
+                        entry_kind,
+                        0,
+                        path,
+                    ),
+                )
 
         if hops >= max_depth:
             continue
 
         callers = get_callers(conn, curr_fn)
+        has_reachable_caller = reachable_set is not None and any(
+            c[0] in reachable_set for c in callers
+        )
+        can_prune_to_reachable = (
+            reachable_set is not None
+            and curr_fn in reachable_set
+            and has_reachable_caller
+            and cost == 0
+        )
         for (
             caller_fn,
             caller_file,
@@ -543,8 +743,7 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
             details,
         ) in callers:
             if (
-                reachable_set is not None
-                and curr_fn in reachable_set
+                can_prune_to_reachable
                 and caller_fn not in reachable_set
                 and call_type not in ("indirect", "async")
             ):
@@ -609,17 +808,20 @@ def find_best_privilege_path(  # pylint: disable=too-many-arguments,too-many-pos
 
 
 def classify_gates(
-    gates: List[Dict[str, Any]], cap_map: Optional[Dict[str, str]] = None
+    gates: List[Dict[str, Any]],
+    cap_map: Optional[Dict[str, str]] = None,
+    entry_kind: str = "syscall",
 ) -> str:
-    """Classify reachability verdict based on capability gates on the route."""
-    if not gates:
-        return "REACHABLE WITH NO PRIVILEGE (UNGATED)"
-
+    """Classify reachability verdict based on capability gates and entry."""
     has_capable = any(g["type"] == "capable" for g in gates)
     has_ns_capable = any(g["type"] == "ns_capable" for g in gates)
 
-    if not has_capable and has_ns_capable:
-        return "REACHABLE BEHIND USER NAMESPACE CAPABILITY"
+    if not has_capable:
+        if entry_kind == "device_usb":
+            return "REACHABLE VIA PHYSICAL DEVICE (USB)"
+        if has_ns_capable:
+            return "REACHABLE BEHIND USER NAMESPACE CAPABILITY"
+        return "REACHABLE WITH NO PRIVILEGE (UNGATED)"
 
     # Specific CAP_SYS_ADMIN check
     for g in gates:
@@ -643,6 +845,24 @@ def classify_gates(
         return f"REACHABLE, BUT ONLY BEHIND {root_caps[0]}"
 
     return "REACHABLE WITH NO PRIVILEGE (UNGATED)"
+
+
+def _verdict_rank(res: Dict[str, Any]) -> Tuple[int, int, int]:
+    """Rank a path result by privilege requirement, directness, and length."""
+    v = res.get("verdict", "")
+    direct_rank = 0 if res.get("trigger_directness") != "indirect" else 1
+    plen = len(res.get("path", []))
+    if v == "REACHABLE WITH NO PRIVILEGE (UNGATED)":
+        return (0, direct_rank, plen)
+    if v == "REACHABLE BEHIND USER NAMESPACE CAPABILITY":
+        return (1, direct_rank, plen)
+    if v == "REACHABLE VIA PHYSICAL DEVICE (USB)":
+        return (2, direct_rank, plen)
+    if v.startswith("REACHABLE, BUT ONLY BEHIND") and "CAP_SYS_ADMIN" not in v:
+        return (3, direct_rank, plen)
+    if "CAP_SYS_ADMIN" in v:
+        return (4, direct_rank, plen)
+    return (5, direct_rank, plen)
 
 
 def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches,too-many-statements
@@ -685,6 +905,8 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
 
     fn_name, canonical_file, start_line, end_line = fn_info
     reachable_syscalls = get_reachable_syscalls(conn, fn_name)
+    reachable_entries = get_reachable_entries(conn, fn_name)
+    entry_roots = load_entry_roots(conn)
     syzk_info = get_syzkaller_coverage(
         syzk_conn, canonical_file, line_number, fn_span=(start_line, end_line)
     )
@@ -697,13 +919,19 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
         "span": (start_line, end_line),
         "is_function_entry": is_function_entry,
         "all_syscalls": reachable_syscalls,
+        "all_entries": reachable_entries,
         "configs": target_configs,
         "kconfig_metadata": get_kconfig_metadata(conn, target_configs),
         "syzkaller": syzk_info,
     }
 
-    # If not reachable by any syscall and not a syscall root itself
-    if not reachable_syscalls and not is_syscall_root(fn_name, target_syscall):
+    # If not reachable by any syscall or entry root and not a root itself
+    if (
+        not reachable_syscalls
+        and not reachable_entries
+        and not is_syscall_root(fn_name, target_syscall)
+        and not is_entry_root(fn_name, target_syscall, entry_roots)
+    ):
         conn.close()
         if syzk_conn:
             syzk_conn.close()
@@ -728,8 +956,15 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
                 for s in reachable_syscalls
                 if s.endswith(f"_{target_syscall}") or s == target_syscall
             ]
+            matched_entries = [
+                e["entry"]
+                for e in reachable_entries
+                if target_syscall in {e["entry"], e["entry_kind"]}
+            ]
             eval_syscalls = (
-                matched if matched else [f"__do_sys_{target_syscall}"]
+                matched + matched_entries
+                if (matched or matched_entries)
+                else [f"__do_sys_{target_syscall}"]
             )
         else:
             eval_syscalls = [target_syscall]
@@ -750,26 +985,22 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
                 func_tunables=func_tunables,
             )
             if path:
-                p_cfgs, p_tuns = _collect_path_preconditions(path)
-                res = {
-                    "syscall": sc,
-                    "verdict": verdict,
-                    "gates": gates,
-                    "configs": p_cfgs,
-                    "tunables": p_tuns,
-                    "path": path,
-                }
-                all_results.append(res)
+                all_results.append(
+                    _build_result_record(sc, verdict, gates, path)
+                )
 
         if all_results:
-            primary_result = all_results[0]
+            primary_result = min(all_results, key=_verdict_rank)
             overall_verdict = primary_result["verdict"]
         else:
             overall_verdict = "UNREACHABLE"
 
     elif all_syscalls:
-        # Check all reachable syscalls up to limit
-        for sc in reachable_syscalls[:limit_syscalls]:
+        # Check reachable syscalls and non-syscall entries up to limit
+        candidates = list(reachable_syscalls) + [
+            e["entry"] for e in reachable_entries
+        ]
+        for sc in candidates[:limit_syscalls]:
             verdict, gates, path = find_best_privilege_path(
                 conn,
                 fn_name,
@@ -785,47 +1016,17 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
                 func_tunables=func_tunables,
             )
             if path:
-                p_cfgs, p_tuns = _collect_path_preconditions(path)
-                all_results.append({
-                    "syscall": sc,
-                    "verdict": verdict,
-                    "gates": gates,
-                    "configs": p_cfgs,
-                    "tunables": p_tuns,
-                    "path": path,
-                })
+                all_results.append(
+                    _build_result_record(sc, verdict, gates, path)
+                )
 
-        # Overall verdict is ungated if ANY syscall is ungated
-        ungated_msg = "REACHABLE WITH NO PRIVILEGE (UNGATED)"
-        userns_msg = "REACHABLE BEHIND USER NAMESPACE CAPABILITY"
-        has_ungated = any(r["verdict"] == ungated_msg for r in all_results)
-        has_userns = any(r["verdict"] == userns_msg for r in all_results)
-
-        if has_ungated:
-            overall_verdict = ungated_msg
-            ungated_results = [
-                r for r in all_results if r["verdict"] == ungated_msg
-            ]
-            primary_result = min(
-                ungated_results, key=lambda r: len(r.get("path", []))
-            )
-        elif has_userns:
-            overall_verdict = userns_msg
-            userns_results = [
-                r for r in all_results if r["verdict"] == userns_msg
-            ]
-            primary_result = min(
-                userns_results, key=lambda r: len(r.get("path", []))
-            )
-        elif all_results:
-            primary_result = min(
-                all_results, key=lambda r: len(r.get("path", []))
-            )
+        if all_results:
+            primary_result = min(all_results, key=_verdict_rank)
             overall_verdict = primary_result["verdict"]
         else:
             overall_verdict = "UNREACHABLE"
     else:
-        # Global search for closest/lowest-privilege path across ANY syscall
+        # Global search for lowest-privilege path across ANY syscall or entry
         verdict, gates, path = find_best_privilege_path(
             conn,
             fn_name,
@@ -842,17 +1043,11 @@ def analyze_target_privilege(  # pylint: disable=too-many-arguments,too-many-pos
         )
         if path:
             root_sc = path[0]["function"]
-            p_cfgs, p_tuns = _collect_path_preconditions(path)
-            primary_result = {
-                "syscall": root_sc,
-                "verdict": verdict,
-                "gates": gates,
-                "configs": p_cfgs,
-                "tunables": p_tuns,
-                "path": path,
-            }
+            primary_result = _build_result_record(
+                root_sc, verdict, gates, path
+            )
             all_results = [primary_result]
-            overall_verdict = verdict
+            overall_verdict = verdict or "UNREACHABLE"
         else:
             overall_verdict = "UNREACHABLE"
 
@@ -925,6 +1120,17 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
     if num_sc > 5:
         sc_preview += "..."
     out.append(f"Reachable Syscalls: {num_sc} syscall(s) ({sc_preview})")
+    all_entries = target_info.get("all_entries", [])
+    if all_entries:
+        ent_preview = ", ".join(
+            f"{e['entry_kind']}:{e['entry']}" for e in all_entries[:5]
+        )
+        if len(all_entries) > 5:
+            ent_preview += "..."
+        out.append(
+            f"Reachable Non-Syscall Entries: {len(all_entries)} root(s)"
+            f" ({ent_preview})"
+        )
 
     out.append("-" * 72)
     out.append(f"VERDICT: {overall_verdict}")
@@ -945,6 +1151,15 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
         out.append(
             "Access Scope:    Reachable within user namespaces (e.g. via"
             " CLONE_NEWUSER / unshare -U)."
+        )
+    elif overall_verdict == "REACHABLE VIA PHYSICAL DEVICE (USB)":
+        out.append("Privilege Level: Physical / Malicious USB Device")
+        out.append(
+            "Gating Status:   Reachable from USB driver probe/disconnect"
+        )
+        out.append(
+            "Access Scope:    Requires physical USB / BadUSB / usbip / gadget"
+            " attachment."
         )
     elif "CAP_SYS_ADMIN" in overall_verdict:
         out.append(
@@ -969,6 +1184,20 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
             "Gating Status:   No callgraph paths from userspace syscalls"
         )
         out.append("Access Scope:    Kernel-internal or boot execution only.")
+
+    if primary_result:
+        ekind = primary_result.get("entry_kind", "syscall")
+        apos = primary_result.get("attacker_position", "local, unprivileged")
+        tdir = primary_result.get("trigger_directness", "direct")
+        out.append(
+            f"Entry Surface:   {ekind} ({apos}; trigger: {tdir})"
+        )
+        if primary_result.get("entry_note"):
+            out.append(f"Entry Note:      {primary_result['entry_note']}")
+        out.append(
+            "Caveat:          Minimum precondition to reach (attack-surface"
+            " floor), not exploitability."
+        )
 
     syzk = target_info.get("syzkaller", {})
     if syzk.get("configured"):
@@ -1044,8 +1273,14 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
             indent = "  " * (i + 1)
 
             if i == 0:
+                ekind = step.get("entry_kind", "syscall")
+                root_lbl = (
+                    "[Syscall Entry]"
+                    if ekind == "syscall"
+                    else f"[Entry: {ekind}]"
+                )
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn}"
+                    f"{indent}└── {root_lbl} {fn}"
                     f" ({f}:{l}){gate_str}{cfg_str}{tun_str}"
                 )
             elif i == len(path) - 1:
@@ -1141,8 +1376,14 @@ def format_tree(  # pylint: disable=too-many-locals
             call_info = f" [calls at L{cs}]" if cs else ""
 
             if i == 0:
+                ekind = step.get("entry_kind", "syscall")
+                root_lbl = (
+                    "[Syscall Entry]"
+                    if ekind == "syscall"
+                    else f"[Entry: {ekind}]"
+                )
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn}"
+                    f"{indent}└── {root_lbl} {fn}"
                     f" ({f}:{l}){gate_tag}{cfg_tag}{tun_tag}"
                 )
             elif i == len(path) - 1:

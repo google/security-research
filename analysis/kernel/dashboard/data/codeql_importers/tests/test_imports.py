@@ -24,6 +24,7 @@ import import_async_edges
 import import_conditions
 import import_conditions_reachable
 import import_configs
+import import_entry_node
 import import_field_access
 import import_functions
 import import_macro_invocations
@@ -777,6 +778,89 @@ class TestImportAsyncEdges(BaseImporterTest):
                 ),
             ],
         )
+
+
+class TestImportEntryNode(BaseImporterTest):
+    """Tests for `import_entry_node.py`."""
+
+    def setUp(self):
+        """Sets up locs.csv and pairs.csv test file paths."""
+        super().setUp()
+        self.locs_path = os.path.join(self.tmp_dir, "locs.csv")
+        self.pairs_path = os.path.join(self.tmp_dir, "pairs.csv")
+
+    def _write_sample_locs(self) -> None:
+        """Writes a 3-row locs.csv with duplicate `hash` function names."""
+        with open(self.locs_path, "w", encoding="utf-8") as locs_file:
+            locs_file.write(
+                '"do_user_addr_fault","linux/arch/x86/mm/fault.c",'
+                "1200,1,1300,20\n"
+                '"hash","linux/fs/inode.c",50,1,60,20\n'
+                '"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n'
+            )
+
+    def test_import_4col_exact_join(self):
+        """Verifies 4-column (entry_kind, entry, function, file) exact join."""
+        self._write_sample_locs()
+        with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
+            pairs_file.write(
+                '"page_fault","do_user_addr_fault","hash","linux/fs/inode.c"\n'
+            )
+
+        by_fn_file, by_name, prefix = import_entry_node.load_locs(
+            self.locs_path
+        )
+        entloc = import_entry_node.entry_locations(by_name)
+        rows = list(
+            import_entry_node.gen_rows(
+                self.pairs_path, by_fn_file, by_name, entloc, prefix
+            )
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0],
+            (
+                "page_fault",
+                "do_user_addr_fault",
+                "hash",
+                "arch/x86/mm/fault.c:1200:1:1300:20",
+                "fs/inode.c:50:1:60:20",
+            ),
+        )
+
+        import_entry_node.write_db(self.db_path, rows)
+        row = self.fetch_one("SELECT count(*) FROM entry_node")
+        self.assertEqual(row[0], 1)
+
+    def test_cli_main(self):
+        """Verifies CLI entry point for `import_entry_node`."""
+        with open(self.locs_path, "w", encoding="utf-8") as locs_file:
+            locs_file.write(
+                '"wb_workfn","linux/fs/fs-writeback.c",2000,1,2050,20\n'
+                '"wb_writeback","linux/fs/fs-writeback.c",1900,1,1980,20\n'
+            )
+
+        with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
+            pairs_file.write(
+                '"vfs_writeback","wb_workfn","wb_writeback",'
+                '"linux/fs/fs-writeback.c"\n'
+            )
+
+        argv = [
+            "import_entry_node.py",
+            "--pairs",
+            self.pairs_path,
+            "--locs",
+            self.locs_path,
+            "--db",
+            self.db_path,
+        ]
+        with patch("sys.argv", argv):
+            import_entry_node.main()
+
+        row = self.fetch_one("SELECT count(*) FROM entry_node")
+        self.assertEqual(row[0], 1)
 
 
 if __name__ == "__main__":

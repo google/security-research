@@ -38,6 +38,11 @@
     "distinct_syscalls": 418,
     "mean_reach": 13800
   },
+  "entry_node": {
+    "rows": 5219521,
+    "distinct_entries": 487,
+    "mean_reach": 10687
+  },
   "conditions": {
     "rows": 9719,
     "capable_rows": 2058,

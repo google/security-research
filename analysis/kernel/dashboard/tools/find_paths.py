@@ -81,6 +81,18 @@ INDEXES = [
         "idx_async_caller",
         "CREATE INDEX IF NOT EXISTS idx_async_caller ON async_edges(caller)",
     ),
+    (
+        "idx_en_fn",
+        "CREATE INDEX IF NOT EXISTS idx_en_fn ON entry_node(function)",
+    ),
+    (
+        "idx_en_entry",
+        "CREATE INDEX IF NOT EXISTS idx_en_entry ON entry_node(entry)",
+    ),
+    (
+        "idx_en_kind",
+        "CREATE INDEX IF NOT EXISTS idx_en_kind ON entry_node(entry_kind)",
+    ),
 ]
 
 
@@ -240,14 +252,18 @@ def get_enclosing_function(
     return None
 
 
-def get_reachable_syscalls(
-    conn: sqlite3.Connection, function_name: str, max_bridge_depth: int = 6
+def get_reachable_syscalls(  # pylint: disable=too-many-locals
+    conn: sqlite3.Connection,
+    function_name: str,
+    max_bridge_depth: int = 6,
+    max_direct_depth: int = 20,
 ) -> List[str]:
     """Return all system calls capable of reaching function_name.
 
-    If function_name is not directly in syscall_node (e.g. an async callback or
-    indirect ops target), walks backward up to max_bridge_depth hops across
-    direct, indirect, and async callers to find ancestors in syscall_node.
+    Unions direct syscall_node hits with backward traversal across indirect
+    (ops_targets) and asynchronous (async_edges) bridges, separating
+    direct_depth from bridge_depth so deep Socket/Inode subtrees reach their
+    ops/async bridge without premature depth cutoff.
     """
     cur = conn.cursor()
     cur.execute(
@@ -255,23 +271,22 @@ def get_reachable_syscalls(
         " syscall",
         (function_name,),
     )
-    direct = [r[0] for r in cur.fetchall()]
-    if direct:
-        return direct
+    syscalls: Set[str] = {r[0] for r in cur.fetchall()}
 
-    syscalls: Set[str] = set()
-    queue = deque([(function_name, 0)])
+    queue = deque([(function_name, 0, 0)])
     visited: Set[str] = {function_name}
 
     while queue:
-        curr_fn, depth = queue.popleft()
+        curr_fn, direct_depth, bridge_depth = queue.popleft()
         if is_syscall_root(curr_fn, None):
             syscalls.add(curr_fn)
             continue
-        if depth >= max_bridge_depth:
+        if bridge_depth >= max_bridge_depth or direct_depth >= max_direct_depth:
             continue
 
-        for caller_fn, *_ in get_callers(conn, curr_fn):
+        for caller_fn, _file, _line, _cs, call_type, _det in get_callers(
+            conn, curr_fn
+        ):
             if caller_fn.startswith("<file-scope:") or caller_fn in visited:
                 continue
             visited.add(caller_fn)
@@ -282,10 +297,74 @@ def get_reachable_syscalls(
             caller_syscalls = [r[0] for r in cur.fetchall()]
             if caller_syscalls:
                 syscalls.update(caller_syscalls)
-            else:
-                queue.append((caller_fn, depth + 1))
+            if call_type in ("indirect", "async"):
+                if not caller_syscalls:
+                    queue.append((caller_fn, 0, bridge_depth + 1))
+            elif not caller_syscalls:
+                queue.append((caller_fn, direct_depth + 1, bridge_depth))
 
     return sorted(syscalls)
+
+
+def get_reachable_entries(  # pylint: disable=too-many-locals
+    conn: sqlite3.Connection,
+    function_name: str,
+    max_bridge_depth: int = 6,
+    max_direct_depth: int = 20,
+) -> List[Dict[str, str]]:
+    """Return all categorized non-syscall entry roots reaching function_name.
+
+    Unions direct entry_node hits with backward traversal across ops_targets
+    and async_edges bridges, mirroring get_reachable_syscalls().
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT DISTINCT entry_kind, entry FROM entry_node"
+            " WHERE function = ?",
+            (function_name,),
+        )
+        entries: Set[Tuple[str, str]] = {(r[0], r[1]) for r in cur.fetchall()}
+        cur.execute(
+            "SELECT DISTINCT entry_kind, entry FROM entry_node"
+            " WHERE entry = ?",
+            (function_name,),
+        )
+        entries.update((r[0], r[1]) for r in cur.fetchall())
+    except sqlite3.Error:
+        return []
+
+    queue = deque([(function_name, 0, 0)])
+    visited: Set[str] = {function_name}
+
+    while queue:
+        curr_fn, direct_depth, bridge_depth = queue.popleft()
+        if bridge_depth >= max_bridge_depth or direct_depth >= max_direct_depth:
+            continue
+
+        for caller_fn, _file, _line, _cs, call_type, _det in get_callers(
+            conn, curr_fn
+        ):
+            if caller_fn.startswith("<file-scope:") or caller_fn in visited:
+                continue
+            visited.add(caller_fn)
+            cur.execute(
+                "SELECT DISTINCT entry_kind, entry FROM entry_node"
+                " WHERE function = ? OR entry = ?",
+                (caller_fn, caller_fn),
+            )
+            caller_entries = [(r[0], r[1]) for r in cur.fetchall()]
+            if caller_entries:
+                entries.update(caller_entries)
+            if call_type in ("indirect", "async"):
+                if not caller_entries:
+                    queue.append((caller_fn, 0, bridge_depth + 1))
+            elif not caller_entries:
+                queue.append((caller_fn, direct_depth + 1, bridge_depth))
+
+    return [
+        {"entry_kind": kind, "entry": ent} for kind, ent in sorted(entries)
+    ]
 
 
 _CALL_TYPE_PRIORITY = {"direct": 0, "indirect": 1, "async": 2}
@@ -553,6 +632,60 @@ def is_syscall_root(fn_name: str, target_syscall: Optional[str]) -> bool:
     return fn_name.startswith(("__do_sys_", "__se_sys_", "__x64_sys_"))
 
 
+def load_entry_roots(conn: sqlite3.Connection) -> Dict[str, str]:
+    """Load non-syscall entry roots (entry -> entry_kind) from entry_node."""
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT entry, entry_kind FROM entry_node")
+        return {r[0]: r[1] for r in cur.fetchall()}
+    except sqlite3.Error:
+        return {}
+
+
+def is_entry_root(
+    fn_name: str,
+    target_entry: Optional[str],
+    entry_roots: Dict[str, str],
+) -> Optional[str]:
+    """Return entry_kind if fn_name is a matching non-syscall entry root."""
+    kind = entry_roots.get(fn_name)
+    if not kind:
+        return None
+    if target_entry and fn_name != target_entry and kind != target_entry:
+        return None
+    return kind
+
+
+def _load_target_reachable_set(
+    conn: sqlite3.Connection, target_syscall: Optional[str]
+) -> Optional[Set[str]]:
+    """Build direct reachability set for target_syscall or non-syscall entry."""
+    if not target_syscall:
+        return None
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT DISTINCT function FROM syscall_node WHERE syscall = ?",
+        (target_syscall,),
+    )
+    reachable_set = {r[0] for r in cur.fetchall()}
+    try:
+        cur.execute(
+            "SELECT DISTINCT function FROM entry_node"
+            " WHERE entry = ? OR entry_kind = ?",
+            (target_syscall, target_syscall),
+        )
+        reachable_set.update(r[0] for r in cur.fetchall())
+    except sqlite3.Error:
+        pass
+    reachable_set.add(target_syscall)
+    base_name = target_syscall.replace("__do_sys_", "").replace(
+        "__se_sys_", ""
+    )
+    for prefix in ["__do_sys_", "__se_sys_", "__x64_sys_", "__ia32_sys_"]:
+        reachable_set.add(f"{prefix}{base_name}")
+    return reachable_set
+
+
 def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     conn: sqlite3.Connection,
     target_fn: str,
@@ -562,27 +695,12 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
     syzk_conn: Optional[sqlite3.Connection] = None,
     max_depth: int = 25,
 ) -> Optional[List[Dict[str, Any]]]:
-    """Perform a backward BFS from target_fn to target_syscall (or ANY syscall).
+    """Perform a backward BFS from target_fn to target_syscall or any root.
 
-    Guided and pruned at every step by target_syscall reachability in
-    syscall_node.
+    Guided by target_syscall/entry reachability in syscall_node and entry_node.
     """
-    cur = conn.cursor()
-
-    reachable_set = None
-    if target_syscall:
-        cur.execute(
-            "SELECT DISTINCT function FROM syscall_node WHERE syscall = ?",
-            (target_syscall,),
-        )
-        reachable_set = {r[0] for r in cur.fetchall()}
-        reachable_set.add(target_syscall)
-
-        base_name = target_syscall.replace("__do_sys_", "").replace(
-            "__se_sys_", ""
-        )
-        for prefix in ["__do_sys_", "__se_sys_", "__x64_sys_", "__ia32_sys_"]:
-            reachable_set.add(f"{prefix}{base_name}")
+    reachable_set = _load_target_reachable_set(conn, target_syscall)
+    entry_roots = load_entry_roots(conn)
 
     target_syzk_cov = is_line_covered_by_syzkaller(
         syzk_conn, target_file, target_line
@@ -606,12 +724,20 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
         curr_fn, _curr_file, _curr_line, path = queue.popleft()
 
         if is_syscall_root(curr_fn, target_syscall):
+            path[0]["entry_kind"] = "syscall"
+            return path
+        entry_kind = is_entry_root(curr_fn, target_syscall, entry_roots)
+        if entry_kind:
+            path[0]["entry_kind"] = entry_kind
             return path
 
         if len(path) > max_depth:
             continue
 
         callers = get_callers(conn, curr_fn)
+        has_reachable_caller = reachable_set is not None and any(
+            c[0] in reachable_set and c[0] not in visited for c in callers
+        )
         for (
             caller_fn,
             caller_file,
@@ -623,6 +749,7 @@ def find_shortest_path(  # pylint: disable=too-many-arguments,too-many-positiona
             is_allowed = (
                 reachable_set is None
                 or curr_fn not in reachable_set
+                or not has_reachable_caller
                 or caller_fn in reachable_set
                 or call_type in ("indirect", "async")
             )
@@ -670,6 +797,14 @@ def format_tree(  # pylint: disable=too-many-locals,too-many-branches,too-many-s
         f" syscall(s) ({', '.join(all_sys[:5])}"
         f"{'...' if len(all_sys) > 5 else ''})"
     )
+    all_entries = target_info.get("all_entries", [])
+    if all_entries:
+        ent_strs = [f"{e['entry_kind']}:{e['entry']}" for e in all_entries[:5]]
+        out.append(
+            f"Non-Syscall Entries (CodeQL): Reachable from {len(all_entries)}"
+            f" entry root(s) ({', '.join(ent_strs)}"
+            f"{'...' if len(all_entries) > 5 else ''})"
+        )
 
     if target_info.get("configs"):
         out.append(
@@ -742,8 +877,14 @@ def format_tree(  # pylint: disable=too-many-locals,too-many-branches,too-many-s
             call_info = f" [calls at line {cs}]" if cs else ""
 
             if i == 0:
+                ekind = step.get("entry_kind", "syscall")
+                root_lbl = (
+                    "[Syscall Entry]"
+                    if ekind == "syscall"
+                    else f"[Entry: {ekind}]"
+                )
                 out.append(
-                    f"{indent}└── [Syscall Entry] {fn}"
+                    f"{indent}└── {root_lbl} {fn}"
                     f" ({f}:{l}){syzk_tag}{cfg_tag}"
                 )
             elif i == len(path) - 1:
@@ -886,6 +1027,7 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
 
     fn_name, canonical_file, start_line, end_line = fn_info
     reachable_syscalls = get_reachable_syscalls(conn, fn_name)
+    reachable_entries = get_reachable_entries(conn, fn_name)
     syzk_info = get_syzkaller_coverage(
         syzk_conn, canonical_file, line_number, fn_span=(start_line, end_line)
     )
@@ -897,12 +1039,13 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
         "line": line_number,
         "span": (start_line, end_line),
         "all_syscalls": reachable_syscalls,
+        "all_entries": reachable_entries,
         "configs": target_configs,
         "kconfig_metadata": get_kconfig_metadata(conn, target_configs),
         "syzkaller": syzk_info,
     }
 
-    if not reachable_syscalls:
+    if not reachable_syscalls and not reachable_entries:
         conn.close()
         if syzk_conn:
             syzk_conn.close()
@@ -918,8 +1061,15 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
                 for s in reachable_syscalls
                 if s.endswith(f"_{target_syscall}") or s == target_syscall
             ]
+            matched_entries = [
+                e["entry"]
+                for e in reachable_entries
+                if target_syscall in {e["entry"], e["entry_kind"]}
+            ]
             eval_syscalls = (
-                matched if matched else [f"__do_sys_{target_syscall}"]
+                matched + matched_entries
+                if (matched or matched_entries)
+                else [f"__do_sys_{target_syscall}"]
             )
         else:
             eval_syscalls = [target_syscall]
@@ -937,7 +1087,10 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
             if path:
                 paths_by_syscall[sc] = path
     elif all_syscalls:
-        for sc in reachable_syscalls[:limit_syscalls]:
+        candidates = list(reachable_syscalls) + [
+            e["entry"] for e in reachable_entries
+        ]
+        for sc in candidates[:limit_syscalls]:
             path = find_shortest_path(
                 conn,
                 fn_name,
@@ -950,7 +1103,7 @@ def find_paths_to_line(  # pylint: disable=too-many-arguments,too-many-positiona
             if path:
                 paths_by_syscall[sc] = path
     else:
-        # Find globally shortest path to ANY syscall in a single pass (< 50ms)
+        # Find globally shortest path to ANY syscall or non-syscall entry
         path = find_shortest_path(
             conn,
             fn_name,

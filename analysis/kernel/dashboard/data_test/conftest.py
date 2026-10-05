@@ -69,6 +69,8 @@ _OPTIONS = [
     ("--syscall-node-pairs", "2- or 3-column syscall-node-pairs.csv"),
     ("--syscall-node-locs", "6-column syscall-node-locs.csv"),
     ("--syscall-node-oracle", "Reference syscall_node dump (6.1.111 only)"),
+    ("--entry-node", "5-column entry_node CSV"),
+    ("--entry-node-pairs", "3- or 4-column entry-node-pairs.csv"),
     ("--function-locations", "functions.ql / function_locations CSV"),
     ("--ops-targets", "ops_edges.ql / ops_targets CSV"),
     ("--async-edges", "async-edges.ql / async_edges CSV"),
@@ -76,7 +78,7 @@ _OPTIONS = [
     ("--baseline", "baselines/<kernel>.json recorded from a validated run"),
 ]
 
-# Maps all 14 CodeQL query stems (and table aliases) to their test module
+# Maps all 15 CodeQL query stems (and table aliases) to their test module
 QUERY_TO_TEST_MODULE = {
     "functions": "test_functions.py",
     "function_locations": "test_functions.py",
@@ -98,6 +100,8 @@ QUERY_TO_TEST_MODULE = {
     "syscall-node-pairs": "test_syscall_node_pairs.py",
     "syscall-node-locs": "test_syscall_node_locs.py",
     "syscall_node": "test_syscall_node_pairs.py",
+    "entry-node-pairs": "test_entry_node_pairs.py",
+    "entry_node": "test_entry_node_pairs.py",
     "condition-graph-direct": "test_condition_graph_direct.py",
     "conditions": "test_condition_graph_direct.py",
     "condition-graph-all": "test_condition_graph_all.py",
@@ -197,6 +201,9 @@ CONDITIONS_NODE_COLS = [
 ]
 SYSCALL_NODE_COLS = [
     "syscall", "function", "syscall_location", "function_location",
+]
+ENTRY_NODE_COLS = [
+    "entry_kind", "entry", "function", "entry_location", "function_location",
 ]
 FUNCTION_LOCATION_COLS = [
     "function_name", "file_path", "start_line", "end_line",
@@ -342,9 +349,8 @@ def _index_syscall_node_locs(
 
     sysloc = {}
     for name, file_loc_pairs in by_name.items():
-        if name.startswith("__do_sys_"):
-            c_locs = [loc for f, loc in file_loc_pairs if f.endswith(".c")]
-            sysloc[name] = c_locs[0] if c_locs else file_loc_pairs[0][1]
+        c_locs = [loc for f, loc in file_loc_pairs if f.endswith(".c")]
+        sysloc[name] = c_locs[0] if c_locs else file_loc_pairs[0][1]
     return by_fn_file, by_name, sysloc
 
 
@@ -370,6 +376,32 @@ def _join_syscall_pairs_and_locs(pairs_path: str, locs_path: str) -> list[dict]:
             if key not in seen:
                 seen.add(key)
                 assembled.append(dict(zip(SYSCALL_NODE_COLS, key)))
+    return assembled
+
+
+def _join_entry_pairs_and_locs(pairs_path: str, locs_path: str) -> list[dict]:
+    """Join entry-node-pairs.csv with syscall-node-locs.csv on (fn, file)."""
+    by_fn_file, by_name, entloc = _index_syscall_node_locs(locs_path)
+    pair_rows = load_rows(
+        pairs_path, ["entry_kind", "entry", "function", "file"]
+    ) or load_rows(pairs_path, ["entry_kind", "entry", "function"])
+    assembled = []
+    seen = set()
+    for row in pair_rows:
+        fn = row["function"]
+        if row.get("file"):
+            cfile = canonical_path(row["file"])
+            flocs = by_fn_file.get((fn, cfile)) or [
+                loc for _, loc in by_name.get(fn, [])
+            ]
+        else:
+            flocs = [loc for _, loc in by_name.get(fn, [])]
+        eloc = entloc.get(row["entry"], "")
+        for floc in flocs or [""]:
+            key = (row["entry_kind"], row["entry"], fn, eloc, floc)
+            if key not in seen:
+                seen.add(key)
+                assembled.append(dict(zip(ENTRY_NODE_COLS, key)))
     return assembled
 
 
@@ -1015,3 +1047,94 @@ def async_edges(pytestconfig, sqlite_db):
         "async_edges not supplied (pass --async-edges, --results-dir, "
         "or --sqlite-db)"
     )
+
+
+@pytest.fixture(scope="session")
+def entry_node(pytestconfig, sqlite_db):
+    """Load 5-column entry_node data from CSVs or SQLite DB."""
+    explicit_combined = pytestconfig.getoption("--entry-node")
+    if explicit_combined and os.path.exists(explicit_combined):
+        return load_rows(explicit_combined, ENTRY_NODE_COLS)
+
+    results_dir = pytestconfig.getoption("--results-dir")
+    pairs_path = pytestconfig.getoption("--entry-node-pairs") or (
+        os.path.join(results_dir, "entry-node-pairs.csv")
+        if results_dir
+        else None
+    )
+    locs_path = pytestconfig.getoption("--syscall-node-locs") or (
+        os.path.join(results_dir, "syscall-node-locs.csv")
+        if results_dir
+        else None
+    )
+
+    if (
+        pairs_path
+        and locs_path
+        and os.path.exists(pairs_path)
+        and os.path.exists(locs_path)
+    ):
+        return _join_entry_pairs_and_locs(pairs_path, locs_path)
+
+    if pairs_path and os.path.exists(pairs_path):
+        pair_rows_4 = load_rows(
+            pairs_path, ["entry_kind", "entry", "function", "file"]
+        )
+        pair_rows = (
+            pair_rows_4
+            if pair_rows_4
+            else load_rows(pairs_path, ["entry_kind", "entry", "function"])
+        )
+        return [
+            {
+                "entry_kind": r["entry_kind"],
+                "entry": r["entry"],
+                "function": r["function"],
+                "entry_location": "",
+                "function_location": (
+                    f"{canonical_path(r['file'])}:1" if r.get("file") else ""
+                ),
+            }
+            for r in pair_rows
+        ]
+
+    if results_dir:
+        comb = os.path.join(results_dir, "entry_node.csv")
+        if os.path.exists(comb):
+            return load_rows(comb, ENTRY_NODE_COLS)
+
+    if _has_sqlite_table(sqlite_db, "entry_node"):
+        return _query_sqlite_table(
+            sqlite_db,
+            (
+                "SELECT entry_kind, entry, function, entry_location, "
+                "function_location FROM entry_node"
+            ),
+            ENTRY_NODE_COLS,
+        )
+
+    return pytest.skip(
+        "entry_node data not supplied (pass --entry-node, --entry-node-pairs, "
+        "--results-dir, or --sqlite-db)"
+    )
+
+
+@pytest.fixture(scope="session")
+def entry_node_pairs(pytestconfig, entry_node):
+    """Load entry-node-pairs.ql rows (or fall back to entry_node)."""
+    results_dir = pytestconfig.getoption("--results-dir")
+    pairs_path = pytestconfig.getoption("--entry-node-pairs") or (
+        os.path.join(results_dir, "entry-node-pairs.csv")
+        if results_dir
+        else None
+    )
+    if pairs_path and os.path.exists(pairs_path):
+        rows_4 = load_rows(
+            pairs_path, ["entry_kind", "entry", "function", "file"]
+        )
+        return (
+            rows_4
+            if rows_4
+            else load_rows(pairs_path, ["entry_kind", "entry", "function"])
+        )
+    return entry_node

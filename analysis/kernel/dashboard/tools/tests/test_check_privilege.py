@@ -696,6 +696,148 @@ class TestCheckPrivilege(
         self.assertEqual(primary["path"][-2]["call_type"], "async")
         self.assertEqual(primary["path"][-2]["details"], "rcu/arg (softirq)")
 
+    def test_entry_node_2d_privilege_model(self):
+        """Verify 2D entry precondition model across non-syscall entry kinds."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE entry_node (
+                entry_kind TEXT NOT NULL,
+                entry TEXT NOT NULL,
+                function TEXT NOT NULL,
+                entry_location TEXT NOT NULL,
+                function_location TEXT NOT NULL
+            )
+        """)
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("ip_rcv", "net/ipv4/ip_input.c", 500, 540),
+                ("net_rx_target", "net/ipv4/tcp.c", 100, 140),
+                ("bpf_kfunc_root", "kernel/bpf/helpers.c", 10, 40),
+                ("bpf_only_target", "kernel/bpf/helpers.c", 50, 80),
+                ("usb_probe_root", "drivers/usb/drv.c", 10, 40),
+                ("usb_target", "drivers/usb/drv.c", 50, 80),
+                ("packet_rcv", "net/packet/af_packet.c", 2000, 2050),
+                ("packet_target", "net/packet/af_packet.c", 2100, 2140),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO entry_node VALUES (?, ?, ?, ?, ?)",
+            [
+                (
+                    "net_rx",
+                    "ip_rcv",
+                    "net_rx_target",
+                    "net/ipv4/ip_input.c:500",
+                    "net/ipv4/tcp.c:100",
+                ),
+                (
+                    "bpf_entry",
+                    "bpf_kfunc_root",
+                    "bpf_only_target",
+                    "kernel/bpf/helpers.c:10",
+                    "kernel/bpf/helpers.c:50",
+                ),
+                (
+                    "device_usb",
+                    "usb_probe_root",
+                    "usb_target",
+                    "drivers/usb/drv.c:10",
+                    "drivers/usb/drv.c:50",
+                ),
+                (
+                    "net_rx",
+                    "packet_rcv",
+                    "packet_target",
+                    "net/packet/af_packet.c:2000",
+                    "net/packet/af_packet.c:2100",
+                ),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (30, "ip_rcv", "net/ipv4/ip_input.c", 500),
+                (31, "call to net_rx_target", "net/ipv4/ip_input.c", 520),
+                (32, "bpf_kfunc_root", "kernel/bpf/helpers.c", 10),
+                (33, "call to bpf_only_target", "kernel/bpf/helpers.c", 25),
+                (34, "usb_probe_root", "drivers/usb/drv.c", 10),
+                (35, "call to usb_target", "drivers/usb/drv.c", 25),
+                (36, "packet_rcv", "net/packet/af_packet.c", 2000),
+                (37, "call to packet_target", "net/packet/af_packet.c", 2025),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            [
+                (30, 31, "callgraph-all"),
+                (32, 33, "callgraph-all"),
+                (34, 35, "callgraph-all"),
+                (36, 37, "callgraph-all"),
+            ],
+        )
+        self.conn.commit()
+
+        # 1. net_rx (ip_rcv): remote, unauthenticated, ungated
+        t_info, verdict, primary, all_res = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "net/ipv4/tcp.c", 120
+            )
+        )
+        self.assertEqual(verdict, "REACHABLE WITH NO PRIVILEGE (UNGATED)")
+        self.assertEqual(primary["entry_kind"], "net_rx")
+        self.assertEqual(
+            primary["attacker_position"], "remote, unauthenticated"
+        )
+        self.assertEqual(primary["trigger_directness"], "direct")
+        summary = check_privilege.format_summary(
+            t_info, verdict, primary, all_res
+        )
+        self.assertIn(
+            "Minimum precondition to reach (attack-surface floor)", summary
+        )
+
+        # 2. bpf_entry: local, CAP_BPF baseline floor
+        _, verdict_bpf, primary_bpf, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "kernel/bpf/helpers.c", 60
+            )
+        )
+        self.assertEqual(
+            verdict_bpf, "REACHABLE, BUT ONLY BEHIND capable(CAP_BPF)"
+        )
+        self.assertEqual(primary_bpf["entry_kind"], "bpf_entry")
+        self.assertEqual(
+            primary_bpf["attacker_position"], "local, CAP_BPF (default)"
+        )
+
+        # 3. device_usb: physical / malicious-device
+        _, verdict_usb, primary_usb, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "drivers/usb/drv.c", 60
+            )
+        )
+        self.assertEqual(verdict_usb, "REACHABLE VIA PHYSICAL DEVICE (USB)")
+        self.assertEqual(primary_usb["entry_kind"], "device_usb")
+        self.assertEqual(
+            primary_usb["attacker_position"], "physical / malicious-device"
+        )
+
+        # 4. net_rx:packet_rcv sub-tagged CAP_NET_RAW
+        _, verdict_pkt, primary_pkt, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "net/packet/af_packet.c", 2120
+            )
+        )
+        self.assertEqual(
+            verdict_pkt, "REACHABLE, BUT ONLY BEHIND capable(CAP_NET_RAW)"
+        )
+        self.assertEqual(
+            primary_pkt["attacker_position"], "local, CAP_NET_RAW"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
