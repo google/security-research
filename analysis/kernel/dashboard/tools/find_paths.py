@@ -386,6 +386,37 @@ def _record_caller_site(
     results.append(entry)
 
 
+def _resolve_edge_caller(
+    cur: sqlite3.Cursor,
+    function_name: str,
+    edge_row: Tuple[str, str, int, str, int],
+) -> Optional[Tuple[str, str, int, int]]:
+    """Resolve an edges row to (caller_fn, caller_file, caller_line, site)."""
+    src_msg, src_file, src_line, dst_msg, dst_line = edge_row
+    if dst_msg == f"call to {function_name}":
+        if src_msg.startswith("call to "):
+            return None
+        return src_msg, src_file, src_line, dst_line
+
+    if src_msg == f"call to {function_name}":
+        return None
+    cur.execute(
+        """
+        SELECT function_name, file_path, start_line
+        FROM function_locations
+        WHERE file_path = ? AND ? BETWEEN start_line AND end_line
+        LIMIT 1
+    """,
+        (src_file, src_line),
+    )
+    fn_row = cur.fetchone()
+    if fn_row and (src_msg.startswith("call to ") or src_msg != fn_row[0]):
+        return fn_row[0], fn_row[1], fn_row[2], src_line
+    if not src_msg.startswith("call to "):
+        return src_msg, src_file, src_line, dst_line
+    return None
+
+
 def get_callers(  # pylint: disable=too-many-locals
     conn: sqlite3.Connection, function_name: str
 ) -> List[Tuple[str, str, int, int, str, str]]:
@@ -398,23 +429,27 @@ def get_callers(  # pylint: disable=too-many-locals
     results: List[Tuple[str, str, int, int, str, str]] = []
     seen_sites: Dict[Tuple[str, int], int] = {}
 
-    # 1. Direct callers from edges + locations
+    # 1. Direct and points-to callers from edges + locations
     cur.execute(
         """
-        SELECT DISTINCT s.message AS caller_fn,
-                        s.uri AS caller_file,
-                        s.startLine AS caller_line,
-                        t.startLine AS call_site_line
+        SELECT DISTINCT s.message AS src_msg,
+                        s.uri AS src_file,
+                        s.startLine AS src_line,
+                        t.message AS dst_msg,
+                        t.startLine AS dst_line
         FROM edges e
         JOIN locations s ON e.source_location_id = s.id
         JOIN locations t ON e.target_location_id = t.id
-        WHERE (t.message = ? OR t.message = ?)
-          AND s.message NOT LIKE "call to %"
+        WHERE t.message = ? OR t.message = ?
     """,
         (function_name, f"call to {function_name}"),
     )
 
-    for caller_fn, caller_file, caller_line, call_site_line in cur.fetchall():
+    for edge_row in cur.fetchall():
+        resolved = _resolve_edge_caller(cur, function_name, edge_row)
+        if not resolved:
+            continue
+        caller_fn, caller_file, caller_line, call_site_line = resolved
         _record_caller_site(
             results,
             seen_sites,

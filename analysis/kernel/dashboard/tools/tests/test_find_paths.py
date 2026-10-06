@@ -558,6 +558,36 @@ class TestFindPaths(unittest.TestCase):
         self.assertIn("[Entry: net_rx] ip_rcv", tree)
         self.assertIn("Non-Syscall Entries (CodeQL):", tree)
 
+    def test_expr_source_call_edge_caller_resolution(self):
+        """Verify ExprSourceCallEdge rows resolve via function_locations."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            ("netlink_rcv_skb", "net/netlink/af_netlink.c", 2490, 2530),
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (30, "cb", "net/netlink/af_netlink.c", 2507),
+                (31, "genl_rcv_msg", "net/netlink/genetlink.c", 900),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            (30, 31, "callgraph-all"),
+        )
+        self.conn.commit()
+
+        callers = find_paths.get_callers(self.conn, "genl_rcv_msg")
+        self.assertEqual(len(callers), 1)
+        self.assertEqual(callers[0][0], "netlink_rcv_skb")
+        self.assertEqual(callers[0][1], "net/netlink/af_netlink.c")
+        self.assertEqual(callers[0][2], 2490)
+        self.assertEqual(callers[0][3], 2507)
+        self.assertEqual(callers[0][4], "direct")
+
 
 if __name__ == "__main__":
     unittest.main()
