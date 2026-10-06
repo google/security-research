@@ -19,7 +19,7 @@ string locationString(Locatable l) {
 
 /**
  * Resolves `expr` (unwrapping implicit/explicit conversions, address-of `&fn`,
- * and ternary `cond ? a : b` branches) to a target `Function`.
+ * ternary `cond ? a : b` branches, and comma expressions) to a `Function`.
  */
 predicate resolvesToFunction(Expr expr, Function target) {
   exists(Expr e | e = expr.getUnconverted() |
@@ -30,6 +30,8 @@ predicate resolvesToFunction(Expr expr, Function target) {
     resolvesToFunction(e.(ConditionalExpr).getThen(), target)
     or
     resolvesToFunction(e.(ConditionalExpr).getElse(), target)
+    or
+    resolvesToFunction(e.(CommaExpr).getRightOperand(), target)
   )
 }
 
@@ -50,36 +52,41 @@ predicate stackVarFromFieldStep1(StackVariable v, Field field) {
 }
 
 /**
+ * Holds if local variable `dst` is initialized or assigned directly from `src`.
+ */
+predicate stackVarCopyStep(StackVariable src, StackVariable dst) {
+  dst.getInitializer().getExpr().getUnconverted().(VariableAccess).getTarget() = src
+  or
+  exists(AssignExpr ae |
+    ae.getLValue().(VariableAccess).getTarget() = dst and
+    ae.getRValue().getUnconverted().(VariableAccess).getTarget() = src
+  )
+}
+
+/**
  * Holds if `v` is a local variable or parameter holding an access to `field`
  * either directly (e.g., `open = f->f_op->open` in `do_dentry_open`) or via
- * up to two local variable copies (e.g., `INDIRECT_CALL_2` / `INDIRECT_CALL_3`
- * macro temporaries `__f3 -> __f2 -> __f1`).
+ * up to three local variable copies (covering `INDIRECT_CALL_1` through
+ * `INDIRECT_CALL_4` macro temporaries `__f4 -> __f3 -> __f2 -> __f1`).
  */
 predicate stackVarHoldsOpsField(StackVariable v, Field field) {
   stackVarFromFieldStep1(v, field)
   or
-  exists(StackVariable prev |
+  exists(StackVariable v1 |
+    stackVarFromFieldStep1(v1, field) and
     (
-      stackVarFromFieldStep1(prev, field)
+      stackVarCopyStep(v1, v)
       or
-      exists(StackVariable prev0 |
-        stackVarFromFieldStep1(prev0, field) and
+      exists(StackVariable v2 |
+        stackVarCopyStep(v1, v2) and
         (
-          prev.getInitializer().getExpr().getUnconverted().(VariableAccess).getTarget() = prev0
+          stackVarCopyStep(v2, v)
           or
-          exists(AssignExpr ae0 |
-            ae0.getLValue().(VariableAccess).getTarget() = prev and
-            ae0.getRValue().getUnconverted().(VariableAccess).getTarget() = prev0
+          exists(StackVariable v3 |
+            stackVarCopyStep(v2, v3) and
+            stackVarCopyStep(v3, v)
           )
         )
-      )
-    ) and
-    (
-      v.getInitializer().getExpr().getUnconverted().(VariableAccess).getTarget() = prev
-      or
-      exists(AssignExpr ae |
-        ae.getLValue().(VariableAccess).getTarget() = v and
-        ae.getRValue().getUnconverted().(VariableAccess).getTarget() = prev
       )
     )
   )
@@ -134,18 +141,18 @@ string opsContainerName(Field fld) {
 /**
  * Holds if `fieldExpr` registers `target` on `regField` either via a struct
  * aggregate initializer (`ClassAggregateLiteral`) or via a dynamic field
- * assignment (`AssignExpr`, such as `shrinker->scan_objects = ...` in 6.7+),
+ * assignment (`AssignExpr`, such as `shrinker->scan_objects = ...`),
  * excluding asynchronous callback fields already modeled in `async_edges`.
  */
 predicate opsFieldRegistration(Field regField, Expr fieldExpr, Function target) {
   regField.getType() instanceof FunctionPointerIshType and
+  not asyncCallbackField(opsContainerName(regField), regField.getName(), _) and
   (
     exists(ClassAggregateLiteral cal |
       fieldExpr = cal.getAFieldExpr(regField) and
       resolvesToFunction(fieldExpr, target)
     )
     or
-    not asyncCallbackField(opsContainerName(regField), regField.getName(), _) and
     exists(AssignExpr ae |
       ae.getLValue().(FieldAccess).getTarget() = regField and
       fieldExpr = ae.getRValue() and
@@ -157,14 +164,15 @@ predicate opsFieldRegistration(Field regField, Expr fieldExpr, Function target) 
 /**
  * Holds if `ec` invokes function-pointer `callField` either directly
  * (`ec.getExpr() = callField.getAnAccess()`) or through a same-function local
- * variable / parameter (`stackVarHoldsOpsField`).
+ * variable / parameter (`stackVarHoldsOpsField`), excluding asynchronous
+ * callback fields already modeled in `async_edges`.
  */
 predicate opsFieldCall(Field callField, ExprCall ec) {
   callField.getType() instanceof FunctionPointerIshType and
+  not asyncCallbackField(opsContainerName(callField), callField.getName(), _) and
   (
     ec.getExpr().getUnconverted() = callField.getAnAccess()
     or
-    not asyncCallbackField(opsContainerName(callField), callField.getName(), _) and
     exists(StackVariable v |
       stackVarHoldsOpsField(v, callField) and
       ec.getExpr().getUnconverted().(VariableAccess).getTarget() = v

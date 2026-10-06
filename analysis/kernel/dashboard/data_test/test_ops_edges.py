@@ -188,8 +188,8 @@ def test_ops_targets_cover_known_ops_structs(ops_targets):
     ), f"none of {sorted(expected)} appear among {len(parents)} parent structs"
 
 
-def test_ops_targets_section_3_2_idioms(ops_targets):
-    """Verify Section 3.2 idioms (3b shrinker, 1/2 local-var, 3a genl)."""
+def test_ops_targets_indirect_idioms(ops_targets):
+    """Verify dynamic assign, local-var def-use, and genl split ops idioms."""
     open_fs = {
         r["target"]
         for r in ops_targets
@@ -212,11 +212,19 @@ def test_ops_targets_section_3_2_idioms(ops_targets):
     shrinker_targets = {
         r["target"] for r in ops_targets if r["parent"] == "shrinker"
     }
+    genl_parents = (
+        "genl_ops",
+        "genl_small_ops",
+        "genl_split_ops",
+        "genl_family",
+    )
     genl_targets = {
         r["target"]
         for r in ops_targets
-        if r["parent"] in ("genl_ops", "genl_small_ops", "genl_split_ops")
-        and r["field"] in ("doit", "dumpit")
+        if r["parent"] in genl_parents and r["field"] in ("doit", "dumpit")
+    }
+    genl_fields = {
+        r["field"] for r in ops_targets if r["parent"] in genl_parents
     }
     nl_cfg_targets = {
         r["target"]
@@ -230,13 +238,14 @@ def test_ops_targets_section_3_2_idioms(ops_targets):
     }
 
     report(
-        "Section 3.2 idiom coverage",
+        "indirect ops idiom coverage",
         {
             "do_dentry_open targets": len(open_fs),
             "proto.sendmsg targets": len(proto_sendmsg),
             "sock_sendmsg_nosec targets": len(sock_sendmsg),
             "shrinker targets": len(shrinker_targets),
             "genl doit/dumpit targets": len(genl_targets),
+            "genl fields present": sorted(genl_fields),
             "netlink_kernel_cfg.input targets": len(nl_cfg_targets),
             "async leaks": len(async_leaks),
         },
@@ -261,6 +270,18 @@ def test_ops_targets_section_3_2_idioms(ops_targets):
     assert {"super_cache_scan", "deferred_split_scan"} <= shrinker_targets
     assert len(genl_targets) >= 100
     assert {"ctrl_getfamily", "ctrl_dumpfamily"} <= genl_targets
+    expected_genl_fields = {
+        "doit",
+        "dumpit",
+        "start",
+        "done",
+        "pre_doit",
+        "post_doit",
+    }
+    assert expected_genl_fields <= genl_fields, (
+        "compatibleOpsField genl mapping missing fields: "
+        f"{sorted(expected_genl_fields - genl_fields)}"
+    )
     assert {"genl_rcv", "rtnetlink_rcv", "nfnetlink_rcv"} <= nl_cfg_targets
     assert (
         not async_leaks
