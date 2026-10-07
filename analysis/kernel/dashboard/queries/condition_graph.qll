@@ -85,43 +85,32 @@ predicate isCapabilityWrapperFunction(Function f) {
 }
 
 /**
- * Holds if `f` is a single-return helper function whose sole return expression
- * is a direct call to `capable(...)` or `ns_capable(...)`.
+ * Holds if `sub` is a positive conjunction subexpression of `root`
+ * (so `root == true` unconditionally requires `sub == true`).
  */
-pragma[nomagic]
-predicate singleReturnCapabilityHelper(
-  Function f, string gateType, string capArg, string nsScope
-) {
-  not isCapabilityWrapperFunction(f) and
-  count(ReturnStmt r | r.getEnclosingFunction() = f) = 1 and
-  exists(ReturnStmt ret, FunctionCall innerFc |
-    ret.getEnclosingFunction() = f and
-    innerFc = ret.getExpr() and
-    (
-      innerFc.getTarget().getName() = "capable" and
-      gateType = "capable" and
-      capArg = innerFc.getArgument(0).toString() and
-      nsScope = "init_user_ns"
-      or
-      innerFc.getTarget().getName() = "ns_capable" and
-      capArg = innerFc.getArgument(1).toString() and
-      nsScope = classifyNsScope(innerFc.getArgument(0)) and
-      if isInitUserNsExpr(innerFc.getArgument(0))
-      then gateType = "capable"
-      else gateType = "ns_capable"
-    )
+predicate unconditionalPosGuardSubExpr(Expr root, Expr sub) {
+  sub = root
+  or
+  exists(ParenthesisExpr pe |
+    unconditionalPosGuardSubExpr(root, pe) and
+    sub = pe.getExpr()
+  )
+  or
+  exists(LogicalAndExpr land |
+    unconditionalPosGuardSubExpr(root, land) and
+    sub = land.getAnOperand()
   )
 }
 
 /**
- * Holds if `fc` is a capability or permission helper call with classified
- * `gateType` ("capable" or "ns_capable"), `capArg`, and `nsScope`.
+ * Holds if `fc` is a direct capability call or enumerated subsystem capability
+ * wrapper call with classified `gateType` ("capable" or "ns_capable"), `capArg`,
+ * and `nsScope`.
  */
 pragma[nomagic]
-predicate capabilityCallInfo(
+predicate baseCapabilityCallInfo(
   FunctionCall fc, string gateType, string capArg, string nsScope
 ) {
-  not isCapabilityWrapperFunction(fc.getEnclosingFunction()) and
   exists(string fn | fn = fc.getTarget().getName() |
     // 1. Direct global capable(cap) and sockopt_capable(cap)
     fn in ["capable", "sockopt_capable"] and
@@ -248,27 +237,66 @@ predicate capabilityCallInfo(
     capArg = "CAP_NET_ADMIN" and
     nsScope = "net_ns" and
     gateType = "ns_capable"
-    or
-    // 9. Single-return boolean capability helper functions
-    singleReturnCapabilityHelper(fc.getTarget(), gateType, capArg, nsScope)
   )
 }
 
 /**
- * Holds if `sub` is a positive conjunction subexpression of `root`
- * (so `root == true` unconditionally requires `sub == true`).
+ * Holds if `f` is a custom capability helper function that unconditionally
+ * requires `innerFc` to return `true`:
+ * 1. Single-return helper whose return expression is `innerFc` or a conjunction
+ *    `innerFc && ...` (e.g., `may_setgroups`, `tcp_can_repair_sock`), or
+ * 2. Multi-statement `bool` permission helper with an early `if (!innerFc) return false;`
+ *    guard before any `return true;` path (`if (!capable(A)) return false; ... return check();`).
  */
-predicate unconditionalPosGuardSubExpr(Expr root, Expr sub) {
-  sub = root
-  or
-  exists(ParenthesisExpr pe |
-    unconditionalPosGuardSubExpr(root, pe) and
-    sub = pe.getExpr()
+pragma[nomagic]
+predicate singleReturnCapabilityHelper(
+  Function f, string gateType, string capArg, string nsScope
+) {
+  not isCapabilityWrapperFunction(f) and
+  exists(FunctionCall innerFc |
+    innerFc.getEnclosingFunction() = f and
+    baseCapabilityCallInfo(innerFc, gateType, capArg, nsScope) and
+    not capArg = f.getAParameter().getName() and
+    (
+      count(ReturnStmt r | r.getEnclosingFunction() = f) = 1 and
+      exists(ReturnStmt ret |
+        ret.getEnclosingFunction() = f and
+        unconditionalPosGuardSubExpr(ret.getExpr(), innerFc)
+      )
+      or
+      f.getUnspecifiedType().toString() in ["bool", "_Bool"] and
+      count(ReturnStmt r | r.getEnclosingFunction() = f) <= 6 and
+      exists(IfStmt guardIf, ReturnStmt abortRet, NotExpr ne |
+        guardIf.getEnclosingFunction() = f and
+        abortRet.getEnclosingStmt*() = guardIf.getThen() and
+        abortRet.getExpr().getValue() = "0" and
+        unconditionalPosGuardSubExpr(guardIf.getCondition(), ne) and
+        unconditionalPosGuardSubExpr(ne.getOperand(), innerFc) and
+        not exists(ReturnStmt priorRet |
+          priorRet.getEnclosingFunction() = f and
+          priorRet.getLocation().getStartLine() <
+            guardIf.getLocation().getStartLine() and
+          not priorRet.getExpr().getValue() = "0"
+        )
+      )
+    )
   )
-  or
-  exists(LogicalAndExpr land |
-    unconditionalPosGuardSubExpr(root, land) and
-    sub = land.getAnOperand()
+}
+
+/**
+ * Holds if `fc` is a capability or permission helper call with classified
+ * `gateType` ("capable" or "ns_capable"), `capArg`, and `nsScope`.
+ */
+pragma[nomagic]
+predicate capabilityCallInfo(
+  FunctionCall fc, string gateType, string capArg, string nsScope
+) {
+  not isCapabilityWrapperFunction(fc.getEnclosingFunction()) and
+  not singleReturnCapabilityHelper(fc.getEnclosingFunction(), _, _, _) and
+  (
+    baseCapabilityCallInfo(fc, gateType, capArg, nsScope)
+    or
+    singleReturnCapabilityHelper(fc.getTarget(), gateType, capArg, nsScope)
   )
 }
 
@@ -545,6 +573,17 @@ predicate abortGuardEndLine(IfStmt ifst, int boundLine) {
 
 /**
  * Computes the controlled line span `[minLine, maxLine]` for `(ic, ifst)`.
+ *
+ * Caveats on the single-interval `[minLine, maxLine]` approximation:
+ * - For negated early-abort guards (`if (!capable(...)) return/goto`), `maxLine`
+ *   is bounded by the earliest forward `goto` target label (`min(labelLine) - 1`),
+ *   the next `case`/`default` label in an enclosing `switch`, or the end of the
+ *   enclosing block. If a `then` branch contains multiple `goto` targets, using
+ *   `min(labelLine)` is a conservative lower bound on the guarded region.
+ * - Because control dependence is represented as a single contiguous line
+ *   interval `[minLine, maxLine]`, complex intra-procedural control flow such as
+ *   backward jumps or nested re-gating within the same block is approximated by
+ *   source line containment rather than full basic-block post-dominance.
  */
 pragma[nomagic]
 predicate conditionGuardSpan(
@@ -711,7 +750,18 @@ predicate genlDeclarativeGate(
 }
 
 /**
- * Unified row relation for `condition-graph-direct.ql`.
+ * Unified row relation for `condition-graph-direct.ql` (`conditions` SQLite table).
+ *
+ * Polymorphic `callStr` (`conditions.call`) / `callLoc` (`conditions.call_loc`) contract:
+ * 1. Direct call rows: `callStr` is `call.toString()` (e.g., `"call to foo"` or
+ *    `"call to expression"`), and `callLoc` is the call expression location.
+ * 2. Synthetic guarded-span rows: `callStr` is `"__guarded_span__:<ns_scope>"`,
+ *    and `callLoc` encodes the controlled line interval `[minLine, maxLine]` as
+ *    `"file://<path>:<minLine>:1:<maxLine>:1"`.
+ * 3. Synthetic Generic Netlink declarative gate rows: `callStr` is
+ *    `"__genl_ops_gate__:<ns_scope>"`, and `callLoc` encodes the gated handler's
+ *    body line span `[startLine, endLine]` as
+ *    `"file://<path>:<startLine>:1:<endLine>:1"`.
  */
 predicate conditionDirectRow(
   string gateType, string defLoc, string condLoc, string arg, string callStr,

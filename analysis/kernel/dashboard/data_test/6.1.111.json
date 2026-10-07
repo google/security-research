@@ -44,11 +44,13 @@
     "mean_reach": 10687
   },
   "conditions": {
-    "rows": 9719,
-    "capable_rows": 2058,
-    "ns_capable_rows": 3144,
-    "sysctl_rows": 2514,
-    "module_param_rows": 2003
+    "rows": 9131,
+    "capable_rows": 2158,
+    "ns_capable_rows": 1056,
+    "sysctl_rows": 2064,
+    "module_param_rows": 3853,
+    "guarded_span_rows": 487,
+    "genl_gate_rows": 99
   },
   "conditions_node": {
     "rows": 27791381,

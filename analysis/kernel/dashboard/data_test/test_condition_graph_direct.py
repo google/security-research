@@ -291,19 +291,50 @@ def test_conditions_source_verification_300_samples(conditions, kernel):
 
 
 def test_conditions_distribution(conditions, baseline_path):
-    """Verify conditions row count does not drop below 75% of baseline."""
+    """Verify conditions row counts do not drop below 75% of baseline."""
     base = load_baseline(baseline_path, "conditions")
     if not base or not base.get("rows"):
         pytest.skip("no baseline recorded for conditions")
+    counts = Counter(r["type"] for r in conditions)
+    span_rows = sum(
+        1 for r in conditions if r["call"].startswith("__guarded_span__:")
+    )
+    genl_rows = sum(
+        1 for r in conditions if r["call"].startswith("__genl_ops_gate__:")
+    )
     ratio = len(conditions) / base["rows"]
+    cap_ratio = counts["capable"] / base["capable_rows"]
+    nscap_ratio = counts["ns_capable"] / base["ns_capable_rows"]
     report(
         "conditions distribution",
         {
             "rows": len(conditions),
             "baseline rows": base["rows"],
             "ratio vs baseline": f"{ratio:.2f}x",
+            "capable_rows": counts["capable"],
+            "baseline capable_rows": base["capable_rows"],
+            "ns_capable_rows": counts["ns_capable"],
+            "baseline ns_capable_rows": base["ns_capable_rows"],
+            "guarded_span_rows": span_rows,
+            "genl_gate_rows": genl_rows,
         },
     )
     assert (
         ratio >= 0.75
     ), f"conditions row count dropped to {ratio:.1%} of baseline"
+    assert (
+        cap_ratio >= 0.75
+    ), f"capable_rows dropped to {cap_ratio:.1%} of baseline"
+    assert (
+        nscap_ratio >= 0.75
+    ), f"ns_capable_rows dropped to {nscap_ratio:.1%} of baseline"
+    if base.get("guarded_span_rows"):
+        span_ratio = span_rows / base["guarded_span_rows"]
+        assert (
+            span_ratio >= 0.75
+        ), f"guarded_span_rows dropped to {span_ratio:.1%} of baseline"
+    if base.get("genl_gate_rows"):
+        genl_ratio = genl_rows / base["genl_gate_rows"]
+        assert (
+            genl_ratio >= 0.75
+        ), f"genl_gate_rows dropped to {genl_ratio:.1%} of baseline"
