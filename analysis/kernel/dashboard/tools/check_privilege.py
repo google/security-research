@@ -200,6 +200,8 @@ def load_capability_map(  # pylint: disable=too-many-locals
         """)
         counts: Dict[str, Dict[str, int]] = {}
         for arg, def_loc in cur.fetchall():
+            if not str(arg).isdigit():
+                continue
             m = LOCATION_RE.match(def_loc)
             if m:
                 f = clean_file_path(m.group(1))
@@ -254,7 +256,7 @@ def deduplicate_gates(gates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         filtered.append(g)
 
-    seen = {}
+    seen: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for g in filtered:
         loc = (
             g.get("condition")
@@ -263,11 +265,34 @@ def deduplicate_gates(gates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             or ""
         )
         key = (g["type"], g["argument"], loc)
-        seen[key] = g
+        if key in seen:
+            if g.get("ns_scope") and not seen[key].get("ns_scope"):
+                seen[key] = dict(seen[key], ns_scope=g["ns_scope"])
+            if (
+                g.get("max_controlled_line") is not None
+                and seen[key].get("max_controlled_line") is not None
+            ):
+                seen[key]["max_controlled_line"] = max(
+                    seen[key]["max_controlled_line"],
+                    g["max_controlled_line"],
+                )
+        else:
+            seen[key] = dict(g)
     return list(seen.values())
 
 
-def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches
+def _extract_ns_scope(call_name: Optional[str]) -> Optional[str]:
+    """Extract namespace scope tag from synthetic span/genl call markers."""
+    if not call_name:
+        return None
+    for prefix in ("__guarded_span__:", "__genl_ops_gate__:"):
+        if call_name.startswith(prefix):
+            scope = call_name[len(prefix) :].strip()
+            return scope or None
+    return None
+
+
+def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     conn: sqlite3.Connection, verbose: bool = False
 ) -> Tuple[
     Dict[Tuple[str, int], List[Dict[str, Any]]],
@@ -301,9 +326,14 @@ def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches
     call_gates: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
     def_files: Set[str] = set()
     condition_records = []
+    has_guarded_spans = False
+    cond_max_line: Dict[Tuple[str, str, str], int] = {}
 
     for c_type, arg, call_loc, def_loc, cond_loc, call_name in rows:
-        gate_obj = {
+        ns_scope = _extract_ns_scope(call_name)
+        if call_name and call_name.startswith("__guarded_span__"):
+            has_guarded_spans = True
+        gate_obj: Dict[str, Any] = {
             "type": c_type,
             "argument": arg,
             "cap_str": format_capability(c_type, arg, cap_map=cap_map),
@@ -312,6 +342,8 @@ def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches
             "definition": def_loc,
             "condition": cond_loc,
         }
+        if ns_scope:
+            gate_obj["ns_scope"] = ns_scope
         condition_records.append(gate_obj)
 
         if call_loc:
@@ -319,19 +351,24 @@ def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches
             if m:
                 f, s_line, _, e_line, _ = m.groups()
                 f_clean = clean_file_path(f)
-                for l in range(int(s_line), int(e_line) + 1):
+                s_idx, e_idx = int(s_line), int(e_line)
+                def_files.add(f_clean)
+                key = (c_type, str(arg), cond_loc or def_loc or "")
+                cond_max_line[key] = max(cond_max_line.get(key, 0), e_idx)
+                for l in range(s_idx, e_idx + 1):
                     call_gates.setdefault((f_clean, l), []).append(gate_obj)
 
-        if def_loc:
-            m = LOCATION_RE.match(def_loc)
-            if m:
-                def_files.add(clean_file_path(m.group(1)))
+        for loc_str in (def_loc, cond_loc):
+            if loc_str:
+                m = LOCATION_RE.match(loc_str)
+                if m:
+                    def_files.add(clean_file_path(m.group(1)))
 
     # Deduplicate call gates at each (file, line)
     for k in call_gates:
         call_gates[k] = deduplicate_gates(call_gates[k])
 
-    # Build func_gates by associating definition lines with function_locations
+    # Build func_gates by associating guard lines with function_locations
     func_gates: Dict[str, List[Dict[str, Any]]] = {}
     file_list = list(def_files)
     batch_size = 500
@@ -352,20 +389,45 @@ def load_condition_gates(  # pylint: disable=too-many-locals,too-many-branches
             file_funcs.setdefault(clean_file_path(f), []).append((fn, s, e))
 
     for g in condition_records:
-        def_loc = g["definition"]
-        if not def_loc:
+        call_name = g.get("call") or ""
+        if call_name.startswith("__genl_ops_gate__"):
+            loc_str = g.get("call_location")
+        else:
+            loc_str = g.get("definition") or g.get("condition")
+        if not loc_str:
             continue
-        m = LOCATION_RE.match(def_loc)
+        m = LOCATION_RE.match(loc_str)
         if not m:
             continue
         f_clean = clean_file_path(m.group(1))
         def_line = int(m.group(2))
+
+        cond_end = def_line
+        if g.get("condition"):
+            mc = LOCATION_RE.match(g["condition"])
+            if mc:
+                cond_end = int(mc.group(4))
+
+        key = (
+            g["type"],
+            str(g["argument"]),
+            g.get("condition") or g.get("definition") or "",
+        )
+        max_ctrl = cond_max_line.get(key)
 
         for fn_name, s_line, e_line in file_funcs.get(f_clean, []):
             if s_line <= def_line <= e_line:
                 func_gate_obj = dict(g)
                 func_gate_obj["check_line"] = def_line
                 func_gate_obj["fn_span"] = (s_line, e_line)
+                if call_name.startswith("__genl_ops_gate__"):
+                    func_gate_obj["max_controlled_line"] = e_line
+                elif has_guarded_spans and max_ctrl is not None:
+                    func_gate_obj["max_controlled_line"] = max_ctrl
+                elif max_ctrl is not None and max_ctrl <= cond_end:
+                    func_gate_obj["max_controlled_line"] = cond_end
+                else:
+                    func_gate_obj["max_controlled_line"] = e_line
                 func_gates.setdefault(fn_name, []).append(func_gate_obj)
 
     for fn in func_gates:
@@ -390,7 +452,7 @@ def get_call_site_gates(
 ) -> List[Dict[str, Any]]:
     """Retrieve all capability gates applying to a specific line or call site.
 
-    Combines direct call-site domination and function-level early-exit checks.
+    Combines direct call-site/span control and bounded function-level checks.
     """
     if line_number is None:
         return []
@@ -400,8 +462,11 @@ def get_call_site_gates(
 
     if caller_fn and caller_fn in func_gates:
         for fg in func_gates[caller_fn]:
-            # If line is after or at the capability check in caller_fn
-            if line_number >= fg.get("check_line", 0):
+            check_line = fg.get("check_line", 0)
+            max_line = fg.get("max_controlled_line")
+            if line_number >= check_line and (
+                max_line is None or line_number <= max_line
+            ):
                 gates.append(fg)
 
     return deduplicate_gates(gates)
@@ -1096,6 +1161,24 @@ def _format_kconfig_section(
             out.append(f"  * {t['cap_str']} at {t_loc}")
 
 
+def _format_ns_scope_hint(ns_scope: Optional[str]) -> str:
+    """Format a human-readable namespace scope hint for a capability gate."""
+    if not ns_scope:
+        return ""
+    scope_map = {
+        "init_user_ns": "init_user_ns (global root)",
+        "net_ns": "net->user_ns (CLONE_NEWUSER + CLONE_NEWNET)",
+        "s_user_ns": (
+            "sb->s_user_ns (CLONE_NEWUSER + CLONE_NEWNS / FS_USERNS_MOUNT)"
+        ),
+        "mnt_ns": "mnt_ns->user_ns (CLONE_NEWUSER + CLONE_NEWNS)",
+        "f_cred": "file->f_cred->user_ns (CLONE_NEWUSER)",
+        "user_ns": "user_ns (CLONE_NEWUSER)",
+    }
+    label = scope_map.get(ns_scope, ns_scope)
+    return f" [scope: {label}]"
+
+
 def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     target_info: Dict[str, Any],
     overall_verdict: str,
@@ -1228,12 +1311,22 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
     if internal_gates:
         out.append("-" * 72)
         out.append("Internal Function Capability Gates:")
+        seen_ig: Set[str] = set()
         for ig in internal_gates:
             c_line = ig.get("check_line", "unknown")
             c_loc = ig.get("definition") or f"line {c_line}"
-            out.append(f"  * {ig['cap_str']} at {c_loc}")
-        if target_info.get("is_function_entry"):
-            first_gate_line = internal_gates[0].get("check_line")
+            scope_str = _format_ns_scope_hint(ig.get("ns_scope"))
+            bullet = f"  * {ig['cap_str']} at {c_loc}{scope_str}"
+            if bullet not in seen_ig:
+                seen_ig.add(bullet)
+                out.append(bullet)
+        first_gate_line = min(
+            (ig.get("check_line", 0) for ig in internal_gates), default=0
+        )
+        if (
+            target_info.get("is_function_entry")
+            and first_gate_line > target_info["line"]
+        ):
             out.append(
                 f"  (Note: Function entry at line {target_info['line']} is"
                 " ungated; internal capability check applies starting at line"
@@ -1297,11 +1390,16 @@ def format_summary(  # pylint: disable=too-many-locals,too-many-branches,too-man
         all_gates = primary_result.get("gates", [])
         if all_gates:
             out.append("\nGate Details:")
+            seen_gd: Set[str] = set()
             for g in all_gates:
                 c_loc = (
                     g.get("definition") or g.get("call_location") or "unknown"
                 )
-                out.append(f"  * {g['cap_str']} at {c_loc}")
+                scope_str = _format_ns_scope_hint(g.get("ns_scope"))
+                bullet = f"  * {g['cap_str']} at {c_loc}{scope_str}"
+                if bullet not in seen_gd:
+                    seen_gd.add(bullet)
+                    out.append(bullet)
         else:
             out.append("\nGate Details: None (All steps completely ungated)")
 

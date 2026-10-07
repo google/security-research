@@ -838,6 +838,152 @@ class TestCheckPrivilege(
             primary_pkt["attacker_position"], "local, CAP_NET_RAW"
         )
 
+    def test_bounded_switch_case_guarded_span(self):
+        """Verify a capability gate in an earlier switch case does not bleed."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            ("ioctl_dispatcher", "drivers/foo.c", 10, 60),
+        )
+        cur.execute(
+            "INSERT INTO syscall_node VALUES (?, ?, ?, ?)",
+            (
+                "__do_sys_unpriv",
+                "ioctl_dispatcher",
+                "fs/unpriv.c:10",
+                "drivers/foo.c:10",
+            ),
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (40, "call to ioctl_dispatcher", "fs/unpriv.c", 28),
+                (41, "ioctl_dispatcher", "drivers/foo.c", 10),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            (1, 40, "callgraph-all"),
+        )
+        cur.execute(
+            "INSERT INTO conditions VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "capable",
+                "drivers/foo.c:22:7:22:20",
+                "drivers/foo.c:22:3:23:15",
+                "CAP_SYS_ADMIN",
+                "__guarded_span__:init_user_ns",
+                "drivers/foo.c:24:3:30:8",
+            ),
+        )
+        self.conn.commit()
+
+        # Line 26 inside the guarded switch case [24, 30] is gated
+        _, verdict_gated, primary_gated, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "drivers/foo.c", 26
+            )
+        )
+        self.assertEqual(
+            verdict_gated, "REACHABLE, BUT ONLY BEHIND CAP_SYS_ADMIN"
+        )
+        self.assertEqual(len(primary_gated["gates"]), 1)
+        self.assertEqual(
+            primary_gated["gates"][0].get("ns_scope"), "init_user_ns"
+        )
+
+        # Line 45 in a subsequent unguarded case (> 30) is ungated
+        _, verdict_ungated, primary_ungated, _ = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "drivers/foo.c", 45
+            )
+        )
+        self.assertEqual(
+            verdict_ungated, "REACHABLE WITH NO PRIVILEGE (UNGATED)"
+        )
+        self.assertEqual(len(primary_ungated["gates"]), 0)
+
+    def test_genl_ops_declarative_gate_and_ns_scope(self):
+        """Verify declarative genl_ops gates and namespace scope reporting."""
+        cur = self.conn.cursor()
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("genl_admin_doit", "net/genl_foo.c", 100, 130),
+                ("genl_uns_doit", "net/genl_foo.c", 140, 170),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO syscall_node VALUES (?, ?, ?, ?)",
+            [
+                ("__do_sys_unpriv", "genl_admin_doit", "a:1", "b:1"),
+                ("__do_sys_unpriv", "genl_uns_doit", "a:1", "b:2"),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (50, "call to genl_admin_doit", "fs/unpriv.c", 29),
+                (51, "genl_admin_doit", "net/genl_foo.c", 100),
+                (52, "call to genl_uns_doit", "fs/unpriv.c", 30),
+                (53, "genl_uns_doit", "net/genl_foo.c", 140),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            [(1, 50, "callgraph-all"), (1, 52, "callgraph-all")],
+        )
+        cur.executemany(
+            "INSERT INTO conditions VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "capable",
+                    "net/genl_foo.c:200:2:205:3",
+                    "net/genl_foo.c:200:2:205:3",
+                    "CAP_NET_ADMIN",
+                    "__genl_ops_gate__:init_user_ns",
+                    "net/genl_foo.c:100:1:130:1",
+                ),
+                (
+                    "ns_capable",
+                    "net/genl_foo.c:210:2:215:3",
+                    "net/genl_foo.c:210:2:215:3",
+                    "CAP_NET_ADMIN",
+                    "__genl_ops_gate__:net_ns",
+                    "net/genl_foo.c:140:1:170:1",
+                ),
+            ],
+        )
+        self.conn.commit()
+
+        t_admin, v_admin, p_admin, all_admin = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "net/genl_foo.c", 115
+            )
+        )
+        self.assertEqual(
+            v_admin, "REACHABLE, BUT ONLY BEHIND capable(CAP_NET_ADMIN)"
+        )
+        s_admin = check_privilege.format_summary(
+            t_admin, v_admin, p_admin, all_admin
+        )
+        self.assertIn("[scope: init_user_ns (global root)]", s_admin)
+
+        t_uns, v_uns, p_uns, all_uns = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "net/genl_foo.c", 155
+            )
+        )
+        self.assertEqual(v_uns, "REACHABLE BEHIND USER NAMESPACE CAPABILITY")
+        s_uns = check_privilege.format_summary(t_uns, v_uns, p_uns, all_uns)
+        self.assertIn(
+            "[scope: net->user_ns (CLONE_NEWUSER + CLONE_NEWNET)]", s_uns
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
