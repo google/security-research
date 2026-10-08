@@ -873,6 +873,73 @@ class TestCheckPrivilegePreconditions(CheckPrivilegeTestBase):
         self.assertFalse(t_ok["depth_truncated"])
         self.assertEqual(v_ok, "REACHABLE WITH NO PRIVILEGE (UNGATED)")
 
+    def test_ops_open_acquisition_gate_propagation(self):
+        """Verify sibling callback inherits .proc_open capability gate."""
+        cur = self.conn.cursor()
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("mtrr_open", "arch/x86/kernel/cpu/mtrr/if.c", 389, 397),
+                ("mtrr_write", "arch/x86/kernel/cpu/mtrr/if.c", 80, 120),
+            ],
+        )
+        cur.execute(
+            "INSERT INTO conditions VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "capable",
+                "arch/x86/kernel/cpu/mtrr/if.c:394:7:394:13",
+                "arch/x86/kernel/cpu/mtrr/if.c:394:2:395:16",
+                "CAP_SYS_ADMIN",
+                "__guarded_span__:init_user_ns",
+                "arch/x86/kernel/cpu/mtrr/if.c:394:1:397:1",
+            ),
+        )
+        cur.executemany(
+            "INSERT INTO ops_targets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "arch/x86/kernel/cpu/mtrr/if.c:399:46:409:1",
+                    "proc_ops",
+                    "proc_open",
+                    "mtrr_open",
+                    "arch/x86/kernel/cpu/mtrr/if.c",
+                    389,
+                    397,
+                    "fs/unpriv.c",
+                    24,
+                    10,
+                    30,
+                ),
+                (
+                    "arch/x86/kernel/cpu/mtrr/if.c:399:46:409:1",
+                    "proc_ops",
+                    "proc_write",
+                    "mtrr_write",
+                    "arch/x86/kernel/cpu/mtrr/if.c",
+                    80,
+                    120,
+                    "fs/unpriv.c",
+                    25,
+                    10,
+                    30,
+                ),
+            ],
+        )
+        self.conn.commit()
+
+        t_info, verdict, primary, all_res = (
+            check_privilege.analyze_target_privilege(
+                self.db_path, "arch/x86/kernel/cpu/mtrr/if.c", 90
+            )
+        )
+        self.assertEqual(verdict, "REACHABLE, BUT ONLY BEHIND CAP_SYS_ADMIN")
+        self.assertEqual(len(primary["gates"]), 1)
+        self.assertEqual(primary["gates"][0]["gate_scope"], "open_acquisition")
+        summary = check_privilege.format_summary(
+            t_info, verdict, primary, all_res
+        )
+        self.assertIn("[via mtrr_open (proc_ops.proc_open)]", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

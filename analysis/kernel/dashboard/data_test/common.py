@@ -4,11 +4,13 @@ Checks live in per-table modules (test_*.py); this module holds only the
 genuinely repeated machinery: CSV loading, path canonicalisation, cross-table
 join helpers, and baseline drift comparison.
 """
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 import csv
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -130,6 +132,39 @@ def is_int(value: str) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+def locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
+    """Resolve `raw_file` to an on-disk kernel source file if available."""
+    if not raw_file:
+        return None
+    stripped = raw_file.removeprefix("file://")
+    if Path(stripped).is_file():
+        return stripped
+    clean_rel = canonical_path(raw_file)
+    if Path(clean_rel).is_file():
+        return clean_rel
+
+    workspace = Path(
+        os.environ.get(
+            "WORKSPACE_DIR",
+            str(Path("~/kernel_codeql_workspace").expanduser()),
+        )
+    )
+    candidates = []
+    if kernel and kernel != "unknown":
+        clean_ver = kernel.lstrip("v")
+        candidates.append(workspace / f"linux_v{clean_ver}")
+    if workspace.is_dir():
+        for entry in sorted(workspace.iterdir()):
+            if entry.name.startswith("linux_v"):
+                candidates.append(entry)
+
+    for repo_dir in candidates:
+        candidate = repo_dir / clean_rel
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 # --------------------------------------------------------------------------- #

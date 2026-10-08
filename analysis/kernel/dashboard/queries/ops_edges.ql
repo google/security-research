@@ -139,24 +139,44 @@ string opsContainerName(Field fld) {
 }
 
 /**
- * Holds if `fieldExpr` registers `target` on `regField` either via a struct
- * aggregate initializer (`ClassAggregateLiteral`) or via a dynamic field
- * assignment (`AssignExpr`, such as `shrinker->scan_objects = ...`),
- * excluding asynchronous callback fields already modeled in `async_edges`.
+ * Resolves `cal` to its outermost enclosing `ClassAggregateLiteral` when `cal`
+ * initializes an anonymous inner struct or union (e.g. `genl_split_ops`), so
+ * all sibling fields initialized in the same ops struct instance share one
+ * canonical registration-site span.
  */
-predicate opsFieldRegistration(Field regField, Expr fieldExpr, Function target) {
+ClassAggregateLiteral outermostOpsAggregate(ClassAggregateLiteral cal) {
+  if
+    cal.getType().getUnderlyingType().getName().matches(["", "(unnamed%"]) and
+    cal.getEnclosingElement() instanceof ClassAggregateLiteral
+  then result = outermostOpsAggregate(cal.getEnclosingElement())
+  else result = cal
+}
+
+/**
+ * Holds if `regSite` registers `target` on `regField` either via a struct
+ * aggregate initializer (`ClassAggregateLiteral`, where `regSite` is the
+ * enclosing struct initializer instance) or via a dynamic field assignment
+ * (`AssignExpr`, such as `shrinker->scan_objects = ...`), excluding
+ * asynchronous callback fields already modeled in `async_edges`.
+ */
+predicate opsFieldRegistration(Field regField, Expr regSite, Function target) {
   regField.getType() instanceof FunctionPointerIshType and
-  not asyncCallbackField(opsContainerName(regField), regField.getName(), _) and
   (
-    exists(ClassAggregateLiteral cal |
+    not asyncCallbackField(opsContainerName(regField), regField.getName(), _)
+    or
+    opsContainerName(regField) = "netlink_kernel_cfg" and regField.getName() = "input"
+  ) and
+  (
+    exists(ClassAggregateLiteral cal, Expr fieldExpr |
       fieldExpr = cal.getAFieldExpr(regField) and
-      resolvesToFunction(fieldExpr, target)
+      resolvesToFunction(fieldExpr, target) and
+      regSite = outermostOpsAggregate(cal)
     )
     or
     exists(AssignExpr ae |
       ae.getLValue().(FieldAccess).getTarget() = regField and
-      fieldExpr = ae.getRValue() and
-      resolvesToFunction(fieldExpr, target)
+      resolvesToFunction(ae.getRValue(), target) and
+      regSite = ae
     )
   )
 }
@@ -210,7 +230,7 @@ predicate compatibleOpsField(Field regField, Field callField) {
 from
   Field regField,
   Field callField,
-  Expr fieldExpr,
+  Expr regSite,
   Function target,
   ExprCall ec,
   Function caller,
@@ -219,7 +239,7 @@ from
   string parentName
 where
   // 1. Ops registration (aggregate initializer or dynamic field assignment)
-  opsFieldRegistration(regField, fieldExpr, target) and
+  opsFieldRegistration(regField, regSite, target) and
   compatibleOpsField(regField, callField) and
 
   // 2. Indirect call invocation (direct field access or local variable)
@@ -235,7 +255,7 @@ where
   parentName != "" and
   parentName != "<anon>"
 select
-  locationString(fieldExpr) as definition,
+  locationString(regSite) as definition,
   parentName as parent,
   regField.getName(),
   target.getName(),

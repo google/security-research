@@ -4,13 +4,18 @@ Consumed by `tools/check_privilege.py` to determine whether call sites and
 controlled line spans are gated by `capable(...)`, `ns_capable(...)`,
 declarative Generic Netlink flags, `sysctl`, or `module_param`.
 """
+
 from __future__ import annotations
 
 from collections import Counter
-import os
 import random
 
-from common import canonical_path, load_baseline, pct, report
+from common import (
+    load_baseline,
+    locate_kernel_source_file,
+    pct,
+    report,
+)
 import pytest
 
 CAP_SOURCE_TOKENS = (
@@ -36,43 +41,13 @@ ALLOWED_NS_SCOPES = {
 }
 
 
-def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
-    """Resolve `raw_file` to an on-disk kernel source file if available."""
-    if not raw_file:
-        return None
-    clean_rel = canonical_path(raw_file)
-    if os.path.isfile(clean_rel):
-        return clean_rel
-
-    workspace = os.environ.get(
-        "WORKSPACE_DIR",
-        os.path.expanduser("~/kernel_codeql_workspace"),
-    )
-    candidates = []
-    if kernel and kernel != "unknown":
-        clean_ver = kernel.lstrip("v")
-        candidates.append(os.path.join(workspace, f"linux_v{clean_ver}"))
-    entries = (
-        sorted(os.listdir(workspace)) if os.path.isdir(workspace) else []
-    )
-    for entry in entries:
-        if entry.startswith("linux_v"):
-            candidates.append(os.path.join(workspace, entry))
-
-    for repo_dir in candidates:
-        candidate = os.path.join(repo_dir, clean_rel)
-        if os.path.isfile(candidate):
-            return candidate
-    return None
-
-
 def _parse_loc(loc_str: str) -> tuple[str, int, int]:
-    """Parse `file:sl:sc:el:ec` into `(clean_file, start_line, end_line)`."""
+    """Parse `file:sl:sc:el:ec` into `(file_path, start_line, end_line)`."""
     parts = loc_str.rsplit(":", 4)
-    rel = canonical_path(parts[0])
+    raw_path = parts[0].removeprefix("file://")
     sl = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
     el = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else sl
-    return rel, sl, el
+    return raw_path, sl, el
 
 
 def test_conditions_not_empty(conditions, kernel):
@@ -97,9 +72,7 @@ def test_conditions_covers_all_four_gate_types(conditions):
         "condition gate type distribution",
         {**dict(counts), "distinct_cap_definitions": len(cap_defs)},
     )
-    assert (
-        not missing
-    ), f"missing condition gate categories: {sorted(missing)}"
+    assert not missing, f"missing condition gate categories: {sorted(missing)}"
     assert (
         counts["capable"] >= 1500
     ), f"too few capable() gates: {counts['capable']}"
@@ -218,6 +191,96 @@ def test_conditions_genl_declarative_gates(conditions):
     assert not bad_genl, f"malformed genl_ops gate rows: {bad_genl[:3]}"
 
 
+def test_privilege_gate_cve_recall(conditions):
+    """Verify recall across all 5 capability-gate mechanisms on CVE targets."""
+    genl_admin_ipvs = [
+        r
+        for r in conditions
+        if r["call"] == "__genl_ops_gate__:init_user_ns"
+        and r["type"] == "capable"
+        and "net/netfilter/ipvs/ip_vs_ctl.c:" in r["call_location"]
+    ]
+    genl_admin_devlink = [
+        r
+        for r in conditions
+        if r["call"] == "__genl_ops_gate__:init_user_ns"
+        and r["type"] == "capable"
+        and "net/devlink/" in r["call_location"]
+    ]
+    genl_uns_wg_ethtool = [
+        r
+        for r in conditions
+        if r["call"] == "__genl_ops_gate__:net_ns"
+        and r["type"] == "ns_capable"
+        and (
+            "drivers/net/wireguard/netlink.c:" in r["call_location"]
+            or "net/ethtool/" in r["call_location"]
+        )
+    ]
+    init_user_ns_printk = [
+        r
+        for r in conditions
+        if r["call"] == "__guarded_span__:init_user_ns"
+        and r["type"] == "capable"
+        and "kernel/printk/printk.c:" in r["definition"]
+    ]
+    wrapper_net_ns = [
+        r
+        for r in conditions
+        if r["call"] == "__guarded_span__:net_ns"
+        and r["type"] == "ns_capable"
+        and "net/" in r["definition"]
+    ]
+    wrapper_s_user_ns = [
+        r
+        for r in conditions
+        if r["call"] == "__guarded_span__:s_user_ns"
+        and r["type"] == "ns_capable"
+        and "fs/" in r["definition"]
+    ]
+    open_acq_gates = {
+        tag: sum(
+            1
+            for r in conditions
+            if r["call"].startswith("__guarded_span__:")
+            and tag in r["definition"]
+        )
+        for tag in (
+            "arch/x86/kernel/msr.c:",
+            "drivers/char/mem.c:",
+            "fs/proc/kcore.c:",
+            "drivers/net/ppp/ppp_generic.c:",
+        )
+    }
+
+    report(
+        "privilege-gate CVE & handler mechanism recall",
+        {
+            "genl_admin_ipvs": len(genl_admin_ipvs),
+            "genl_admin_devlink": len(genl_admin_devlink),
+            "genl_uns_wg_ethtool": len(genl_uns_wg_ethtool),
+            "init_user_ns_printk": len(init_user_ns_printk),
+            "wrapper_net_ns": len(wrapper_net_ns),
+            "wrapper_s_user_ns": len(wrapper_s_user_ns),
+            "open_acquisition_gates": open_acq_gates,
+        },
+    )
+    assert genl_admin_ipvs, "missing GENL_ADMIN_PERM gates in ip_vs_ctl.c"
+    assert genl_admin_devlink, "missing GENL_ADMIN_PERM gates in net/devlink/"
+    assert (
+        genl_uns_wg_ethtool
+    ), "missing GENL_UNS_ADMIN_PERM gates in wireguard/ethtool"
+    assert (
+        init_user_ns_printk
+    ), "missing ns_capable(&init_user_ns) gate in printk.c"
+    assert len(wrapper_net_ns) >= 50, "too few net_ns wrapper gates in net/"
+    assert (
+        len(wrapper_s_user_ns) >= 20
+    ), "too few s_user_ns wrapper gates in fs/"
+    for tag, count in open_acq_gates.items():
+        assert count > 0, f"missing .open/.proc_open gate in {tag}"
+
+
 def _verify_condition_row(
     row: dict[str, str],
     kernel: str,
@@ -227,13 +290,11 @@ def _verify_condition_row(
 
     def _get_lines(rel_path: str) -> list[str]:
         if rel_path not in file_cache:
-            full = _locate_kernel_source_file(rel_path, kernel)
+            full = locate_kernel_source_file(rel_path, kernel)
             if not full:
                 file_cache[rel_path] = []
             else:
-                with open(
-                    full, "r", encoding="utf-8", errors="ignore"
-                ) as fh:
+                with open(full, "r", encoding="utf-8", errors="ignore") as fh:
                     file_cache[rel_path] = fh.read().splitlines()
         return file_cache[rel_path]
 
@@ -256,11 +317,9 @@ def _verify_condition_row(
 
 def test_conditions_source_verification_300_samples(conditions, kernel):
     """Verify 300 sampled capability gates against kernel C source files."""
-    cap_rows = [
-        r for r in conditions if r["type"] in ("capable", "ns_capable")
-    ]
+    cap_rows = [r for r in conditions if r["type"] in ("capable", "ns_capable")]
     probe_file, _, _ = _parse_loc(cap_rows[0]["definition"])
-    if not _locate_kernel_source_file(probe_file, kernel):
+    if not locate_kernel_source_file(probe_file, kernel):
         pytest.skip(f"kernel C source tree not found on disk for {kernel}")
 
     sample = random.Random(42).sample(cap_rows, min(300, len(cap_rows)))
@@ -285,8 +344,8 @@ def test_conditions_source_verification_300_samples(conditions, kernel):
             "failures": len(failures),
         },
     )
-    assert (
-        verified_defs == len(sample) and verified_spans == len(sample)
+    assert verified_defs == len(sample) and verified_spans == len(
+        sample
     ), f"source verification failed on {len(failures)} rows: {failures[:5]}"
 
 

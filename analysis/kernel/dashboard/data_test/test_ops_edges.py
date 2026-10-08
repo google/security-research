@@ -5,12 +5,18 @@ This table resolves indirect calls through kernel operations structs
 never been validated against anything, so these checks are intrinsic and
 cross-table only -- there is no reference dump.
 """
+
 from __future__ import annotations
 
-import os
 import random
 
-from common import load_baseline, pct, report, top_counts
+from common import (
+    load_baseline,
+    locate_kernel_source_file,
+    pct,
+    report,
+    top_counts,
+)
 import pytest
 
 FORBIDDEN_ASYNC_PARENTS_FIELDS = {
@@ -36,35 +42,6 @@ MACRO_TOKENS = (
 )
 
 
-def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
-    """Resolve `raw_file` to an on-disk kernel source file if available."""
-    if not raw_file:
-        return None
-    if os.path.isfile(raw_file):
-        return raw_file
-
-    workspace = os.environ.get(
-        "WORKSPACE_DIR",
-        os.path.expanduser("~/kernel_codeql_workspace"),
-    )
-    candidates = []
-    if kernel and kernel != "unknown":
-        clean_ver = kernel.lstrip("v")
-        candidates.append(os.path.join(workspace, f"linux_v{clean_ver}"))
-    entries = (
-        sorted(os.listdir(workspace)) if os.path.isdir(workspace) else []
-    )
-    for entry in entries:
-        if entry.startswith("linux_v"):
-            candidates.append(os.path.join(workspace, entry))
-
-    for repo_dir in candidates:
-        candidate = os.path.join(repo_dir, raw_file)
-        if os.path.isfile(candidate):
-            return candidate
-    return None
-
-
 class _OpsSourceVerifier:
     """Cached kernel C source-code verifier for `ops_targets` rows."""
 
@@ -75,7 +52,7 @@ class _OpsSourceVerifier:
     def get_lines(self, rel_file: str) -> list[str]:
         """Return cached file lines for `rel_file`."""
         if rel_file not in self._cache:
-            full = _locate_kernel_source_file(rel_file, self.kernel)
+            full = locate_kernel_source_file(rel_file, self.kernel)
             if not full:
                 self._cache[rel_file] = []
             else:
@@ -85,42 +62,50 @@ class _OpsSourceVerifier:
                     self._cache[rel_file] = handle.read().splitlines()
         return self._cache[rel_file]
 
-    def get_window(self, rel_file: str, line_no: int, pad: int = 15) -> str:
-        """Return text window `[line_no - pad, line_no + pad]`."""
+    def get_window(
+        self,
+        rel_file: str,
+        line_no: int,
+        pad: int = 15,
+        end_line: int | None = None,
+    ) -> str:
+        """Return text window `[line_no - pad, (end_line or line_no) + pad]`."""
         lines = self.get_lines(rel_file)
         if not lines or line_no <= 0:
             return ""
+        stop_line = end_line if end_line and end_line >= line_no else line_no
         start = max(0, line_no - 1 - pad)
-        end = min(len(lines), line_no + pad)
+        end = min(len(lines), stop_line + pad)
         return "\n".join(lines[start:end])
 
     def verify_row(self, row: dict[str, str]) -> tuple[bool, bool]:
         """Verify registration site and call site against kernel C source."""
         def_parts = row["definition"].split(":")
-        def_file = def_parts[0]
         def_line = (
             int(def_parts[1])
             if len(def_parts) > 1 and def_parts[1].isdigit()
             else 1
         )
-        target = row["target"]
-        field = row["field"]
-        call_file = row["exprcall_file"]
+        def_end = (
+            int(def_parts[3])
+            if len(def_parts) > 3 and def_parts[3].isdigit()
+            else def_line
+        )
         call_line = (
-            int(row["exprcall_line"])
-            if row["exprcall_line"].isdigit()
-            else 1
+            int(row["exprcall_line"]) if row["exprcall_line"].isdigit() else 1
         )
         tgt_start = (
-            int(row["target_start"])
-            if row["target_start"].isdigit()
-            else 1
+            int(row["target_start"]) if row["target_start"].isdigit() else 1
         )
 
-        def_win = self.get_window(def_file, def_line, pad=15)
+        def_win = self.get_window(
+            def_parts[0], def_line, pad=15, end_line=def_end
+        )
         tgt_win = self.get_window(row["target_file"], tgt_start, pad=10)
-        call_win = self.get_window(call_file, call_line, pad=25)
+        call_win = self.get_window(row["exprcall_file"], call_line, pad=25)
 
+        target = row["target"]
+        field = row["field"]
         reg_ok = (
             target in def_win
             or target in tgt_win
@@ -324,9 +309,7 @@ def test_ops_targets_resolve_to_known_functions(
             "missing": len(targets - known),
         },
     )
-    assert (
-        rate >= 90.0
-    ), f"only {rate:.1f}% of ops targets are known functions"
+    assert rate >= 90.0, f"only {rate:.1f}% of ops targets are known functions"
 
 
 def test_ops_targets_distribution(ops_targets, baseline_path):
@@ -341,14 +324,14 @@ def test_ops_targets_distribution(ops_targets, baseline_path):
     if base.get("rows"):
         ratio = len(ops_targets) / base["rows"]
         assert ratio >= 0.75, (
-            f"ops_targets row count dropped below 75% of baseline "
+            "ops_targets row count dropped below 75% of baseline "
             f"({len(ops_targets)} vs {base['rows']})"
         )
 
 
 def test_ops_targets_source_code_verification(ops_targets, kernel):
     """Verify a stratified 300-row sample against on-disk kernel C source."""
-    if not _locate_kernel_source_file("fs/open.c", kernel):
+    if not locate_kernel_source_file("fs/open.c", kernel):
         pytest.skip("kernel C source tree not available on disk")
 
     verifier = _OpsSourceVerifier(kernel)
@@ -396,4 +379,30 @@ def test_ops_targets_source_code_verification(ops_targets, kernel):
     assert rate >= 95.0, (
         f"only {rate:.1f}% ({both_ok}/{len(sample)}) of sampled ops_targets "
         "rows verified against kernel C source"
+    )
+
+
+def test_ops_targets_shared_struct_instance_definitions(ops_targets):
+    """Verify sibling fields in the same struct initializer share definition."""
+    fops_by_def: dict[str, set[str]] = {}
+    for row in ops_targets:
+        if row["parent"] in ("file_operations", "proc_ops"):
+            fops_by_def.setdefault(row["definition"], set()).add(row["field"])
+
+    multi_field_defs = {
+        defn: fields
+        for defn, fields in fops_by_def.items()
+        if len(fields) >= 2 and ("open" in fields or "proc_open" in fields)
+    }
+    report(
+        "struct-instance definition grouping",
+        {
+            "fops/proc_ops instances": len(fops_by_def),
+            "instances with open + sibling callbacks": len(multi_field_defs),
+        },
+    )
+    assert len(multi_field_defs) >= 100, (
+        "expected >=100 file_operations/proc_ops struct instances sharing a "
+        "definition key across .open and sibling fields, got "
+        f"{len(multi_field_defs)}"
     )

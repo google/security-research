@@ -51,6 +51,7 @@ from tools.lib.privilege import (
     get_entry_precondition,
     load_capability_map,
     load_condition_gates,
+    load_ops_acquisition_gates,
     load_runtime_tunables,
     verdict_rank,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "format_capability",
     "deduplicate_gates",
     "load_condition_gates",
+    "load_ops_acquisition_gates",
     "get_call_site_gates",
     "load_runtime_tunables",
     "get_entry_precondition",
@@ -199,6 +201,12 @@ def _relax_privilege_callers(
             caller[3],
             caller_fn=caller[0],
         )
+        if caller[4] == "indirect":
+            acq_gates = ctx["ops_acq_gates"].get(
+                (curr_fn, clean_file_path(curr_file), caller[5]), []
+            )
+            if acq_gates:
+                edge_gates = deduplicate_gates(edge_gates + acq_gates)
         new_cost = cost + _gate_cost(edge_gates, base_cost=COST_UNGATED)
         if new_cost < ctx["best_dist"].get(caller_key, float("inf")):
             ctx["best_dist"][caller_key] = new_cost
@@ -241,6 +249,11 @@ def _init_privilege_search(
     func_gates = options.get("func_gates", {})
     call_tunables = options.get("call_tunables") or {}
     func_tunables = options.get("func_tunables") or {}
+    ops_acq_gates = options.get("ops_acq_gates")
+    if ops_acq_gates is None:
+        ops_acq_gates = (
+            load_ops_acquisition_gates(conn, func_gates) if func_gates else {}
+        )
     clean_tfile = clean_file_path(target_file)
 
     target_gates = get_call_site_gates(
@@ -265,6 +278,7 @@ def _init_privilege_search(
     ctx: Dict[str, Any] = {
         "call_gates": call_gates,
         "func_gates": func_gates,
+        "ops_acq_gates": ops_acq_gates,
         "call_tunables": call_tunables,
         "func_tunables": func_tunables,
         "cap_map": options.get("cap_map"),
@@ -390,6 +404,7 @@ def _load_all_target_gates(
     call_gates, func_gates, cap_map = load_condition_gates(
         conn, verbose=verbose
     )
+    ops_acq_gates = load_ops_acquisition_gates(conn, func_gates)
     call_tunables, func_tunables = load_runtime_tunables(conn)
     fn_name = target_info["function"]
     fn_file = clean_file_path(target_info["file"])
@@ -406,6 +421,7 @@ def _load_all_target_gates(
     return {
         "call_gates": call_gates,
         "func_gates": func_gates,
+        "ops_acq_gates": ops_acq_gates,
         "cap_map": cap_map,
         "call_tunables": call_tunables,
         "func_tunables": func_tunables,
@@ -740,8 +756,13 @@ def _format_optimal_path_section(
         seen_gd: Set[str] = set()
         for g in all_gates:
             c_loc = g.get("definition") or g.get("call_location") or "unknown"
+            acq_str = (
+                f" [via {g['call']}]"
+                if g.get("gate_scope") == "open_acquisition" and g.get("call")
+                else ""
+            )
             scope_str = _format_ns_scope_hint(g.get("ns_scope"))
-            bullet = f"  * {g['cap_str']} at {c_loc}{scope_str}"
+            bullet = f"  * {g['cap_str']} at {c_loc}{acq_str}{scope_str}"
             if bullet not in seen_gd:
                 seen_gd.add(bullet)
                 out.append(bullet)

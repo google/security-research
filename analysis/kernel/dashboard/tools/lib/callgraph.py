@@ -43,9 +43,18 @@ INDEXES = [
 _CALL_TYPE_PRIORITY = {"direct": 0, "indirect": 1, "async": 2}
 
 
+_ABS_LINUX_ROOT_RE = re.compile(r"^(?:file://)?/+(?:.*?/)?linux(?:[_-][^/]*)?/")
+_REL_LINUX_ROOT_RE = re.compile(r"^linux(?:[_-][^/]*)?/")
+
+
 def clean_file_path(path: str) -> str:
-    """Normalize file path by stripping leading slashes and linux/ prefixes."""
-    return path.lstrip("/").replace("linux/", "")
+    """Normalize file path by stripping URI, leading slash, and linux* root."""
+    p = _ABS_LINUX_ROOT_RE.sub("", path)
+    if p == path:
+        p = _REL_LINUX_ROOT_RE.sub("", p)
+    if p.startswith("file://"):
+        p = p[7:]
+    return p.lstrip("/")
 
 
 def table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:

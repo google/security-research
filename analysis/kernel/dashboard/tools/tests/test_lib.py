@@ -62,6 +62,12 @@ class TestLibCallgraph(BaseToolsTestCase):
             callgraph.clean_file_path("/linux/fs/read_write.c"),
             "fs/read_write.c",
         )
+        self.assertEqual(
+            callgraph.clean_file_path(
+                "file:///workspace/linux_v6.1.111/include/linux/skbuff.h"
+            ),
+            "include/linux/skbuff.h",
+        )
         cur = self.conn.cursor()
         self.assertTrue(callgraph.table_exists(cur, "function_locations"))
         self.assertFalse(callgraph.table_exists(cur, "nonexistent_table"))
@@ -469,3 +475,109 @@ class TestLibPrivilege(BaseToolsTestCase):
             privilege.verdict_rank(remote_res),
             privilege.verdict_rank(local_res),
         )
+
+    def test_load_ops_acquisition_gates(self):
+        """Verify .open gate propagation and multi-instance universal check."""
+        self.insert_rows(
+            function_locations=[
+                ("msr_open", "arch/x86/kernel/msr.c", 208, 223),
+                ("msr_read", "arch/x86/kernel/msr.c", 55, 79),
+                ("cpuid_open", "arch/x86/kernel/cpuid.c", 101, 115),
+                ("shared_llseek", "fs/read_write.c", 1, 20),
+            ],
+            conditions=[
+                (
+                    "capable",
+                    "arch/x86/kernel/msr.c:212:7:212:13",
+                    "arch/x86/kernel/msr.c:212:2:213:16",
+                    "CAP_SYS_RAWIO",
+                    "__guarded_span__:init_user_ns",
+                    "arch/x86/kernel/msr.c:212:1:223:1",
+                ),
+            ],
+            ops_targets=[
+                (
+                    "arch/x86/kernel/msr.c:228:48:236:1",
+                    "file_operations",
+                    "open",
+                    "msr_open",
+                    "arch/x86/kernel/msr.c",
+                    208,
+                    223,
+                    "fs/open.c",
+                    800,
+                    790,
+                    820,
+                ),
+                (
+                    "arch/x86/kernel/msr.c:228:48:236:1",
+                    "file_operations",
+                    "read",
+                    "msr_read",
+                    "arch/x86/kernel/msr.c",
+                    55,
+                    79,
+                    "fs/read_write.c",
+                    468,
+                    451,
+                    490,
+                ),
+                (
+                    "arch/x86/kernel/msr.c:228:48:236:1",
+                    "file_operations",
+                    "llseek",
+                    "shared_llseek",
+                    "fs/read_write.c",
+                    1,
+                    20,
+                    "fs/read_write.c",
+                    300,
+                    290,
+                    320,
+                ),
+                (
+                    "arch/x86/kernel/cpuid.c:120:48:125:1",
+                    "file_operations",
+                    "open",
+                    "cpuid_open",
+                    "arch/x86/kernel/cpuid.c",
+                    101,
+                    115,
+                    "fs/open.c",
+                    800,
+                    790,
+                    820,
+                ),
+                (
+                    "arch/x86/kernel/cpuid.c:120:48:125:1",
+                    "file_operations",
+                    "llseek",
+                    "shared_llseek",
+                    "fs/read_write.c",
+                    1,
+                    20,
+                    "fs/read_write.c",
+                    300,
+                    290,
+                    320,
+                ),
+            ],
+        )
+        _, func_gates, _ = privilege.load_condition_gates(self.conn)
+        acq_gates = privilege.load_ops_acquisition_gates(self.conn, func_gates)
+        msr_key = (
+            "msr_read",
+            "arch/x86/kernel/msr.c",
+            "file_operations->read",
+        )
+        shared_key = (
+            "shared_llseek",
+            "fs/read_write.c",
+            "file_operations->llseek",
+        )
+        self.assertIn(msr_key, acq_gates)
+        self.assertEqual(acq_gates[msr_key][0]["argument"], "CAP_SYS_RAWIO")
+        self.assertEqual(
+            acq_gates[msr_key][0]["gate_scope"], "open_acquisition"
+        )
+        self.assertNotIn(shared_key, acq_gates)

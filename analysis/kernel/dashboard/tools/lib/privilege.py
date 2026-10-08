@@ -17,6 +17,17 @@ GateDict = Dict[str, Any]
 GateList = List[GateDict]
 CallGateMap = Dict[Tuple[str, int], GateList]
 FuncGateMap = Dict[str, GateList]
+OpsAcqGateMap = Dict[Tuple[str, str, str], GateList]
+
+_ACQUISITION_OPS_PARENTS = (
+    "file_operations",
+    "proc_ops",
+    "block_device_operations",
+    "drm_driver",
+    "tty_ldisc_ops",
+    "vfio_iommu_driver_ops",
+)
+_ACQUISITION_FIELDS = ("open", "proc_open")
 
 # Cost model for Dijkstra path finding (favoring unprivileged/ungated paths)
 COST_UNGATED = 1
@@ -317,6 +328,85 @@ def get_call_site_gates(
             ):
                 gates.append(fg)
     return deduplicate_gates(gates)
+
+
+def _clean_loc_str(loc_str: Optional[str]) -> str:
+    """Normalize the file-path prefix of a 5-part location string."""
+    if not loc_str:
+        return ""
+    m = LOCATION_RE.match(loc_str)
+    if not m:
+        return clean_file_path(loc_str)
+    return (
+        f"{clean_file_path(m.group(1))}:"
+        f"{m.group(2)}:{m.group(3)}:{m.group(4)}:{m.group(5)}"
+    )
+
+
+def _get_open_function_gates(
+    func_gates: FuncGateMap,
+    open_fn: str,
+    open_file: str,
+    parent: str,
+    field: str,
+) -> GateList:
+    """Return full-function capability gates on an .open/.proc_open callback."""
+    gates: GateList = []
+    for fg in func_gates.get(open_fn, []):
+        if fg.get("func_file") and open_file and fg["func_file"] != open_file:
+            continue
+        span = fg.get("fn_span")
+        max_ctrl = fg.get("max_controlled_line")
+        if span and max_ctrl is not None and max_ctrl < span[1] - 2:
+            continue
+        gates.append(
+            dict(
+                fg,
+                gate_scope="open_acquisition",
+                call=f"{open_fn} ({parent}.{field})",
+            )
+        )
+    return deduplicate_gates(gates)
+
+
+def load_ops_acquisition_gates(
+    conn: sqlite3.Connection, func_gates: FuncGateMap
+) -> OpsAcqGateMap:
+    """Propagate .open/.proc_open capability gates to sibling ops callbacks."""
+    if not func_gates:
+        return {}
+    cur = conn.cursor()
+    if not table_exists(cur, "ops_targets"):
+        return {}
+
+    placeholders = ", ".join("?" for _ in _ACQUISITION_OPS_PARENTS)
+    cur.execute(
+        "SELECT DISTINCT definition, parent, field, target, target_file"
+        f" FROM ops_targets WHERE parent IN ({placeholders})",
+        _ACQUISITION_OPS_PARENTS,
+    )
+    inst_open_gates: Dict[Tuple[str, str], GateList] = {}
+    sibling_insts: Dict[Tuple[str, str, str], Set[Tuple[str, str]]] = {}
+
+    for def_loc, parent, field, target, tfile in cur.fetchall():
+        clean_def = _clean_loc_str(def_loc)
+        if not clean_def or clean_def == "unknown":
+            continue
+        clean_tfile = clean_file_path(tfile or "")
+        inst_key = (parent, clean_def)
+        if field in _ACQUISITION_FIELDS:
+            inst_open_gates[inst_key] = _get_open_function_gates(
+                func_gates, target, clean_tfile, parent, field
+            )
+        else:
+            cb_key = (target, clean_tfile, f"{parent}->{field}")
+            sibling_insts.setdefault(cb_key, set()).add(inst_key)
+
+    return {
+        cb_key: inst_open_gates[sorted(ikeys)[0]]
+        for cb_key, ikeys in sibling_insts.items()
+        if ikeys and all(inst_open_gates.get(ik) for ik in ikeys)
+    }
 
 
 def _parse_tunable_rows(
