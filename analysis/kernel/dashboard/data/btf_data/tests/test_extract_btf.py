@@ -1,23 +1,17 @@
 #!/usr/bin/python3
-"""Unit tests for extract-btf.py BTF extraction and SQLite storage."""
+"""Unit tests for extract_btf.py BTF extraction and SQLite storage."""
 
-import importlib
 import json
 import os
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-# Ensure parent directory is in sys.path
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+from data.btf_data import extract_btf
 
-# Import module with hyphen
-extract_btf = importlib.import_module("extract-btf")
+PARENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 get_shallow = extract_btf.get_shallow
 create_types_table = extract_btf.create_types_table
 create_sql_db = extract_btf.create_sql_db
@@ -26,9 +20,7 @@ create_sql_db = extract_btf.create_sql_db
 class TestExtractBTF(unittest.TestCase):
     """Test suite for BTF type extraction and database population."""
 
-    def setUp(self):
-        super().setUp()
-        self.maxDiff = None  # pylint: disable=invalid-name
+    maxDiff = None
 
     def test_basic_struct_and_pointer(self):
         """Test extraction of basic integer field and pointer to struct."""
@@ -232,7 +224,13 @@ class TestExtractBTF(unittest.TestCase):
     def test_enums_32_and_64(self):
         """Test ENUM and ENUM64 handling."""
         types = {
-            1: {"id": 1, "kind": "ENUM", "name": "my_enum", "size": 4, "vlen": 1},
+            1: {
+                "id": 1,
+                "kind": "ENUM",
+                "name": "my_enum",
+                "size": 4,
+                "vlen": 1,
+            },
             2: {
                 "id": 2,
                 "kind": "ENUM64",
@@ -389,8 +387,8 @@ class TestExtractBTF(unittest.TestCase):
     def test_existing_btf_db_integrity(self):
         """Integration test verifying integrity of btf_6.18.db or btf.db."""
         db_candidates = [
-            os.path.join(parent_dir, "btf_6.18.db"),
-            os.path.join(parent_dir, "btf.db"),
+            os.path.join(PARENT_DIR, "btf_6.18.db"),
+            os.path.join(PARENT_DIR, "btf.db"),
         ]
         target_db = next((f for f in db_candidates if os.path.exists(f)), None)
         if not target_db:
@@ -442,9 +440,7 @@ class TestExtractBTF(unittest.TestCase):
                 side_effect=[b"ELF64", b"Section Headers: [17] .BTF PROGBITS"],
             ):
                 validated_path = extract_btf.vmlinux(tmp_file.name)
-                self.assertEqual(
-                    validated_path, os.path.abspath(tmp_file.name)
-                )
+                self.assertEqual(validated_path, os.path.abspath(tmp_file.name))
 
             with patch.object(
                 extract_btf.subprocess,
@@ -473,16 +469,14 @@ class TestExtractBTF(unittest.TestCase):
             result = extract_btf.dump_btf_json("/fake/vmlinux")
             self.assertEqual(len(result["types"]), 1)
             mock_run.assert_not_called()
-            mock_check_out.assert_called_once_with(
-                [
-                    extract_btf.BPFTOOL,
-                    "btf",
-                    "dump",
-                    "--json",
-                    "file",
-                    "/fake/vmlinux",
-                ]
-            )
+            mock_check_out.assert_called_once_with([
+                extract_btf.BPFTOOL,
+                "btf",
+                "dump",
+                "--json",
+                "file",
+                "/fake/vmlinux",
+            ])
 
         def fake_pahole(cmd, **_kwargs):
             for arg in cmd:
@@ -518,15 +512,13 @@ class TestExtractBTF(unittest.TestCase):
     def test_empty_btf_raises_error(self):
         """Test create_types_table raises ValueError without struct types."""
         json_data = {
-            "types": [
-                {
-                    "id": 1,
-                    "kind": "INT",
-                    "name": "int",
-                    "nr_bits": 32,
-                    "size": 4,
-                }
-            ]
+            "types": [{
+                "id": 1,
+                "kind": "INT",
+                "name": "int",
+                "nr_bits": 32,
+                "size": 4,
+            }]
         }
         conn = sqlite3.connect(":memory:")
         with self.assertRaises(ValueError):
@@ -571,8 +563,8 @@ class TestExtractBTF(unittest.TestCase):
     def test_real_vmlinux_well_known_structs(self):
         """Integration test verifying essential Linux kernel structs in DB."""
         db_candidates = [
-            os.path.join(parent_dir, "btf_6.18.db"),
-            os.path.join(parent_dir, "btf.db"),
+            os.path.join(PARENT_DIR, "btf_6.18.db"),
+            os.path.join(PARENT_DIR, "btf.db"),
         ]
         target_db = next((f for f in db_candidates if os.path.exists(f)), None)
         if not target_db:
@@ -604,7 +596,9 @@ class TestExtractBTF(unittest.TestCase):
             "WHERE struct_name = 'task_struct' AND name = 'pid';"
         )
         row = cursor.fetchone()
-        self.assertIsNotNone(row, "task_struct.pid field not found in database.")
+        self.assertIsNotNone(
+            row, "task_struct.pid field not found in database."
+        )
         self.assertEqual(
             row[1], "INT", "task_struct.pid field kind should be INT."
         )
@@ -612,7 +606,7 @@ class TestExtractBTF(unittest.TestCase):
         conn.close()
 
     def _extract_struct_fields(self, json_data, types, struct_name):
-        """Helper to find a struct in json_data and extract its shallow fields."""
+        """Finds a struct in json_data and extracts its shallow fields."""
         stype = next(
             (
                 t

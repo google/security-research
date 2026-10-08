@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# pylint: disable=duplicate-code,c-extension-no-member
 """Syzkaller Coverage Parser.
 
 Parses Syzkaller code coverage reports (in HTML or JSON/JSONL format, including
@@ -9,7 +8,7 @@ programs, and executed syscalls.
 """
 
 import argparse
-from contextlib import closing
+from dataclasses import dataclass
 import gzip
 import html
 from io import StringIO
@@ -17,12 +16,29 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import subprocess
+from typing import Optional
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from lxml import etree
+
+from data.lib.db import open_sqlite_db
+from data.lib.validation import can_create_file
+
+_ETREE_HTML_PARSER = getattr(etree, "HTMLParser")
+_ETREE_PARSE = getattr(etree, "parse")
+
+
+@dataclass(frozen=True)
+class RemapConfig:
+    """Configuration for git-diff line remapping of coverage data."""
+
+    enabled: bool = False
+    repo_dir: Optional[str] = None
+    cov_commit: Optional[str] = None
+    target_commit: str = "HEAD"
+    sources_list: Optional[list] = None
 
 
 def sk_cov_url_or_file(source: str) -> str:
@@ -44,20 +60,10 @@ def sk_cov_url_or_file(source: str) -> str:
     if result.scheme and result.netloc and is_syz_domain:
         return source
     logging.critical(
-        "File not found or unreadable, and not a valid syzbot/syzkaller URL: %s",
+        "File not found or unreadable, and not a valid syzbot/syzkaller"
+        " URL: %s",
         source,
     )
-    raise ValueError
-
-
-def can_create_file(filename: str) -> str:
-    """Validates that the target file path can be created in a writable dir."""
-    base_dir, file_name = os.path.split(filename)
-    if not base_dir:
-        base_dir = os.getcwd()
-    if os.path.isdir(base_dir) and os.access(base_dir, os.W_OK):
-        return os.path.join(base_dir, file_name)
-    logging.critical("Wrong path provided: %s", filename)
     raise ValueError
 
 
@@ -313,8 +319,8 @@ def get_html_syzk_cov(html_data: str) -> list:
 
 def get_html_path(html_data: str) -> list:
     """Extracts file IDs and kernel file paths from an HTML coverage report."""
-    html_parser = etree.HTMLParser()
-    tree = etree.parse(StringIO(html_data), html_parser)
+    html_parser = _ETREE_HTML_PARSER()
+    tree = _ETREE_PARSE(StringIO(html_data), html_parser)
     a_tag_list = tree.xpath(
         './/a[@id and @href and contains(@onclick,"onFileClick")]'
     )
@@ -492,16 +498,14 @@ def ensure_commit_in_repo(repo_dir: str, commit: str) -> str:
                 ["git", "-C", repo_dir, "fetch", "--unshallow"], check=True
             )
             sha = (
-                subprocess.check_output(
-                    [
-                        "git",
-                        "-C",
-                        repo_dir,
-                        "rev-parse",
-                        "--verify",
-                        f"{commit}^{{commit}}",
-                    ]
-                )
+                subprocess.check_output([
+                    "git",
+                    "-C",
+                    repo_dir,
+                    "rev-parse",
+                    "--verify",
+                    f"{commit}^{{commit}}",
+                ])
                 .decode("utf-8")
                 .strip()
             )
@@ -630,16 +634,13 @@ def _apply_file_and_line_remapping(
                 idx = (
                     0
                     if (
-                        new_line == int(line_no)
-                        and maps["remapped"][fid] == fp
+                        new_line == int(line_no) and maps["remapped"][fid] == fp
                     )
                     else 1
                 )
                 counts[idx] += 1
 
-    new_all_path = [
-        (idx, fp) for fp, idx in maps["new_path_to_id"].items()
-    ]
+    new_all_path = [(idx, fp) for fp, idx in maps["new_path_to_id"].items()]
     return new_all_path, list(remapped_cov_set), counts
 
 
@@ -703,22 +704,19 @@ def remap_coverage_data(
     return new_all_path, new_cov
 
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
 def create_sql_db(
     db_file: str,
     sources_dict: dict,
-    remap_lines: bool = False,
-    repo_dir: str = None,
-    cov_commit: str = None,
-    target_commit: str = "HEAD",
-    sources_list: list = None,
+    remap_config: Optional[RemapConfig] = None,
 ) -> None:
     """Creates SQLite3 database and populates syzkaller coverage tables."""
     all_path, all_syzk_cov, all_prog, all_syscalls = get_all_data(sources_dict)
-    if remap_lines:
+    if remap_config and remap_config.enabled:
+        cov_commit = remap_config.cov_commit
         if not cov_commit:
             cov_commit = extract_cov_commit(
-                sources_list or list(sources_dict.keys()), sources_dict
+                remap_config.sources_list or list(sources_dict.keys()),
+                sources_dict,
             )
             if cov_commit:
                 logging.info(
@@ -731,12 +729,13 @@ def create_sql_db(
                     "please pass --cov_commit explicitly."
                 )
         all_path, all_syzk_cov = remap_coverage_data(
-            all_path, all_syzk_cov, repo_dir, cov_commit, target_commit
+            all_path,
+            all_syzk_cov,
+            remap_config.repo_dir or "",
+            cov_commit,
+            remap_config.target_commit,
         )
-    with closing(sqlite3.connect(db_file)) as conn:
-        conn.execute("PRAGMA synchronous = OFF;")
-        conn.execute("PRAGMA journal_mode = MEMORY;")
-        conn.execute("PRAGMA temp_store = MEMORY;")
+    with open_sqlite_db(db_file) as conn:
         with conn as con:
             con.execute("DROP TABLE IF EXISTS file_path;")
             logging.info("Creating kernel file path table in syzkaller DB")
@@ -797,13 +796,8 @@ def create_sql_db(
                 "Inserting syscalls into syzk_sys and syscalls. Lines: %d",
                 len(all_syscalls),
             )
-            con.executemany(
-                "INSERT INTO syzk_sys VALUES(?, ?);", all_syscalls
-            )
-            con.executemany(
-                "INSERT INTO syscalls VALUES(?, ?);", all_syscalls
-            )
-# pylint: enable=too-many-arguments,too-many-positional-arguments
+            con.executemany("INSERT INTO syzk_sys VALUES(?, ?);", all_syscalls)
+            con.executemany("INSERT INTO syscalls VALUES(?, ?);", all_syscalls)
 
 
 def main():
@@ -868,11 +862,13 @@ def main():
     create_sql_db(
         args.db_file,
         sources_dict,
-        remap_lines=args.remap_lines,
-        repo_dir=args.repo_dir,
-        cov_commit=args.cov_commit,
-        target_commit=args.target_commit,
-        sources_list=args.sk_cov_url_or_file,
+        remap_config=RemapConfig(
+            enabled=args.remap_lines,
+            repo_dir=args.repo_dir,
+            cov_commit=args.cov_commit,
+            target_commit=args.target_commit,
+            sources_list=args.sk_cov_url_or_file,
+        ),
     )
 
 

@@ -1,9 +1,8 @@
 #!/usr/bin/python3
-# pylint: disable=invalid-name,duplicate-code
-"""Extracts Linux kernel BTF type information from a vmlinux binary into SQLite."""
+"""Extracts Linux kernel BTF type information from vmlinux into SQLite."""
 
 import argparse
-from contextlib import closing
+from dataclasses import dataclass
 import json
 import logging
 import math
@@ -13,14 +12,50 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from typing import Any, Optional
 
+from data.lib.db import open_sqlite_db
+from data.lib.validation import can_create_file
 
 PAHOLE = shutil.which("pahole") or "/usr/bin/pahole"
 BPFTOOL = shutil.which("bpftool") or "/usr/sbin/bpftool"
 READELF = shutil.which("readelf") or "/usr/bin/readelf"
 
 
-def eprint(*args, **kwargs):
+@dataclass(frozen=True)
+class BtfExpandContext:
+    """Immutable context for recursive BTF struct/union member expansion."""
+
+    types: dict[int, dict[str, Any]]
+    struct_name: str
+    struct_size: int
+    parent_type: str
+    prefix: str = ""
+    bits_offset: int = 0
+
+    def child(
+        self,
+        *,
+        parent_type: Optional[str] = None,
+        prefix: Optional[str] = None,
+        bits_offset: Optional[int] = None,
+    ) -> "BtfExpandContext":
+        """Returns a child context with updated parent_type/prefix/offset."""
+        return BtfExpandContext(
+            types=self.types,
+            struct_name=self.struct_name,
+            struct_size=self.struct_size,
+            parent_type=(
+                self.parent_type if parent_type is None else parent_type
+            ),
+            prefix=self.prefix if prefix is None else prefix,
+            bits_offset=(
+                self.bits_offset if bits_offset is None else bits_offset
+            ),
+        )
+
+
+def eprint(*args: Any, **kwargs: Any) -> None:
     """Prints output to stderr."""
     print(*args, file=sys.stderr, **kwargs)
 
@@ -39,12 +74,12 @@ def vmlinux(filename: str) -> str:
 
     if (not os.path.isfile(filename)) or (not os.access(filename, os.R_OK)):
         logging.critical("Not a file or can't read the file: %s", filename)
-        raise ValueError
+        raise ValueError(f"Unreadable vmlinux path: {filename}")
 
     result = subprocess.check_output([READELF, "-h", filename])
     if "ELF64" not in result.decode("utf-8"):
         logging.critical("Ooops! Not an ELF64 file: %s", filename)
-        raise ValueError
+        raise ValueError(f"Not an ELF64 file: {filename}")
 
     result = subprocess.check_output([READELF, "-S", filename]).decode("utf-8")
     if ".BTF" not in result and "debug" not in result:
@@ -52,24 +87,12 @@ def vmlinux(filename: str) -> str:
             "The binary provided isn't compiled with BTF or debug data: %s",
             filename,
         )
-        raise ValueError
+        raise ValueError(f"Missing BTF/debug sections in: {filename}")
 
     return os.path.join(base_dir, file_name)
 
 
-def can_create_file(filename: str) -> str:
-    """Validates that the output directory exists and is writable."""
-    base_dir, file_name = os.path.split(filename)
-    if not base_dir:
-        base_dir = os.getcwd()
-
-    if os.path.isdir(base_dir) and os.access(base_dir, os.W_OK):
-        return os.path.join(base_dir, file_name)
-    logging.critical("Wrong path provided: %s", filename)
-    raise ValueError
-
-
-def dump_btf_json(vmlinux_path: str) -> dict:
+def dump_btf_json(vmlinux_path: str) -> dict[str, Any]:
     """Dumps BTF data from vmlinux as JSON via bpftool or Pahole."""
     if has_btf_section(vmlinux_path):
         logging.info(
@@ -97,11 +120,9 @@ def dump_btf_json(vmlinux_path: str) -> dict:
                     "The tmp file doesn't contain valid BTF encoded data: %s",
                     tmp.name,
                 )
-                raise ValueError
+                raise ValueError(f"Empty detached BTF output: {tmp.name}")
 
-            logging.info(
-                "Data size in TMP file: %d", os.path.getsize(tmp.name)
-            )
+            logging.info("Data size in TMP file: %d", os.path.getsize(tmp.name))
             raw_json_data = subprocess.check_output(
                 [BPFTOOL, "btf", "dump", "--json", "file", tmp.name]
             )
@@ -111,9 +132,9 @@ def dump_btf_json(vmlinux_path: str) -> dict:
             "The JSON formatted BTF data could not be extracted from: %s",
             vmlinux_path,
         )
-        raise ValueError
+        raise ValueError(f"Empty BTF JSON dump from: {vmlinux_path}")
 
-    json_data = {}
+    json_data: dict[str, Any] = {}
     try:
         json_data = json.loads(raw_json_data)
         logging.info("Length of parsed BTF JSON: %d", len(json_data))
@@ -123,12 +144,14 @@ def dump_btf_json(vmlinux_path: str) -> dict:
     return json_data
 
 
-def unwrap_modifiers(btf_type: dict, types: dict) -> dict:
+def unwrap_modifiers(
+    btf_type: dict[str, Any], types: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
     """Unwraps modifier wrappers (TYPEDEF, CONST, VOLATILE, RESTRICT, TYPE_TAG).
 
     Assigns typedef names to inline anonymous structs/enums.
     """
-    modifiers = ["TYPEDEF", "CONST", "VOLATILE", "RESTRICT", "TYPE_TAG"]
+    modifiers = ("TYPEDEF", "CONST", "VOLATILE", "RESTRICT", "TYPE_TAG")
     while btf_type.get("kind") in modifiers:
         if (btf_type["kind"] == "TYPEDEF") and (
             types.get(btf_type.get("type_id", 0), {}).get("name") == "(anon)"
@@ -143,28 +166,29 @@ def unwrap_modifiers(btf_type: dict, types: dict) -> dict:
     return btf_type
 
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
+def _format_named_decl(type_str: str, decl_name: str) -> str:
+    """Formats a C parameter or member declaration string."""
+    if decl_name != "(anon)":
+        return (
+            f"{type_str}{decl_name}"
+            if type_str.endswith("*")
+            else f"{type_str} {decl_name}"
+        )
+    return f"{type_str}?" if type_str.endswith("*") else f"{type_str} ?"
+
+
 def format_func_proto(
-    pointer_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    prefix: str,
+    pointer_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
 ) -> str:
     """Formats function prototype signature for FUNC_PROTO pointer targets."""
+    proto_ctx = ctx.child(parent_type=pointer_type.get("name", "(anon)"))
     ret_type_name = "void"
     if pointer_type.get("ret_type_id", 0) != 0:
         expanded_object = obj.copy()
         expanded_object["type_id"] = pointer_type["ret_type_id"]
-        deeper_types = get_shallow(
-            types,
-            struct_name,
-            struct_size,
-            expanded_object,
-            pointer_type.get("name", "(anon)"),
-            prefix,
-        )
+        deeper_types = _expand_member(proto_ctx, expanded_object)
         if deeper_types:
             ret_type_name = deeper_types[0]["type"]
 
@@ -174,29 +198,11 @@ def format_func_proto(
             expanded_object = obj.copy()
             expanded_object["type_id"] = param["type_id"]
             expanded_object["bits_offset"] = 0
-            deeper_types = get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                expanded_object,
-                pointer_type.get("name", "(anon)"),
-                prefix,
-            )
-
+            deeper_types = _expand_member(proto_ctx, expanded_object)
             if deeper_types:
-                ptype = deeper_types[0]["type"]
-                pname = param["name"]
-                if pname != "(anon)":
-                    param_str = (
-                        (ptype + pname)
-                        if ptype.endswith("*")
-                        else (ptype + " " + pname)
-                    )
-                else:
-                    param_str = (
-                        (ptype + "?") if ptype.endswith("*") else (ptype + " ?")
-                    )
-                fun_params.append(param_str)
+                fun_params.append(
+                    _format_named_decl(deeper_types[0]["type"], param["name"])
+                )
         else:
             pname = param.get("name", "")
             param_str = ("void *" + pname) if pname != "(anon)" else "void *?"
@@ -206,44 +212,23 @@ def format_func_proto(
 
 
 def format_anonymous_struct_or_union(
-    pointer_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    prefix: str,
+    pointer_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
 ) -> str:
     """Formats inline member strings for anonymous struct/union pointers."""
+    anon_ctx = ctx.child(parent_type=pointer_type.get("name", "(anon)"))
     struct_members = []
     for member in pointer_type.get("members", []):
         if member.get("type_id", 0) != 0:
             expanded_object = obj.copy()
             expanded_object["type_id"] = member["type_id"]
-            deeper_types = get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                expanded_object,
-                pointer_type.get("name", "(anon)"),
-                prefix,
-            )
-
+            deeper_types = _expand_member(anon_ctx, expanded_object)
             if deeper_types:
-                mtype = deeper_types[0]["type"]
-                mname = member["name"]
-                if mname != "(anon)":
-                    mem_str = (
-                        (mtype + mname)
-                        if mtype.endswith("*")
-                        else (mtype + " " + mname)
-                    )
-                else:
-                    mem_str = (
-                        (mtype + "?") if mtype.endswith("*") else (mtype + " ?")
-                    )
-                struct_members.append(mem_str)
-
-        elif member.get("type_id", 0) == 0:
+                struct_members.append(
+                    _format_named_decl(deeper_types[0]["type"], member["name"])
+                )
+        else:
             mname = member.get("name", "")
             mem_str = ("void *" + mname) if mname != "(anon)" else "void *?"
             struct_members.append(mem_str)
@@ -253,12 +238,9 @@ def format_anonymous_struct_or_union(
 
 
 def resolve_pointer_target(
-    btf_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    prefix: str,
+    btf_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
 ) -> str:
     """Resolves pointer target type and formats output type string."""
     if "type_id" not in btf_type:
@@ -267,7 +249,7 @@ def resolve_pointer_target(
     if btf_type["type_id"] == 0:
         return "void *"
 
-    pointer_type = types[btf_type["type_id"]]
+    pointer_type = ctx.types[btf_type["type_id"]]
     depth = 0
 
     while "(anon)" in pointer_type.get("name", ""):
@@ -275,18 +257,16 @@ def resolve_pointer_target(
         if depth > 100:
             break
 
-        if pointer_type["kind"] in ["STRUCT", "UNION"]:
+        if pointer_type["kind"] in ("STRUCT", "UNION"):
             pointer_type["name"] = format_anonymous_struct_or_union(
-                pointer_type, types, struct_name, struct_size, obj, prefix
+                pointer_type, obj, ctx
             )
             break
         if pointer_type["kind"] == "FUNC_PROTO":
-            pointer_type["name"] = format_func_proto(
-                pointer_type, types, struct_name, struct_size, obj, prefix
-            )
+            pointer_type["name"] = format_func_proto(pointer_type, obj, ctx)
             break
         if "type_id" in pointer_type and pointer_type["type_id"] != 0:
-            pointer_type = types[pointer_type["type_id"]]
+            pointer_type = ctx.types[pointer_type["type_id"]]
         elif "type_id" in pointer_type and pointer_type["type_id"] == 0:
             pointer_type["name"] = "void"
             break
@@ -312,33 +292,21 @@ def resolve_pointer_target(
 
 
 def process_array_type(
-    btf_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    parent_type: str,
-    prefix: str,
-    bits_offset: int,
-) -> list:
+    btf_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
+) -> list[dict[str, Any]]:
     """Processes fixed-size array members by recursively unrolling indices."""
-    shallow_types = []
-    object_bits_offset = obj["bits_offset"] + bits_offset
+    shallow_types: list[dict[str, Any]] = []
+    object_bits_offset = obj["bits_offset"] + ctx.bits_offset
 
     for index in range(btf_type["nr_elems"]):
         expanded_object = obj.copy()
         expanded_object["type_id"] = btf_type["type_id"]
         expanded_object["name"] += f"[{index}]"
 
-        deeper_types = get_shallow(
-            types,
-            struct_name,
-            struct_size,
-            expanded_object,
-            parent_type,
-            prefix,
-            object_bits_offset,
-        )
+        elem_ctx = ctx.child(bits_offset=object_bits_offset)
+        deeper_types = _expand_member(elem_ctx, expanded_object)
 
         sorted_deepest = sorted(
             deeper_types, key=lambda x: x["bits_end"], reverse=True
@@ -358,31 +326,26 @@ def process_array_type(
 
 
 def process_struct_or_union_type(
-    btf_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    prefix: str,
-    bits_offset: int,
-) -> list:
+    btf_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
+) -> list[dict[str, Any]]:
     """Processes struct or union members, including bitfield offsets."""
-    shallow_types = []
+    shallow_types: list[dict[str, Any]] = []
     members = list(enumerate(btf_type.get("members", [])))
     bitfield_id = -1
 
     for idx, member in members:
         if btf_type["kind"] == "UNION":
-            new_prefix = prefix + "/*" + str(idx) + ":" + obj["name"] + "*/"
+            new_prefix = f"{ctx.prefix}/*{idx}:{obj['name']}*/"
         else:
-            new_prefix = prefix + obj["name"] + "."
+            new_prefix = f"{ctx.prefix}{obj['name']}."
 
         if "bitfield_size" in member:
-            if [
-                True
+            if any(
+                (mem_id == idx - 1) and ("bitfield_size" not in mem)
                 for mem_id, mem in members
-                if (mem_id == idx - 1) and ("bitfield_size" not in mem)
-            ]:
+            ):
                 bitfield_id = idx
             elif idx == 0:
                 bitfield_id = 0
@@ -393,76 +356,57 @@ def process_struct_or_union_type(
                 if mem_id == bitfield_id
             ][0]
 
-            if (":" + str(member["bitfield_size"])) not in member["name"]:
-                member["name"] = (
-                    member["name"] + ":" + str(member["bitfield_size"])
-                )
+            suffix = f":{member['bitfield_size']}"
+            if suffix not in member["name"]:
+                member["name"] = member["name"] + suffix
 
-        deeper_types = get_shallow(
-            types,
-            struct_name,
-            struct_size,
-            member,
-            btf_type.get("name", "(anon)"),
-            new_prefix,
-            bits_offset + obj["bits_offset"],
+        member_ctx = ctx.child(
+            parent_type=btf_type.get("name", "(anon)"),
+            prefix=new_prefix,
+            bits_offset=ctx.bits_offset + obj["bits_offset"],
         )
-
-        shallow_types += deeper_types
+        shallow_types += _expand_member(member_ctx, member)
 
     return shallow_types
 
 
 def process_pointer_or_scalar_type(
-    btf_type: dict,
-    types: dict,
-    struct_name: str,
-    struct_size: int,
-    obj: dict,
-    parent_type: str,
-    prefix: str,
-    bits_offset: int,
-) -> list:
+    btf_type: dict[str, Any],
+    obj: dict[str, Any],
+    ctx: BtfExpandContext,
+) -> list[dict[str, Any]]:
     """Processes leaf node types (PTR, ENUM, ARRAY flex, INT, FLOAT, FWD)."""
     kind = btf_type["kind"]
     out_type = btf_type.get("name", "(anon)")
     is_flex = False
 
-    if btf_type["kind"] == "PTR":
-        out_type = resolve_pointer_target(
-            btf_type, types, struct_name, struct_size, obj, prefix
-        )
-        nr_bits = 64  # PTR_SIZE
-        bits_end = bits_offset + obj["bits_offset"] + nr_bits
-    elif btf_type["kind"] in ["ENUM", "ENUM64"]:
+    if kind == "PTR":
+        out_type = resolve_pointer_target(btf_type, obj, ctx)
+        nr_bits = 64
+        bits_end = ctx.bits_offset + obj["bits_offset"] + nr_bits
+    elif kind in ("ENUM", "ENUM64"):
         nr_bits = btf_type.get("size", 4) * 8
-        bits_end = bits_offset + obj["bits_offset"] + nr_bits
-    elif btf_type["kind"] == "ARRAY":
+        bits_end = ctx.bits_offset + obj["bits_offset"] + nr_bits
+    elif kind == "ARRAY":
         expanded_object = obj.copy()
         expanded_object["type_id"] = btf_type["type_id"]
         expanded_object["bits_offset"] = 0
+        flex_ctx = ctx.child(
+            parent_type=btf_type.get("name", "(anon)"),
+            bits_offset=0,
+        )
         sorted_deepest = sorted(
-            get_shallow(
-                types,
-                struct_name,
-                struct_size,
-                expanded_object,
-                btf_type.get("name", "(anon)"),
-                prefix,
-                0,
-            ),
+            _expand_member(flex_ctx, expanded_object),
             key=lambda x: x["bits_end"],
             reverse=True,
         )
         nr_bits = sorted_deepest[0]["bits_end"] if sorted_deepest else 0
-
-        kind = (
-            "ARRAY<"
-            + unwrap_modifiers(types[btf_type["type_id"]], types)["kind"]
-            + ">"
-        )
+        elem_kind = unwrap_modifiers(ctx.types[btf_type["type_id"]], ctx.types)[
+            "kind"
+        ]
+        kind = f"ARRAY<{elem_kind}>"
         is_flex = True
-        bits_end = bits_offset + obj["bits_offset"]
+        bits_end = ctx.bits_offset + obj["bits_offset"]
     else:
         if "nr_bits" in btf_type:
             nr_bits = btf_type["nr_bits"]
@@ -470,76 +414,60 @@ def process_pointer_or_scalar_type(
             nr_bits = btf_type["size"] * 8
         else:
             nr_bits = 0
-        bits_end = bits_offset + obj["bits_offset"] + nr_bits
+        bits_end = ctx.bits_offset + obj["bits_offset"] + nr_bits
 
-    return [
-        {
-            "struct_name": struct_name,
-            "struct_size": struct_size,
-            "parent_type": parent_type,
-            "kind": kind,
-            "type": out_type,
-            "name": prefix + obj["name"],
-            "bits_offset": bits_offset + obj["bits_offset"],
-            "nr_bits": nr_bits,
-            "bits_end": bits_end,
-            "is_flex": is_flex,
-        }
-    ]
+    return [{
+        "struct_name": ctx.struct_name,
+        "struct_size": ctx.struct_size,
+        "parent_type": ctx.parent_type,
+        "kind": kind,
+        "type": out_type,
+        "name": ctx.prefix + obj["name"],
+        "bits_offset": ctx.bits_offset + obj["bits_offset"],
+        "nr_bits": nr_bits,
+        "bits_end": bits_end,
+        "is_flex": is_flex,
+    }]
+
+
+def _expand_member(
+    ctx: BtfExpandContext,
+    obj: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Recursively flattens a BTF member into shallow field records."""
+    btf_type = unwrap_modifiers(ctx.types[obj["type_id"]], ctx.types)
+
+    if btf_type["kind"] == "ARRAY" and btf_type.get("nr_elems", 0) > 0:
+        return process_array_type(btf_type, obj, ctx)
+    if btf_type["kind"] in ("STRUCT", "UNION"):
+        return process_struct_or_union_type(btf_type, obj, ctx)
+    return process_pointer_or_scalar_type(btf_type, obj, ctx)
 
 
 def get_shallow(
-    types,
-    struct_name,
-    struct_size,
-    obj,
-    parent_type,
-    prefix="",
-    bits_offset=0,
-):
+    types: dict[int, dict[str, Any]],
+    struct_name: str,
+    struct_size: int,
+    obj: dict[str, Any],
+    parent_type: str,
+) -> list[dict[str, Any]]:
     """Recursively flattens BTF member types into shallow field records."""
-    btf_type = unwrap_modifiers(types[obj["type_id"]], types)
-
-    if btf_type["kind"] == "ARRAY" and btf_type.get("nr_elems", 0) > 0:
-        return process_array_type(
-            btf_type,
-            types,
-            struct_name,
-            struct_size,
-            obj,
-            parent_type,
-            prefix,
-            bits_offset,
-        )
-    if btf_type["kind"] in ["STRUCT", "UNION"]:
-        return process_struct_or_union_type(
-            btf_type,
-            types,
-            struct_name,
-            struct_size,
-            obj,
-            prefix,
-            bits_offset,
-        )
-    return process_pointer_or_scalar_type(
-        btf_type,
-        types,
-        struct_name,
-        struct_size,
-        obj,
-        parent_type,
-        prefix,
-        bits_offset,
+    ctx = BtfExpandContext(
+        types=types,
+        struct_name=struct_name,
+        struct_size=struct_size,
+        parent_type=parent_type,
     )
-# pylint: enable=too-many-arguments,too-many-positional-arguments
+    return _expand_member(ctx, obj)
 
 
-def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
+def create_types_table(
+    json_data: dict[str, Any], con: sqlite3.Connection
+) -> int:
     """Creates SQLite 'types' table schema and populates extracted fields."""
     con.execute("DROP TABLE IF EXISTS types;")
 
-    con.execute(
-        """CREATE TABLE types (
+    con.execute("""CREATE TABLE types (
                 struct_name TEXT NOT NULL,
                 struct_size UNSIGNED BIG INT NOT NULL,
                 parent_type TEXT NOT NULL,
@@ -550,15 +478,11 @@ def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
                 nr_bits UNSIGNED BIG INT,
                 bits_end UNSIGNED BIG INT,
                 is_flex BOOLEAN NOT NULL
-                );"""
-    )
+                );""")
     logging.info("Types table created in DB.")
 
-    data = []
-
-    types = {}
-    for btf_type in json_data["types"]:
-        types[btf_type["id"]] = btf_type
+    data: list[dict[str, Any]] = []
+    types = {btf_type["id"]: btf_type for btf_type in json_data["types"]}
 
     for btf_type in json_data["types"]:
         if btf_type["kind"] == "STRUCT":
@@ -571,27 +495,26 @@ def create_types_table(json_data: dict, con: sqlite3.Connection) -> int:
         logging.critical(
             "Looks SUS no vars structures found in the whole JSON BTF dump!"
         )
-        raise ValueError
+        raise ValueError("No struct members found in BTF JSON data.")
 
     con.executemany(
         """INSERT INTO types
-                    VALUES(:struct_name, :struct_size, :parent_type, :kind, :type,
-                    :name, :bits_offset, :nr_bits, :bits_end, :is_flex)""",
+            VALUES(:struct_name, :struct_size, :parent_type, :kind, :type,
+            :name, :bits_offset, :nr_bits, :bits_end, :is_flex)""",
         data,
     )
 
     return len(data)
 
 
-def create_sql_db(db_file: str, json_data: dict) -> None:
+def create_sql_db(db_file: str, json_data: dict[str, Any]) -> None:
     """Connects to SQLite database file and writes BTF type records."""
-    with closing(sqlite3.connect(db_file)) as conn:
-        sqlite3.register_adapter(bool, int)
-        sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
+    sqlite3.register_adapter(bool, int)
+    sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
-        with conn as con:
-            res = create_types_table(json_data, con)
-            print(f"BTF data saved into Sqlite DB. Number of lines: {res}")
+    with open_sqlite_db(db_file, fast_pragmas=True) as con:
+        res = create_types_table(json_data, con)
+        print(f"BTF data saved into Sqlite DB. Number of lines: {res}")
 
 
 def check_tools(require_pahole: bool = True) -> None:
@@ -636,7 +559,7 @@ def check_tools(require_pahole: bool = True) -> None:
             ) from exc
 
 
-def main():
+def main() -> None:
     """CLI entry point for extracting BTF field data from vmlinux to SQLite."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
@@ -648,18 +571,18 @@ def main():
         nargs=1,
     )
     parser.add_argument(
-        "--json_file",
-        nargs="?",
-        help="Path where to store JSON file with BTF data from vmlinux.",
-        type=can_create_file,
-        default=None,
-    )
-    parser.add_argument(
         "--db_file",
         nargs="?",
         help="Path where to store Sqlite3 DB with BTF data.",
         type=can_create_file,
         default="btf.db",
+    )
+    parser.add_argument(
+        "--json_file",
+        nargs="?",
+        help="Path where to store JSON file with BTF data from vmlinux.",
+        type=can_create_file,
+        default=None,
     )
     args = parser.parse_args()
 
@@ -668,8 +591,8 @@ def main():
     json_data = dump_btf_json(args.vmlinux[0])
 
     if args.json_file:
-        with open(args.json_file, "w", encoding="utf-8") as f:
-            json.dump(json_data, f)
+        with open(args.json_file, "w", encoding="utf-8") as json_out:
+            json.dump(json_data, json_out)
         logging.info("Saved BTF JSON output to: %s", args.json_file)
 
     create_sql_db(args.db_file, json_data)

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Imports CodeQL all-calls SARIF outputs into SQLite database."""
 
-from contextlib import closing
 import json
 import logging
 import sqlite3
 from typing import Any
 
-from utils import detect_prefix, run_importer_cli, trim_filename
+from data.codeql_importers.lib.utils import (
+    detect_prefix,
+    run_importer_cli,
+    trim_filename,
+)
+from data.lib.db import open_sqlite_db
 
 
 def _iter_thread_flows(runs: list[dict[str, Any]]):
-    """Yields (run, result, code_flow, thread_flow) tuples across SARIF runs."""
+    """Yields `(run, result, code_flow, thread_flow)` across SARIF runs."""
     for run in runs:
         for result in run.get("results", []):
             for code_flow in result.get("codeFlows", []):
@@ -19,9 +23,11 @@ def _iter_thread_flows(runs: list[dict[str, Any]]):
                     yield run, result, code_flow, thread_flow
 
 
-def _extract_sample_uris(runs: list[dict[str, Any]], limit: int = 200):
+def _extract_sample_uris(
+    runs: list[dict[str, Any]], limit: int = 200
+) -> list[str]:
     """Collects up to `limit` artifact URIs from SARIF runs."""
-    sample_uris = []
+    sample_uris: list[str] = []
     for _, _, _, tf in _iter_thread_flows(runs):
         for loc in tf.get("locations", []):
             uri = (
@@ -37,19 +43,29 @@ def _extract_sample_uris(runs: list[dict[str, Any]], limit: int = 200):
     return sample_uris
 
 
-def _init_all_calls_tables(cursor: sqlite3.Cursor) -> None:
-    """Creates the runs, results, codeFlows, threadFlows, locations, edges."""
-    cursor.execute(
-        """
+def _init_all_calls_tables(
+    cursor: sqlite3.Cursor, *, replace_existing: bool = True
+) -> None:
+    """Creates SARIF tables (`runs`, `results`, `codeFlows`, `edges`)."""
+    if replace_existing:
+        for table in (
+            "edges",
+            "locations",
+            "threadFlows",
+            "codeFlows",
+            "results",
+            "runs",
+        ):
+            cursor.execute(f"DROP TABLE IF EXISTS {table}")
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tool TEXT NOT NULL,
             version TEXT
         )
-        """
-    )
-    cursor.execute(
-        """
+        """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id INTEGER NOT NULL,
@@ -57,28 +73,22 @@ def _init_all_calls_tables(cursor: sqlite3.Cursor) -> None:
             message TEXT NOT NULL,
             FOREIGN KEY (run_id) REFERENCES runs (id)
         )
-        """
-    )
-    cursor.execute(
-        """
+        """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS codeFlows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             result_id INTEGER NOT NULL,
             FOREIGN KEY (result_id) REFERENCES results (id)
         )
-        """
-    )
-    cursor.execute(
-        """
+        """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS threadFlows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codeFlow_id INTEGER NOT NULL,
             FOREIGN KEY (codeFlow_id) REFERENCES codeFlows (id)
         )
-        """
-    )
-    cursor.execute(
-        """
+        """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS locations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             threadFlow_id INTEGER NOT NULL,
@@ -90,10 +100,8 @@ def _init_all_calls_tables(cursor: sqlite3.Cursor) -> None:
             endColumn INTEGER,
             FOREIGN KEY (threadFlow_id) REFERENCES threadFlows (id)
         )
-        """
-    )
-    cursor.execute(
-        """
+        """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS edges (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_location_id INTEGER NOT NULL,
@@ -102,10 +110,26 @@ def _init_all_calls_tables(cursor: sqlite3.Cursor) -> None:
             FOREIGN KEY (source_location_id) REFERENCES locations (id),
             FOREIGN KEY (target_location_id) REFERENCES locations (id)
         )
-        """
+        """)
+
+
+def _create_all_calls_indexes(cursor: sqlite3.Cursor) -> None:
+    """Creates lookup indexes on `edges` and `locations`."""
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_edges_source "
+        "ON edges(source_location_id)"
     )
-    cursor.execute("PRAGMA synchronous = OFF")
-    cursor.execute("PRAGMA journal_mode = MEMORY")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_edges_target "
+        "ON edges(target_location_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_locations_message ON locations(message)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_locations_uri_line "
+        "ON locations(uri, startLine)"
+    )
 
 
 def _get_max_id(cursor: sqlite3.Cursor, table: str) -> int:
@@ -117,15 +141,13 @@ def _get_max_id(cursor: sqlite3.Cursor, table: str) -> int:
 def _parse_location_tuple(
     location: dict[str, Any], loc_id: int, tf_id: int, prefix: str
 ) -> tuple[Any, ...]:
-    """Extracts a row tuple for the locations table from a SARIF location."""
+    """Extracts a row tuple for the `locations` table from a SARIF location."""
     loc = location.get("location", {})
     phys_loc = loc.get("physicalLocation", {})
     art_loc = phys_loc.get("artifactLocation", {})
     region = phys_loc.get("region", {})
     loc_msg = loc.get("message", {}).get("text", "")
     raw_uri = art_loc.get("uri", "")
-    if raw_uri.startswith("file://"):
-        raw_uri = raw_uri[7:]
     clean_uri = trim_filename(raw_uri, prefix)
     return (
         loc_id,
@@ -188,7 +210,10 @@ def _collect_sarif_rows(
 
 
 def import_all_calls_to_db(
-    sarif_file_path: str, db_name: str = "codeql_data.db"
+    sarif_file_path: str,
+    db_name: str = "codeql_data.db",
+    *,
+    replace_existing: bool = True,
 ) -> int:
     """Loads an all-calls SARIF v2.1.0 file into the SQLite database."""
     try:
@@ -209,9 +234,9 @@ def import_all_calls_to_db(
 
     prefix = detect_prefix(_extract_sample_uris(runs))
 
-    with closing(sqlite3.connect(db_name)) as conn:
+    with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()
-        _init_all_calls_tables(cursor)
+        _init_all_calls_tables(cursor, replace_existing=replace_existing)
         base_ids = {
             "run": _get_max_id(cursor, "runs"),
             "res": _get_max_id(cursor, "results"),
@@ -253,7 +278,7 @@ def import_all_calls_to_db(
             "VALUES (?, ?, ?)",
             batches["edges"],
         )
-        conn.commit()
+        _create_all_calls_indexes(cursor)
 
     total_edges = len(batches["edges"])
     logging.info(
@@ -265,21 +290,7 @@ def import_all_calls_to_db(
     return total_edges
 
 
-def import_sarif_to_db(
-    sarif_file_path: str, db_name: str = "codeql_data.db"
-) -> int:
-    """Backwards-compatible alias for import_all_calls_to_db."""
-    return import_all_calls_to_db(sarif_file_path, db_name)
-
-
-def create_sarif_database(
-    sarif_file_path: str, db_name: str = "codeql_data.db"
-) -> int:
-    """Backwards-compatible entry point."""
-    return import_all_calls_to_db(sarif_file_path, db_name)
-
-
-def main():
+def main() -> None:
     """Parses CLI arguments and imports all-calls SARIF into SQLite DB."""
     run_importer_cli(
         description=(

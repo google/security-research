@@ -6,15 +6,10 @@ import json
 import os
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import unittest
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-import syzkaller_coverage as sk  # pylint: disable=wrong-import-position
+from data.syzkaller_coverage import syzkaller_coverage as sk
 
 
 class TestSyzkallerCoverage(unittest.TestCase):
@@ -50,30 +45,22 @@ class TestSyzkallerCoverage(unittest.TestCase):
 
     def test_streaming_jsonl_and_gzip_jsonl(self):
         """Test streaming JSONL parser with plain and gzipped JSONL files."""
-        sample_records = [
-            {
-                "program": "openat$bar(0x0, 0x0)\nioctl(0x1, 0x2)\n",
-                "coverage": [
-                    {
-                        "file_path": "fs/open.c",
-                        "functions": [
-                            {
-                                "func_name": "do_sys_openat2",
-                                "blocks": [
-                                    {
-                                        "hit_count": 3,
-                                        "from_line": 100,
-                                        "from_column": 1,
-                                        "to_line": 105,
-                                        "to_column": 2,
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        sample_records = [{
+            "program": "openat$bar(0x0, 0x0)\nioctl(0x1, 0x2)\n",
+            "coverage": [{
+                "file_path": "fs/open.c",
+                "functions": [{
+                    "func_name": "do_sys_openat2",
+                    "blocks": [{
+                        "hit_count": 3,
+                        "from_line": 100,
+                        "from_column": 1,
+                        "to_line": 105,
+                        "to_column": 2,
+                    }],
+                }],
+            }],
+        }]
 
         # 1. Test plain .jsonl streaming
         with tempfile.NamedTemporaryFile(
@@ -97,9 +84,7 @@ class TestSyzkallerCoverage(unittest.TestCase):
                 os.remove(plain_path)
 
         # 2. Test gzipped .jsonl.gz streaming
-        with tempfile.NamedTemporaryFile(
-            suffix=".jsonl.gz", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(suffix=".jsonl.gz", delete=False) as f:
             gz_path = f.name
         with gzip.open(gz_path, "wt", encoding="utf-8") as gz_file:
             for rec in sample_records:
@@ -120,30 +105,22 @@ class TestSyzkallerCoverage(unittest.TestCase):
 
     def test_create_sql_db_creates_syzk_sys_and_syscalls(self):
         """Test create_sql_db creates all 5 tables including syzk_sys."""
-        sample_records = [
-            {
-                "program": "openat$bar(0x0, 0x0)\nioctl(0x1, 0x2)\n",
-                "coverage": [
-                    {
-                        "file_path": "fs/open.c",
-                        "functions": [
-                            {
-                                "func_name": "do_sys_openat2",
-                                "blocks": [
-                                    {
-                                        "hit_count": 1,
-                                        "from_line": 100,
-                                        "from_column": 1,
-                                        "to_line": 100,
-                                        "to_column": 2,
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        sample_records = [{
+            "program": "openat$bar(0x0, 0x0)\nioctl(0x1, 0x2)\n",
+            "coverage": [{
+                "file_path": "fs/open.c",
+                "functions": [{
+                    "func_name": "do_sys_openat2",
+                    "blocks": [{
+                        "hit_count": 1,
+                        "from_line": 100,
+                        "from_column": 1,
+                        "to_line": 100,
+                        "to_column": 2,
+                    }],
+                }],
+            }],
+        }]
 
         with tempfile.NamedTemporaryFile(
             "w", suffix=".jsonl", delete=False, encoding="utf-8"

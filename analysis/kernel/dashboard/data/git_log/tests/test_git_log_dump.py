@@ -5,62 +5,11 @@ import os
 import shutil
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-# Add parent directory to sys.path
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-import git_log_dump  # pylint: disable=wrong-import-position
-
-
-class TestValidationHelpers(unittest.TestCase):
-    """Test directory and file path validation helper functions."""
-
-    def test_can_read_dir_valid(self):
-        """Test can_read_dir with an existing temporary directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.assertEqual(git_log_dump.can_read_dir(tmpdir), tmpdir)
-
-    def test_can_read_dir_invalid(self):
-        """Test can_read_dir raises ValueError for nonexistent directory."""
-        with self.assertRaises(ValueError):
-            git_log_dump.can_read_dir("/non_existent_directory_xyz123")
-
-    def test_can_create_file_valid(self):
-        """Test can_create_file with a writable directory path."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            filepath = os.path.join(tmpdir, "test.db")
-            self.assertEqual(git_log_dump.can_create_file(filepath), filepath)
-
-    def test_can_create_file_relative(self):
-        """Test can_create_file resolves relative filenames against cwd."""
-        filename = "relative_test.db"
-        expected = os.path.join(os.getcwd(), filename)
-        self.assertEqual(git_log_dump.can_create_file(filename), expected)
-
-    def test_can_create_file_invalid(self):
-        """Test can_create_file raises ValueError for nonexistent parent dir."""
-        with self.assertRaises(ValueError):
-            git_log_dump.can_create_file(
-                "/non_existent_directory_xyz123/file.db"
-            )
-
-    def test_can_read_file_valid(self):
-        """Test can_read_file with an existing readable file."""
-        with tempfile.NamedTemporaryFile() as tmpfile:
-            self.assertEqual(
-                git_log_dump.can_read_file(tmpfile.name), tmpfile.name
-            )
-
-    def test_can_read_file_invalid(self):
-        """Test can_read_file raises ValueError for nonexistent file."""
-        with self.assertRaises(ValueError):
-            git_log_dump.can_read_file("/non_existent_file_xyz123.txt")
+from data.git_log import git_log_dump
 
 
 class TestCheckTools(unittest.TestCase):
@@ -268,12 +217,10 @@ class TestCreateSqlDb(unittest.TestCase):
 
         self.codeql_db_path = os.path.join(self.tmp_dir, "codeql.db")
         conn = sqlite3.connect(self.codeql_db_path)
-        conn.execute(
-            """CREATE TABLE function_locations (
+        conn.execute("""CREATE TABLE function_locations (
                 function_name TEXT, file_path TEXT,
                 start_line INT, end_line INT
-            );"""
-        )
+            );""")
         sample_rows = [
             ("error", "arch/x86/boot/compressed/error.c", 18, 24),
             ("isxdigit", "arch/x86/boot/ctype.h", 11, 19),
@@ -293,7 +240,7 @@ class TestCreateSqlDb(unittest.TestCase):
         shutil.rmtree(self.tmp_dir)
         super().tearDown()
 
-    @patch("git_log_dump.create_log_table")
+    @patch("data.git_log.git_log_dump.create_log_table")
     def test_create_sql_db_success(self, mock_create_log_table):
         """Test create_sql_db queries function_locations and creates table."""
         mock_create_log_table.return_value = 4
@@ -308,15 +255,13 @@ class TestCreateSqlDb(unittest.TestCase):
         self.assertEqual(len(mock_create_log_table.call_args[0][3]), 4)
 
     def test_create_sql_db_empty_codeql(self):
-        """Test create_sql_db raises ValueError when function_locations empty."""
+        """Test create_sql_db raises ValueError on empty function_locations."""
         empty_codeql_path = os.path.join(self.tmp_dir, "empty_codeql.db")
         conn = sqlite3.connect(empty_codeql_path)
-        conn.execute(
-            """CREATE TABLE function_locations (
+        conn.execute("""CREATE TABLE function_locations (
                 function_name TEXT, file_path TEXT,
                 start_line INT, end_line INT
-            );"""
-        )
+            );""")
         conn.commit()
         conn.close()
 
@@ -329,9 +274,9 @@ class TestCreateSqlDb(unittest.TestCase):
 class TestMain(unittest.TestCase):
     """Test CLI argument parsing and main entry point."""
 
-    @patch("git_log_dump.check_tools")
-    @patch("git_log_dump.create_sql_db")
-    @patch("git_log_dump.setup_repository")
+    @patch("data.git_log.git_log_dump.check_tools")
+    @patch("data.git_log.git_log_dump.create_sql_db")
+    @patch("data.git_log.git_log_dump.setup_repository")
     def test_main_defaults_db_file_to_codeql_db(
         self, mock_setup_repo, mock_create_sql_db, mock_check_tools
     ):
@@ -350,7 +295,8 @@ class TestMain(unittest.TestCase):
             ],
         ):
             with patch(
-                "git_log_dump.can_read_dir", return_value="/tmp/fake_dir"
+                "data.git_log.git_log_dump.can_read_dir",
+                return_value="/tmp/fake_dir",
             ):
                 git_log_dump.main()
 

@@ -1,38 +1,33 @@
 #!/usr/bin/env python3
 """Unit tests for CodeQL CSV and SARIF SQLite database importers."""
 
+from collections.abc import Callable
 import json
 import os
 import shutil
 import sqlite3
-import sys
 import tempfile
-from typing import Any, Callable
+from typing import Any
 import unittest
 from unittest.mock import patch
 
-# Add parent directory to sys.path before importing local modules.
-PARENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if PARENT_DIR not in sys.path:
-    sys.path.insert(0, PARENT_DIR)
-
-# pylint: disable=wrong-import-position
-import import_all_calls
-import import_allocations
-import import_allocs
-import import_async_edges
-import import_conditions
-import import_conditions_reachable
-import import_configs
-import import_entry_node
-import import_field_access
-import import_functions
-import import_macro_invocations
-import import_macros
-import import_ops_targets
-import import_syscall_node
-from utils import detect_prefix, trim_filename
-# pylint: enable=wrong-import-position
+from data.codeql_importers import (
+    import_all_calls,
+    import_allocations,
+    import_allocs,
+    import_async_edges,
+    import_conditions,
+    import_conditions_reachable,
+    import_configs,
+    import_entry_node,
+    import_field_access,
+    import_functions,
+    import_macro_invocations,
+    import_macros,
+    import_ops_targets,
+    import_syscall_node,
+)
+from data.codeql_importers.lib.utils import detect_prefix, trim_filename
 
 
 class TestDetectPrefixAndTrim(unittest.TestCase):
@@ -203,7 +198,7 @@ class TestImportAllocations(BaseImporterTest):
         """Verifies CLI entry point for `import_allocations`."""
         self.assert_cli_main_imports_row(
             "import_allocations.py",
-            'h1,h2,h3,h4,h5,h6,h7,h8,h9\n'
+            "h1,h2,h3,h4,h5,h6,h7,h8,h9\n"
             '"site","expr","type","def",32,"flag",32,"sof","false"\n',
             import_allocations.main,
             "kmalloc_calls",
@@ -219,8 +214,8 @@ class TestImportAllocations(BaseImporterTest):
 class TestImportFunctions(BaseImporterTest):
     """Tests for `import_functions.py`."""
 
-    def test_import_functions(self):
-        """Verifies importing function location CSV records."""
+    def test_import_functions_and_idempotency(self):
+        """Verifies importing function locations and idempotency on re-run."""
         self.write_test_csv(
             "function_name,file_path,start_line,end_line\n"
             'sock_create,"linux/net/socket.c",100,200\n'
@@ -232,6 +227,11 @@ class TestImportFunctions(BaseImporterTest):
             self.csv_path, self.db_path
         )
         self.assertEqual(count, 1)
+
+        # Re-importing should replace the table cleanly without duplicating rows
+        import_functions.import_functions_to_db(self.csv_path, self.db_path)
+        total = self.fetch_one("SELECT count(*) FROM function_locations")[0]
+        self.assertEqual(total, 1)
 
         row = self.fetch_one(
             "SELECT function_name, file_path FROM function_locations"
@@ -270,6 +270,8 @@ class TestImportConfigs(BaseImporterTest):
         count = import_configs.import_configs_to_db(self.csv_path, self.db_path)
         self.assertEqual(count, 2)
 
+        # Re-running should clear old preprocessor rows without duplicating
+        import_configs.import_configs_to_db(self.csv_path, self.db_path)
         rows = self.fetch_all(
             "SELECT config, path, ifdef, endif, else_ "
             "FROM configs ORDER BY ifdef"
@@ -425,8 +427,7 @@ class TestImportConditionsReachable(BaseImporterTest):
         self.assertEqual(count, 1)
 
         row = self.fetch_one(
-            "SELECT conditions_location, function_location "
-            "FROM conditions_node"
+            "SELECT conditions_location, function_location FROM conditions_node"
         )
         self.assertEqual(row, ("include/err.h", "net/sock.c"))
 
@@ -486,12 +487,14 @@ class TestImportOpsTargets(BaseImporterTest):
     """Tests for `import_ops_targets.py`."""
 
     def test_import_ops_targets(self):
-        """Verifies importing ops target call CSV records."""
+        """Verifies importing ops target CSV records and bad int handling."""
         self.write_test_csv(
             "def,parent,field,target,target_file,target_start,target_end,"
             "exprcall_file,exprcall_line,exprcall_pstart,exprcall_pend\n"
             '"linux/net/def.c","struct proto","bind","sys_bind",'
             '"linux/arch/x86/sys.c",10,20,"linux/kernel/expr.c",15,10,30\n'
+            '"linux/net/def.c","struct proto","bind","sys_bind",'
+            '"linux/arch/x86/sys.c",bad_int,20,"linux/kernel/expr.c",15,10,30\n'
             '"unknown","p","f","t","tf",1,2,"ef",1,1,1\n'
             "short\n"
         )
@@ -533,9 +536,10 @@ class TestImportSyscallNode(BaseImporterTest):
         self.out_csv = os.path.join(self.tmp_dir, "syscall_node.csv")
 
     def _write_sample_locs(self) -> None:
-        """Writes a 3-row locs.csv with duplicate `hash` function names."""
+        """Writes a locs.csv with header and duplicate `hash` function names."""
         with open(self.locs_path, "w", encoding="utf-8") as locs_file:
             locs_file.write(
+                '"name","file","startLine","startCol","endLine","endCol"\n'
                 '"__do_sys_openat","linux/fs/open.c",100,1,120,20\n'
                 '"hash","linux/fs/inode.c",50,1,60,20\n'
                 '"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n'
@@ -550,6 +554,7 @@ class TestImportSyscallNode(BaseImporterTest):
         by_fn_file, by_name, prefix = import_syscall_node.load_locs(
             self.locs_path
         )
+        self.assertNotIn("name", by_name)
         sysloc = import_syscall_node.syscall_locations(by_name)
         rows = list(
             import_syscall_node.gen_rows(
@@ -681,25 +686,25 @@ class TestImportAllCalls(BaseImporterTest):
         """Verifies importing a SARIF v2.1.0 callgraph file into SQLite."""
         sarif_path = os.path.join(self.tmp_dir, "test.sarif")
         locs = [
-            _make_sarif_location("caller_fn", "linux/net/socket.c", 100, 5, 15),
             _make_sarif_location(
-                "call to callee_fn", "linux/net/socket.c", 105, 10, 20
+                "caller_fn", "file:///build/linux/net/socket.c", 100, 5, 15
+            ),
+            _make_sarif_location(
+                "call to callee_fn",
+                "file:///build/linux/net/socket.c",
+                105,
+                10,
+                20,
             ),
         ]
         sarif_content = {
-            "runs": [
-                {
-                    "results": [
-                        {
-                            "ruleId": "callgraph-all",
-                            "message": {"text": "callgraph-all"},
-                            "codeFlows": [
-                                {"threadFlows": [{"locations": locs}]}
-                            ],
-                        }
-                    ]
-                }
-            ]
+            "runs": [{
+                "results": [{
+                    "ruleId": "callgraph-all",
+                    "message": {"text": "callgraph-all"},
+                    "codeFlows": [{"threadFlows": [{"locations": locs}]}],
+                }]
+            }]
         }
 
         with open(sarif_path, "w", encoding="utf-8") as sarif_file:
@@ -709,6 +714,10 @@ class TestImportAllCalls(BaseImporterTest):
             sarif_path, self.db_path
         )
         self.assertEqual(edge_cnt, 1)
+
+        # Re-importing should replace existing tables without duplicating edges
+        import_all_calls.import_all_calls_to_db(sarif_path, self.db_path)
+        self.assertEqual(self.fetch_one("SELECT count(*) FROM edges")[0], 1)
 
         db_locs = self.fetch_all(
             "SELECT uri, message FROM locations ORDER BY id ASC"

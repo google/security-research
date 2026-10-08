@@ -1,43 +1,20 @@
 #!/usr/bin/env python3
 """Imports CodeQL allocs (size/flag ranges) CSV records into SQLite database."""
 
-from contextlib import closing
-import csv
+from collections.abc import Sequence
 import logging
-import sqlite3
-from typing import Optional
 
-from utils import detect_prefix, run_importer_cli, trim_filename
-
-
-def _parse_float_int(value: str) -> Optional[int]:
-    """Parses a numeric string (possibly float-formatted) into an int."""
-    try:
-        return int(float(value.strip()))
-    except (ValueError, TypeError):
-        return None
+from data.codeql_importers.lib.utils import (
+    detect_csv_prefix,
+    parse_float_int,
+    read_csv_rows,
+    run_importer_cli,
+    trim_filename,
+)
+from data.lib.db import open_sqlite_db
 
 
-def _read_allocs_rows(csv_filename: str) -> list[list[str]]:
-    """Reads rows from allocs CSV, skipping the header row if present."""
-    rows = []
-    with open(csv_filename, "r", encoding="utf-8", errors="ignore") as csvfile:
-        reader = csv.reader(csvfile, delimiter=",", quotechar='"')
-        try:
-            first_row = next(reader)
-            if first_row and first_row[0].strip().lower() not in (
-                "call_value",
-                "col0",
-                "call",
-            ):
-                rows.append(first_row)
-        except StopIteration:
-            pass
-        rows.extend(reader)
-    return rows
-
-
-def _parse_alloc_row(row: list[str], prefix: str) -> tuple[object, ...]:
+def _parse_alloc_row(row: Sequence[str], prefix: str) -> tuple[object, ...]:
     """Parses a 13+ column allocs CSV row into a 17-column database tuple."""
     raw_call = row[0].strip()
     call_value = (
@@ -70,8 +47,8 @@ def _parse_alloc_row(row: list[str], prefix: str) -> tuple[object, ...]:
         row[7].strip(),
         row[8].strip(),
         trim_filename(row[9].strip(), prefix),
-        _parse_float_int(row[10]),
-        _parse_float_int(row[11]),
+        parse_float_int(row[10]),
+        parse_float_int(row[11]),
         extra[0],
         extra[1],
         extra[2],
@@ -81,9 +58,11 @@ def _parse_alloc_row(row: list[str], prefix: str) -> tuple[object, ...]:
 
 
 def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
-    """Imports CodeQL allocs CSV records into the SQLite allocs table."""
-    rows = _read_allocs_rows(csv_filename)
-    prefix = detect_prefix([r[9] for r in rows if len(r) >= 13])
+    """Imports CodeQL allocs CSV records into the SQLite `allocs` table."""
+    rows = read_csv_rows(
+        csv_filename, header_tokens=("call_value", "col0", "call")
+    )
+    prefix = detect_csv_prefix(rows, (9, 14), 13)
 
     data = []
     for row in rows:
@@ -94,11 +73,10 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
                 "Skipping invalid row with insufficient columns: %s", row
             )
 
-    with closing(sqlite3.connect(db_name)) as conn:
+    with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()
         cursor.execute("DROP TABLE IF EXISTS allocs")
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE allocs (
                 call_value TEXT,
                 type_value TEXT,
@@ -118,8 +96,7 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
                 type_startColumn TEXT,
                 is_flexible TEXT
             )
-            """
-        )
+            """)
         cursor.executemany(
             """
             INSERT INTO allocs (
@@ -141,7 +118,6 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
             "CREATE INDEX IF NOT EXISTS idx_allocs_loc "
             "ON allocs(call_uri, call_startLine)"
         )
-        conn.commit()
 
     logging.info(
         "Successfully imported %d allocs records into '%s' (table 'allocs').",
@@ -151,7 +127,7 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
     return len(data)
 
 
-def main():
+def main() -> None:
     """Parses command-line arguments and runs allocs CSV import."""
     run_importer_cli(
         description=(

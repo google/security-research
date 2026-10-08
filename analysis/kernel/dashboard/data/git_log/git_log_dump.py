@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code
 """Dumps Git log commit metadata and source code into an SQLite database."""
 
 import argparse
@@ -13,38 +12,15 @@ import tempfile
 
 import git
 
+from data.lib.validation import (
+    can_create_file,
+    can_read_dir,
+    can_read_file,
+    verify_cli_tools,
+)
+
 GIT = "/usr/bin/git"
 PARALLEL = "/usr/bin/parallel"
-
-
-def can_read_dir(dirname: str) -> str:
-    """Validates that a path is an existing readable directory."""
-    if os.path.isdir(dirname) and os.access(dirname, os.R_OK):
-        return dirname
-    logging.critical("Directory not found or unreadable: %s", dirname)
-    raise ValueError
-
-
-def can_create_file(filename: str) -> str:
-    """Validates that a file path can be created in its target directory."""
-    base_dir, file_name = os.path.split(filename)
-    if not base_dir:
-        base_dir = os.getcwd()
-
-    if os.path.isdir(base_dir) and os.access(base_dir, os.W_OK):
-        return os.path.join(base_dir, file_name)
-
-    logging.critical("Wrong path provided: %s", filename)
-    raise ValueError
-
-
-def can_read_file(filename: str) -> str:
-    """Validates that a file path exists and is readable."""
-    if os.path.isfile(filename) and os.access(filename, os.R_OK):
-        return filename
-
-    logging.critical("Can't read file: %s", filename)
-    raise ValueError
 
 
 def setup_git_log_schema(con: sqlite3.Connection) -> None:
@@ -52,8 +28,7 @@ def setup_git_log_schema(con: sqlite3.Connection) -> None:
     con.execute("PRAGMA journal_mode = OFF;")
     con.execute("PRAGMA synchronous = OFF;")
     con.execute("DROP TABLE IF EXISTS git_log;")
-    con.execute(
-        """CREATE TABLE git_log (
+    con.execute("""CREATE TABLE git_log (
                 start_line UNSIGNED BIG INT NOT NULL,
                 end_line UNSIGNED BIG INT NOT NULL,
                 file_path TEXT NOT NULL,
@@ -61,8 +36,7 @@ def setup_git_log_schema(con: sqlite3.Connection) -> None:
                 `commit` VARCHAR(40) NOT NULL,
                 data TEXT NOT NULL,
                 PRIMARY KEY (file_path, start_line, end_line)
-            );"""
-    )
+            );""")
     logging.info("Git Log table created in DB.")
 
 
@@ -215,16 +189,14 @@ def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
         file_lines = file_cache[file_path]
         function_code = "".join(file_lines[start_line - 1 : end_line])
 
-        data.append(
-            (
-                start_line,
-                end_line,
-                file_path,
-                author_date,
-                commit,
-                function_code,
-            )
-        )
+        data.append((
+            start_line,
+            end_line,
+            file_path,
+            author_date,
+            commit,
+            function_code,
+        ))
 
     logging.info("Git data processing for repository is complete")
 
@@ -299,18 +271,7 @@ def create_sql_db(
 
 def check_tools() -> None:
     """Checks that git and parallel tools are installed and available."""
-    subprocess.run(
-        [GIT, "--version"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
-    subprocess.run(
-        [PARALLEL, "--version"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
+    verify_cli_tools([[GIT, "--version"], [PARALLEL, "--version"]])
 
 
 def setup_repository(repo_dir_val: str) -> git.repo.base.Repo:
@@ -328,7 +289,7 @@ def setup_repository(repo_dir_val: str) -> git.repo.base.Repo:
         repo.git.config("core.commitGraph", "true")
         repo.git.config("commitGraph.readChangedPaths", "true")
         repo.git.commit_graph("write", "--reachable", "--changed-paths")
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except (git.GitError, OSError, ValueError) as exc:
         logging.warning("Could not check or unshallow repository: %s", exc)
 
     logging.info(

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Imports CodeQL function location CSV records into SQLite database."""
 
-from utils import import_location_table, run_importer_cli
+from data.codeql_importers.lib.utils import (
+    import_location_table,
+    run_importer_cli,
+)
 
 
 def import_functions_to_db(csv_filename: str, db_name: str) -> int:
-    """Imports CodeQL function location CSV into function_locations table."""
+    """Imports CodeQL function location CSV into `function_locations` table."""
     return import_location_table(
         csv_filename,
         db_name,
@@ -15,7 +18,7 @@ def import_functions_to_db(csv_filename: str, db_name: str) -> int:
     )
 
 
-def main():
+def main() -> None:
     """Parses command-line arguments and runs functions CSV import."""
     run_importer_cli(
         description=(

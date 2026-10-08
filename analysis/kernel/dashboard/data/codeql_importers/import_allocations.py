@@ -1,93 +1,78 @@
 #!/usr/bin/env python3
 """Imports CodeQL heap allocation CSV records into SQLite database."""
 
-import logging
-from typing import Optional
+from collections.abc import Sequence
 
-from utils import (
-    detect_prefix,
-    execute_bulk_insert,
-    read_csv_rows,
+from data.codeql_importers.lib.utils import (
+    CsvTableSpec,
+    import_csv_table,
+    parse_optional_int,
     run_importer_cli,
     trim_filename,
 )
 
 
-def _parse_optional_int(value: str) -> Optional[int]:
-    """Converts a string to int, returning None on ValueError or TypeError."""
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return None
-
-
-def _parse_allocation_row(row: list[str], prefix: str) -> tuple[object, ...]:
+def _parse_allocation_row(
+    row: Sequence[str], prefix: str
+) -> tuple[object, ...]:
     """Parses a 9-column allocation CSV row into a database tuple."""
     return (
         trim_filename(row[0], prefix),
         row[1],
         row[2],
         trim_filename(row[3], prefix),
-        _parse_optional_int(row[4]),
+        parse_optional_int(row[4]),
         row[5],
-        _parse_optional_int(row[6]),
+        parse_optional_int(row[6]),
         row[7],
         row[8],
     )
 
 
+_ALLOCATIONS_SPEC = CsvTableSpec(
+    table_name="kmalloc_calls",
+    create_sql="""
+    CREATE TABLE kmalloc_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        call_site TEXT,
+        call_expr TEXT,
+        struct_type TEXT,
+        struct_def TEXT,
+        struct_size INTEGER,
+        flags TEXT,
+        alloc_size INTEGER,
+        sizeof_expr TEXT,
+        is_flexible TEXT
+    )
+    """,
+    insert_sql="""
+    INSERT INTO kmalloc_calls (
+        call_site, call_expr, struct_type, struct_def, struct_size,
+        flags, alloc_size, sizeof_expr, is_flexible
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    min_cols=9,
+    path_cols=(0, 3),
+    row_parser=_parse_allocation_row,
+    indexes=(
+        (
+            "CREATE INDEX IF NOT EXISTS idx_kmalloc_calls_struct_type "
+            "ON kmalloc_calls(struct_type)"
+        ),
+        (
+            "CREATE INDEX IF NOT EXISTS idx_kmalloc_calls_call_site "
+            "ON kmalloc_calls(call_site)"
+        ),
+    ),
+)
+
+
 def import_allocations_to_db(csv_filename: str, db_name: str) -> int:
-    """Imports CodeQL heap allocation CSV into the kmalloc_calls table."""
-    rows = read_csv_rows(csv_filename)
-    sample_paths = [r[0] for r in rows if len(r) >= 9] + [
-        r[3] for r in rows if len(r) >= 9
-    ]
-    prefix = detect_prefix(sample_paths)
-
-    data = []
-    for row in rows:
-        if len(row) >= 9:
-            data.append(_parse_allocation_row(row, prefix))
-        else:
-            logging.warning(
-                "Skipping invalid row with insufficient columns: %s", row
-            )
-
-    execute_bulk_insert(
-        db_name,
-        """
-        CREATE TABLE kmalloc_calls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            call_site TEXT,
-            call_expr TEXT,
-            struct_type TEXT,
-            struct_def TEXT,
-            struct_size INTEGER,
-            flags TEXT,
-            alloc_size INTEGER,
-            sizeof_expr TEXT,
-            is_flexible TEXT
-        )
-        """,
-        """
-        INSERT INTO kmalloc_calls (
-            call_site, call_expr, struct_type, struct_def, struct_size,
-            flags, alloc_size, sizeof_expr, is_flexible
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        data,
-        drop_table="kmalloc_calls",
-    )
-    logging.info(
-        "Successfully imported %d allocations into '%s' "
-        "(table 'kmalloc_calls').",
-        len(data),
-        db_name,
-    )
-    return len(data)
+    """Imports CodeQL heap allocation CSV into the `kmalloc_calls` table."""
+    return import_csv_table(csv_filename, db_name, _ALLOCATIONS_SPEC)
 
 
-def main():
+def main() -> None:
     """Parses command-line arguments and runs allocations CSV import."""
     run_importer_cli(
         description=(

@@ -93,7 +93,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help=(
-            "Optional path to BTF SQLite database (from extract-btf.py) for "
+            "Optional path to BTF SQLite database (from extract_btf.py) for "
             "ground-truth struct size verification"
         ),
     )
@@ -103,7 +103,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         help=(
             "Optional path to vmlinux image with .BTF section "
-            "(extract-btf.py will be invoked to create a BTF DB)"
+            "(extract_btf.py will be invoked to create a BTF DB)"
         ),
     )
     group.addoption(
@@ -297,7 +297,7 @@ def btf_ground_truth(
     codeql_db: Path,  # pylint: disable=redefined-outer-name
     request: pytest.FixtureRequest,
 ) -> Tuple[Optional[Dict[str, int]], str]:
-    """Load ground-truth struct sizes from BTF SQLite DB or extract-btf.py."""
+    """Load ground-truth struct sizes from BTF SQLite DB or extract_btf.py."""
     btf_db_opt = request.config.getoption("--btf-db")
     vmlinux_opt = request.config.getoption("--vmlinux")
 
@@ -334,7 +334,7 @@ def btf_ground_truth(
         Path(__file__).resolve().parent.parent
         / "data"
         / "btf_data"
-        / "extract-btf.py"
+        / "extract_btf.py"
     )
     if vmlinux_path and extract_btf_script.exists():
         try:
@@ -360,7 +360,7 @@ def btf_ground_truth(
                 if btf_sizes:
                     return (
                         btf_sizes,
-                        f"extract-btf.py SQLite DB ({vmlinux_path.name})",
+                        f"extract_btf.py SQLite DB ({vmlinux_path.name})",
                     )
         except (
             subprocess.SubprocessError,
@@ -369,7 +369,7 @@ def btf_ground_truth(
             ValueError,
         ) as exc:
             print(
-                f"[!] Warning: extract-btf.py failed on {vmlinux_path}: {exc}",
+                f"[!] Warning: extract_btf.py failed on {vmlinux_path}: {exc}",
                 file=sys.stderr,
             )
 

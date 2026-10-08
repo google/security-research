@@ -1,67 +1,52 @@
 #!/usr/bin/env python3
 """Imports CodeQL condition reachability CSV records into SQLite database."""
 
-import logging
-
-from utils import (
-    detect_prefix,
-    execute_bulk_insert,
-    read_csv_rows,
+from data.codeql_importers.lib.utils import (
+    CsvTableSpec,
+    import_csv_table,
     run_importer_cli,
     trim_filename,
 )
 
+_CONDITIONS_NODE_SPEC = CsvTableSpec(
+    table_name="conditions_node",
+    create_sql="""
+    CREATE TABLE IF NOT EXISTS conditions_node (
+        conditions TEXT,
+        function TEXT,
+        conditions_location TEXT,
+        function_location TEXT
+    )
+    """,
+    insert_sql="""
+    INSERT INTO conditions_node (
+        conditions, function, conditions_location, function_location
+    )
+    VALUES (?, ?, ?, ?)
+    """,
+    min_cols=4,
+    path_cols=(2, 3),
+    row_parser=lambda row, prefix: (
+        row[0],
+        row[1],
+        trim_filename(row[2], prefix),
+        trim_filename(row[3], prefix),
+    ),
+    indexes=(
+        (
+            "CREATE INDEX IF NOT EXISTS idx_conditions_node_function "
+            "ON conditions_node(function)"
+        ),
+    ),
+)
+
 
 def import_conditions_reachable_to_db(csv_filename: str, db_name: str) -> int:
-    """Imports CodeQL condition reachability CSV into conditions_node table."""
-    rows = read_csv_rows(csv_filename)
-    sample_paths = [r[2] for r in rows if len(r) >= 4] + [
-        r[3] for r in rows if len(r) >= 4
-    ]
-    prefix = detect_prefix(sample_paths)
-
-    data = []
-    for row in rows:
-        if len(row) >= 4:
-            data.append(
-                (
-                    row[0],
-                    row[1],
-                    trim_filename(row[2], prefix),
-                    trim_filename(row[3], prefix),
-                )
-            )
-        else:
-            logging.warning("Skipping invalid row: %s", row)
-
-    execute_bulk_insert(
-        db_name,
-        """
-        CREATE TABLE IF NOT EXISTS conditions_node (
-            conditions TEXT,
-            function TEXT,
-            conditions_location TEXT,
-            function_location TEXT
-        )
-        """,
-        """
-        INSERT INTO conditions_node (
-            conditions, function, conditions_location, function_location
-        )
-        VALUES (?, ?, ?, ?)
-        """,
-        data,
-    )
-    logging.info(
-        "Successfully imported %d condition nodes into '%s' "
-        "(table 'conditions_node').",
-        len(data),
-        db_name,
-    )
-    return len(data)
+    """Imports CodeQL condition reachability CSV into `conditions_node`."""
+    return import_csv_table(csv_filename, db_name, _CONDITIONS_NODE_SPEC)
 
 
-def main():
+def main() -> None:
     """Parses command-line arguments and runs condition reachability import."""
     run_importer_cli(
         description=(

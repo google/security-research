@@ -3,36 +3,10 @@
 
 import os
 import sqlite3
-import sys
 import tempfile
 import unittest
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-import kconfig_dump  # pylint: disable=wrong-import-position
-
-
-class TestValidationHelpers(unittest.TestCase):
-    """Test directory and file path validation helper functions."""
-
-    def test_can_read_dir_valid_and_invalid(self):
-        """Verify can_read_dir accepts valid dirs and rejects missing ones."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.assertEqual(
-                kconfig_dump.can_read_dir(tmpdir), os.path.abspath(tmpdir)
-            )
-        with self.assertRaises(ValueError):
-            kconfig_dump.can_read_dir("/nonexistent_dir_kconfig_xyz")
-
-    def test_can_create_file_valid_and_invalid(self):
-        """Verify can_create_file accepts valid parent dirs and rejects bad."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            target = os.path.join(tmpdir, "out.db")
-            self.assertEqual(kconfig_dump.can_create_file(target), target)
-        with self.assertRaises(ValueError):
-            kconfig_dump.can_create_file("/nonexistent_dir_kconfig_xyz/out.db")
+from data.kconfig import kconfig_dump
 
 
 class TestMakefileParsing(unittest.TestCase):
@@ -92,9 +66,7 @@ endif
             self.assertEqual(
                 file_cfgs.get("nf_tables_api.c"), {"CONFIG_NF_TABLES"}
             )
-            self.assertEqual(
-                file_cfgs.get("vendor_drv.c"), {"CONFIG_VENDOR_X"}
-            )
+            self.assertEqual(file_cfgs.get("vendor_drv.c"), {"CONFIG_VENDOR_X"})
             self.assertEqual(file_cfgs.get("kvm_main.c"), {"CONFIG_KVM"})
             self.assertEqual(file_cfgs.get("coalesced_mmio.c"), {"CONFIG_KVM"})
             self.assertEqual(
@@ -234,8 +206,7 @@ class TestKconfigAndStorage(unittest.TestCase):
             with open(
                 os.path.join(repo, "Kconfig"), "w", encoding="utf-8"
             ) as fh:
-                fh.write(
-                    """
+                fh.write("""
 config NF_TABLES
 \ttristate "Netfilter nf_tables support"
 \tdepends on NET && \\
@@ -250,8 +221,7 @@ config NF_TABLES
 menuconfig KVM_VFIO
 \tdef_bool y
 \tdepends on KVM
-"""
-                )
+""")
 
             syms = kconfig_dump.collect_kconfig_symbols(repo)
             self.assertEqual(len(syms), 2)

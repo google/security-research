@@ -13,25 +13,27 @@ linux_codeql_db_v* ──► codeql query run ──► *.bqrs
 
 ---
 
-## 1. Core Dashboard Queries (`13 Queries` $\rightarrow$ `12 SQLite Tables`)
+## 1. Core Dashboard Queries (`15 Queries` $\rightarrow$ `16 SQLite Tables`)
 
-The 13 core queries are ordered from lightweight foundational queries to global graph queries so `data_test/` can validate outputs fail-fast:
+The 15 core queries are ordered from lightweight foundational queries to global graph queries so `data_test/` can validate outputs fail-fast:
 
 | # | Query File | Decoded Format | Importer (`data/codeql_importers/`) | Target SQLite Table(s) | Validation (`data_test/`) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | **`functions.ql`** | `functions.csv` | `import_functions.py` | `function_locations` | `test_functions.py` |
-| 2 | **`kernel-configs-needed.ql`** | `kernel-configs-needed.csv` | `import_configs.py` | `configs` | `test_kernel_configs_needed.py` |
-| 3 | **`ops_edges.ql`** | `ops_edges.csv` | `import_ops_targets.py` | `ops_targets` | `test_ops_edges.py` |
+| 1 | **`functions.ql`** | `functions.csv` | `import_functions.py` | `function_locations` | `test_function_locations.py` |
+| 2 | **`kernel-configs-needed.ql`** | `kernel-configs-needed.csv` | `import_configs.py` | `configs` | `test_configs.py` |
+| 3 | **`ops_edges.ql`** | `ops_edges.csv` | `import_ops_targets.py` | `ops_targets` | `test_ops_targets.py` |
 | 4 | **`allocs.ql`** | `allocs.csv` | `import_allocs.py` | `allocs` | `test_allocs.py` |
-| 5 | **`allocations.ql`** | `allocations.csv` | `import_allocations.py` | `codeql_allocations`, `codeql_structs` | `test_allocations.py` |
-| 6 | **`field-acces-type.ql`** | `field-acces-type.csv` | `import_field_access.py` | `field_access` | `test_field_acces_type.py` |
-| 7 | **`macro-locations.ql`** | `macro-locations.csv` | `import_macros.py` | `macro_locations` | `test_macro_locations.py` |
-| 8 | **`macro-invocations.ql`** | `macro-invocations.csv` | `import_macro_invocations.py` | `macroinvocation_locations` | `test_macro_invocations.py` |
-| 9 | **`syscall-node-pairs.ql`** | `syscall-node-pairs.csv` | `import_syscall_node.py` | `syscall_node` | `test_syscall_node_pairs.py` |
-| 10 | **`syscall-node-locs.ql`** | `syscall-node-locs.csv` | `import_syscall_node.py` | `syscall_node` | `test_syscall_node_locs.py` |
-| 11 | **`condition-graph-direct.ql`** | `condition-graph-direct.csv` | `import_conditions.py` | `conditions` | `test_condition_graph_direct.py` |
-| 12 | **`condition-graph-all.ql`** | `condition-graph-all.csv` | `import_conditions_reachable.py` | `conditions_reachable` | `test_condition_graph_all.py` |
-| 13 | **`all-calls.ql`** | `all-calls.sarif` | `import_all_calls.py` | `locations`, `edges`, `path_nodes` | `test_all_calls.py` |
+| 5 | **`allocations.ql`** | `allocations.csv` | `import_allocations.py` | `codeql_allocations`, `codeql_structs` | — |
+| 6 | **`field-acces-type.ql`** | `field-acces-type.csv` | `import_field_access.py` | `field_access` | — |
+| 7 | **`macro-locations.ql`** | `macro-locations.csv` | `import_macros.py` | `macro_locations` | — |
+| 8 | **`macro-invocations.ql`** | `macro-invocations.csv` | `import_macro_invocations.py` | `macroinvocation_locations` | — |
+| 9 | **`syscall-node-pairs.ql`** | `syscall-node-pairs.csv` | `import_syscall_node.py` | `syscall_node` | `test_syscall_node.py` |
+| 10 | **`syscall-node-locs.ql`** | `syscall-node-locs.csv` | `import_syscall_node.py`, `import_entry_node.py` | `syscall_node`, `entry_node` | `test_syscall_node.py`, `test_entry_node.py` |
+| 11 | **`entry-node-pairs.ql`** | `entry-node-pairs.csv` | `import_entry_node.py` | `entry_node` | `test_entry_node.py` |
+| 12 | **`condition-graph-direct.ql`** | `condition-graph-direct.csv` | `import_conditions.py` | `conditions` | — |
+| 13 | **`condition-graph-all.ql`** | `condition-graph-all.csv` | `import_conditions_reachable.py` | `conditions_reachable` | — |
+| 14 | **`all-calls.ql`** | `all-calls.sarif` | `import_all_calls.py` | `locations`, `edges` | — |
+| 15 | **`async-edges.ql`** | `async-edges.sarif` | `import_async_edges.py` | `async_edges` | `test_async_edges.py` |
 
 ---
 
@@ -65,14 +67,14 @@ The 13 core queries are ordered from lightweight foundational queries to global 
   - **Purpose**: Classifies every struct field access (`FieldAccess`) inside `kernel/`, `net/`, `drivers/`, `fs/`, `io_uring/`, `ipc/`, `mm/`, and `security/` into `read` (`isRValue()`), `write` (`isModified()`), or `exec` (indirect call `ExprCall` through a function-pointer field).
   - **Output Columns (`4`)**: `access_type` (`read`|`write`|`exec`), `field_name`, `declaring_type`, `location`.
 
-### 2.4 Call Graph, Indirect Ops Dispatch & Syscall Reachability
+### 2.4 Call Graph, Indirect Ops Dispatch, Async Edges & Entry Reachability
 - **`ops_edges.ql`** (`@kind table`):
-  - **Purpose**: Resolves indirect function-pointer calls (`ExprCall`, e.g., `dir->i_op->link(...)` or `filp->f_op->unlocked_ioctl(...)`) by matching the accessed struct `Field` against static ops table initializers (`ClassAggregateLiteral`, e.g., `struct file_operations`, `struct proto_ops`, `struct inode_operations`).
-  - **Output Columns (`11`)**: `definition`, `parent`, `field_name`, `target_name`, `target_file`, `target_start`, `target_end`, `exprcall_file`, `exprcall_line`, `exprcall_parent_start`, `exprcall_parent_end`.
-- **`syscall-node-pairs.ql`** & **`syscall-node-locs.ql`** (`@kind table`):
-  - **Purpose**: Computes transitive call-graph reachability (`edges+`) from every `__do_sys_*` syscall entry point across direct calls, indirect taint/points-to calls, and `resolveCall` targets. `syscall-node-pairs.ql` emits `(syscall, function, file)` triples; `syscall-node-locs.ql` emits exact `(name, file, startLine, startCol, endLine, endCol)` spans joined by `import_syscall_node.py` into `syscall_node`.
-- **`all-calls.ql`** (`@kind path-problem` $\rightarrow$ SARIF):
-  - **Purpose**: Exports the full kernel call graph (combining `Function` $\leftrightarrow$ `FunctionCall`, `Function` $\leftrightarrow$ `ExprCall`, and `ExprCall` $\rightarrow$ `Function` edges) as a SARIF graph consumed by `import_all_calls.py` to populate `locations` and `edges`.
+  - **Purpose**: Resolves indirect function-pointer calls (`ExprCall`, e.g., `dir->i_op->link(...)` or `filp->f_op->unlocked_ioctl(...)`) by matching the accessed struct `Field` against static ops table initializers (`ClassAggregateLiteral`, e.g., `struct file_operations`, `struct proto_ops`, `struct genl_ops`) and extracts enclosing ops-array/family wrapper context and declarative struct privilege flags (`GENL_ADMIN_PERM`, `GENL_UNS_ADMIN_PERM`, `NL_CFG_F_ADMIN`).
+  - **Output Columns (`13`)**: `definition`, `parent`, `field_name`, `target_name`, `target_file`, `target_start`, `target_end`, `exprcall_file`, `exprcall_line`, `exprcall_parent_start`, `exprcall_parent_end`, `wrapper_context`, `capability`.
+- **`syscall-node-pairs.ql`**, **`entry-node-pairs.ql`** & **`syscall-node-locs.ql`** (`@kind table`):
+  - **Purpose**: Computes transitive call-graph reachability (`edges+`) from `__do_sys_*` syscalls (`syscall-node-pairs.ql`) and non-syscall kernel entry points (`entry-node-pairs.ql`: `netlink`, `sysctl`, `sysfs`, `debugfs`, `proc_ops`, `io_uring`, `uring_cmd`, `kthread`). Joined with `syscall-node-locs.ql` into `syscall_node` and `entry_node`.
+- **`all-calls.ql`** & **`async-edges.ql`** (`@kind path-problem` $\rightarrow$ SARIF):
+  - **Purpose**: `all-calls.ql` exports the full synchronous + indirect kernel call graph into `locations` and `edges`. `async-edges.ql` extracts deferred execution registrations (`workqueue`, `timer`, `rcu`, `tasklet`, `irq`, `kthread`, `notifier`) into `async_edges`.
 
 ### 2.5 Capability & Condition Dominance Queries
 - **`condition-graph-direct.ql`** (`@kind table`):
