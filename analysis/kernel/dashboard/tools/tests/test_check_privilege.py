@@ -815,6 +815,63 @@ class TestCheckPrivilegePreconditions(CheckPrivilegeTestBase):
         self.assertIn(
             "[scope: net->user_ns (CLONE_NEWUSER + CLONE_NEWNET)]", s_uns
         )
+        self.assertIn("necessary, not sufficient", s_uns)
+
+    def test_depth_limited_unreachable_verdict(self):
+        """Verify UNREACHABLE (DEPTH-LIMITED) when bridge depth is exceeded."""
+        cur = self.conn.cursor()
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("bridge_mid", "drivers/b.c", 10, 30),
+                ("deep_leaf", "drivers/b.c", 40, 60),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO ops_targets (parent, field, target, target_file,"
+            " target_start, target_end, exprcall_file, exprcall_line) VALUES"
+            " (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "b_ops",
+                    "step1",
+                    "bridge_mid",
+                    "drivers/b.c",
+                    10,
+                    30,
+                    "fs/unpriv.c",
+                    25,
+                ),
+                (
+                    "b_ops",
+                    "step2",
+                    "deep_leaf",
+                    "drivers/b.c",
+                    40,
+                    60,
+                    "drivers/b.c",
+                    20,
+                ),
+            ],
+        )
+        self.conn.commit()
+
+        # With max_bridge_depth=1, deep_leaf (2 hops from unpriv) truncates
+        t_lim, v_lim, p_lim, all_lim = check_privilege.analyze_target_privilege(
+            self.db_path, "drivers/b.c", 45, max_bridge_depth=1
+        )
+        self.assertTrue(t_lim["depth_truncated"])
+        self.assertEqual(v_lim, "UNREACHABLE (DEPTH-LIMITED)")
+        s_lim = check_privilege.format_summary(t_lim, v_lim, p_lim, all_lim)
+        self.assertIn("UNREACHABLE (DEPTH-LIMITED)", s_lim)
+        self.assertIn("--max-bridge-depth", s_lim)
+
+        # With max_bridge_depth=6, deep_leaf reaches __do_sys_unpriv
+        t_ok, v_ok, _p_ok, _all_ok = check_privilege.analyze_target_privilege(
+            self.db_path, "drivers/b.c", 45, max_bridge_depth=6
+        )
+        self.assertFalse(t_ok["depth_truncated"])
+        self.assertEqual(v_ok, "REACHABLE WITH NO PRIVILEGE (UNGATED)")
 
 
 if __name__ == "__main__":

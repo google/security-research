@@ -177,6 +177,63 @@ class TestLibCallgraph(BaseToolsTestCase):
         self.assertEqual(len(banner), 2)
         self.assertIn("Function Span: lines 80 - 120", banner[1])
 
+    def test_colliding_static_function_disambiguation(self):
+        """Verify (function_name, file_path) disambiguates colliding statics."""
+        self.insert_rows(
+            function_locations=[
+                ("probe", "drivers/a/drv.c", 10, 40),
+                ("probe", "drivers/b/drv.c", 10, 40),
+                ("caller_a", "drivers/a/drv.c", 50, 80),
+                ("caller_b", "drivers/b/drv.c", 50, 80),
+            ],
+            syscall_node=[
+                (
+                    "__do_sys_read",
+                    "probe",
+                    "fs/read_write.c:10",
+                    "drivers/a/drv.c:10",
+                ),
+            ],
+            locations=[
+                (10, "caller_a", "drivers/a/drv.c", 50),
+                (11, "call to probe", "drivers/a/drv.c", 60),
+                (12, "probe", "drivers/a/drv.c", 10),
+                (13, "caller_b", "drivers/b/drv.c", 50),
+                (14, "call to probe", "drivers/b/drv.c", 60),
+                (15, "probe", "drivers/b/drv.c", 10),
+            ],
+            edges=[
+                (10, 11, "callgraph-all"),
+                (11, 12, "callgraph-all"),
+                (13, 14, "callgraph-all"),
+                (14, 15, "callgraph-all"),
+            ],
+        )
+        fn_b = callgraph.get_function_by_name(
+            self.conn, "probe", "drivers/b/drv.c"
+        )
+        self.assertEqual(fn_b, ("probe", "drivers/b/drv.c", 10, 40))
+
+        callers_a = callgraph.get_callers(
+            self.conn, "probe", target_file="drivers/a/drv.c"
+        )
+        self.assertEqual([c[0] for c in callers_a], ["caller_a"])
+
+        callers_b = callgraph.get_callers(
+            self.conn, "probe", target_file="drivers/b/drv.c"
+        )
+        self.assertEqual([c[0] for c in callers_b], ["caller_b"])
+
+        sc_a = callgraph.get_reachable_syscalls(
+            self.conn, "probe", target_file="drivers/a/drv.c"
+        )
+        self.assertEqual(sc_a, ["__do_sys_read"])
+
+        sc_b = callgraph.get_reachable_syscalls(
+            self.conn, "probe", target_file="drivers/b/drv.c"
+        )
+        self.assertEqual(sc_b, [])
+
 
 class TestLibMetadata(BaseToolsTestCase):
     """Unit tests for tools.lib.metadata."""
@@ -301,6 +358,7 @@ class TestLibPrivilege(BaseToolsTestCase):
         self.insert_rows(
             function_locations=[
                 ("gated_fn", "net/core.c", 10, 50),
+                ("gated_fn", "net/other.c", 10, 50),
             ],
             conditions=[
                 (
@@ -374,6 +432,11 @@ class TestLibPrivilege(BaseToolsTestCase):
             privilege.classify_gates(site_gates, cap_map=cap_map),
             "REACHABLE, BUT ONLY BEHIND capable(CAP_NET_ADMIN)",
         )
+        # Same-named static function in another file does not inherit gate
+        other_gates = privilege.get_call_site_gates(
+            call_gates, func_gates, "net/other.c", 22, caller_fn="gated_fn"
+        )
+        self.assertEqual(other_gates, [])
 
         call_tun, func_tun = privilege.load_runtime_tunables(self.conn)
         self.assertIn(("net/core.c", 20), call_tun)
@@ -382,3 +445,27 @@ class TestLibPrivilege(BaseToolsTestCase):
         wb_pre = privilege.get_entry_precondition("wb_workfn", "vfs_writeback")
         self.assertEqual(wb_pre["trigger_directness"], "indirect")
         self.assertEqual(wb_pre["baseline_cost"], privilege.COST_INDIRECT_ENTRY)
+
+    def test_verdict_rank_and_bpf_entry_precondition(self):
+        """Verify remote-over-local verdict_rank and bpf_entry note."""
+        bpf_pre = privilege.get_entry_precondition("bpf_prog_run", "bpf_entry")
+        self.assertIn(
+            "BPF verifier helper/kfunc allowlist", bpf_pre["entry_note"]
+        )
+
+        remote_res = {
+            "verdict": "REACHABLE WITH NO PRIVILEGE (UNGATED)",
+            "attacker_position": "remote, unauthenticated",
+            "trigger_directness": "direct",
+            "path": [{}, {}, {}, {}],
+        }
+        local_res = {
+            "verdict": "REACHABLE WITH NO PRIVILEGE (UNGATED)",
+            "attacker_position": "local, unprivileged",
+            "trigger_directness": "direct",
+            "path": [{}, {}],
+        }
+        self.assertLess(
+            privilege.verdict_rank(remote_res),
+            privilege.verdict_rank(local_res),
+        )

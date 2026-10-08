@@ -402,7 +402,7 @@ class ModuleParam extends InterestingConditionCalls, MacroInvocation {
   pragma[nomagic]
   Variable getTargetVariable() {
     result = this.getModuleParamAffectedElement().getTarget() and
-    not result.getName().regexpMatch("param_ops.*|__param_str.*")
+    not result.getName().regexpMatch("param_ops.*|__param_.*|__this_module")
   }
 
   override string getInterestingArgString() {

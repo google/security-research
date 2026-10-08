@@ -183,7 +183,7 @@ def build_target_info(
     syzk_conn: Optional[sqlite3.Connection],
     file_path: str,
     line_number: int,
-    is_function_entry: Optional[bool] = None,
+    **options: Any,
 ) -> Dict[str, Any]:
     """Resolve target file:line to enclosing function and reachability info."""
     fn_info = get_enclosing_function(conn, file_path, line_number)
@@ -197,17 +197,32 @@ def build_target_info(
 
     fn_name, canonical_file, start_line, end_line = fn_info
     target_configs = get_line_configs(conn, canonical_file, line_number)
+    truncated: List[bool] = []
+    max_bridge = options.get("max_bridge_depth", 6)
     info: Dict[str, Any] = {
         "function": fn_name,
         "file": canonical_file,
         "line": line_number,
         "span": (start_line, end_line),
     }
-    if is_function_entry is not None:
-        info["is_function_entry"] = is_function_entry
+    if options.get("is_function_entry") is not None:
+        info["is_function_entry"] = options["is_function_entry"]
     info.update({
-        "all_syscalls": get_reachable_syscalls(conn, fn_name),
-        "all_entries": get_reachable_entries(conn, fn_name),
+        "all_syscalls": get_reachable_syscalls(
+            conn,
+            fn_name,
+            max_bridge_depth=max_bridge,
+            target_file=canonical_file,
+            truncated_out=truncated,
+        ),
+        "all_entries": get_reachable_entries(
+            conn,
+            fn_name,
+            max_bridge_depth=max_bridge,
+            target_file=canonical_file,
+            truncated_out=truncated,
+        ),
+        "depth_truncated": bool(truncated),
         "configs": target_configs,
         "kconfig_metadata": get_kconfig_metadata(conn, target_configs),
         "syzkaller": get_syzkaller_coverage(
@@ -304,6 +319,12 @@ def add_common_cli_args(
             help="Maximum call graph traversal depth (default: 25)",
         )
         parser.add_argument(
+            "--max-bridge-depth",
+            type=int,
+            default=6,
+            help="Maximum indirect/async bridge depth (default: 6)",
+        )
+        parser.add_argument(
             "--all-syscalls",
             "-a",
             action="store_true",
@@ -346,9 +367,9 @@ def handle_common_cli_setup(
         return None
 
     is_function_entry = False
-    if resolve_function_to_line and args.function and not args.file:
+    if resolve_function_to_line and args.function and args.line is None:
         conn = sqlite3.connect(args.db)
-        fn_row = get_function_by_name(conn, args.function)
+        fn_row = get_function_by_name(conn, args.function, args.file)
         conn.close()
         if not fn_row:
             sys.exit(
@@ -356,9 +377,8 @@ def handle_common_cli_setup(
                 " function_locations table."
             )
         args.file = fn_row[1]
-        if args.line is None:
-            args.line = fn_row[2]
-            is_function_entry = True
+        args.line = fn_row[2]
+        is_function_entry = True
 
     if resolve_function_to_line and (not args.file or args.line is None):
         parser.print_help()
@@ -378,6 +398,7 @@ def extract_reachability_cli_kwargs(
         "all_syscalls": args.all_syscalls,
         "limit_syscalls": args.limit_syscalls,
         "max_depth": args.max_depth,
+        "max_bridge_depth": getattr(args, "max_bridge_depth", 6),
         "verbose": args.verbose,
     }
     if is_function_entry is not None:

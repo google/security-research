@@ -17,6 +17,7 @@ import sys
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tools.lib.callgraph import (
+    clean_file_path,
     format_root_label,
     format_target_banner,
     is_entry_root,
@@ -51,6 +52,7 @@ from tools.lib.privilege import (
     load_capability_map,
     load_condition_gates,
     load_runtime_tunables,
+    verdict_rank,
 )
 
 __all__ = [
@@ -68,6 +70,7 @@ __all__ = [
     "get_entry_precondition",
     "find_best_privilege_path",
     "classify_gates",
+    "verdict_rank",
     "analyze_target_privilege",
     "format_summary",
     "format_tree",
@@ -176,40 +179,42 @@ def _gate_cost(gates: GateList, base_cost: int = 0) -> int:
 
 def _relax_privilege_callers(
     conn: sqlite3.Connection,
-    state: Tuple[int, int, str, List[Dict[str, Any]]],
+    state: Tuple[int, int, str, str, List[Dict[str, Any]]],
     ctx: Dict[str, Any],
 ) -> None:
     """Relax incoming caller edges during Dijkstra privilege path search."""
-    cost, hops, curr_fn, path = state
-    callers = iter_pruned_callers(
-        conn, curr_fn, ctx["reachable_set"], allow_prune=(cost == 0)
-    )
-    for caller in callers:
-        caller_fn = caller[0]
+    cost, hops, curr_fn, curr_file, path = state
+    for caller in iter_pruned_callers(
+        conn,
+        curr_fn,
+        ctx["reachable_set"],
+        allow_prune=(cost == 0),
+        target_file=curr_file,
+    ):
+        caller_key = (caller[0], clean_file_path(caller[1]))
         edge_gates = get_call_site_gates(
             ctx["call_gates"],
             ctx["func_gates"],
             caller[1],
             caller[3],
-            caller_fn=caller_fn,
+            caller_fn=caller[0],
         )
         new_cost = cost + _gate_cost(edge_gates, base_cost=COST_UNGATED)
-        if new_cost < ctx["best_dist"].get(caller_fn, float("inf")):
-            ctx["best_dist"][caller_fn] = new_cost
+        if new_cost < ctx["best_dist"].get(caller_key, float("inf")):
+            ctx["best_dist"][caller_key] = new_cost
             ctx["counter"] += 1
-            edge_tuns = get_call_site_gates(
-                ctx["call_tunables"],
-                ctx["func_tunables"],
-                caller[1],
-                caller[3],
-                caller_fn=caller_fn,
-            )
             step = make_caller_step(
                 conn,
                 ctx["syzk_conn"],
                 caller,
                 gates=edge_gates,
-                tunables=edge_tuns,
+                tunables=get_call_site_gates(
+                    ctx["call_tunables"],
+                    ctx["func_tunables"],
+                    caller[1],
+                    caller[3],
+                    caller_fn=caller[0],
+                ),
             )
             heapq.heappush(
                 ctx["pq"],
@@ -217,8 +222,8 @@ def _relax_privilege_callers(
                     new_cost,
                     hops + 1,
                     ctx["counter"],
-                    caller_fn,
-                    caller[1],
+                    caller_key[0],
+                    caller_key[1],
                     [step] + path,
                 ),
             )
@@ -236,27 +241,26 @@ def _init_privilege_search(
     func_gates = options.get("func_gates", {})
     call_tunables = options.get("call_tunables") or {}
     func_tunables = options.get("func_tunables") or {}
-    syzk_conn = options.get("syzk_conn")
+    clean_tfile = clean_file_path(target_file)
 
     target_gates = get_call_site_gates(
-        call_gates, func_gates, target_file, target_line, caller_fn=target_fn
-    )
-    target_tunables = get_call_site_gates(
-        call_tunables,
-        func_tunables,
-        target_file,
-        target_line,
-        caller_fn=target_fn,
+        call_gates, func_gates, clean_tfile, target_line, caller_fn=target_fn
     )
     init_cost = _gate_cost(target_gates, base_cost=0)
     start_step = make_path_step(
         conn,
-        syzk_conn,
+        options.get("syzk_conn"),
         target_fn,
-        target_file,
+        clean_tfile,
         target_line,
         gates=target_gates,
-        tunables=target_tunables,
+        tunables=get_call_site_gates(
+            call_tunables,
+            func_tunables,
+            clean_tfile,
+            target_line,
+            caller_fn=target_fn,
+        ),
     )
     ctx: Dict[str, Any] = {
         "call_gates": call_gates,
@@ -269,9 +273,9 @@ def _init_privilege_search(
         "reachable_set": load_target_reachable_set(
             conn, options.get("target_syscall")
         ),
-        "syzk_conn": syzk_conn,
-        "best_dist": {target_fn: float(init_cost)},
-        "pq": [(init_cost, 0, 0, target_fn, target_file, [start_step])],
+        "syzk_conn": options.get("syzk_conn"),
+        "best_dist": {(target_fn, clean_tfile): float(init_cost)},
+        "pq": [(init_cost, 0, 0, target_fn, clean_tfile, [start_step])],
         "counter": 0,
     }
     return start_step, ctx
@@ -299,7 +303,9 @@ def find_best_privilege_path(
             return _finalize_root_path(
                 path[0]["function"], curr_file, path, ctx["cap_map"]
             )
-        if cost > ctx["best_dist"].get(curr_fn, float("inf")):
+        if cost > ctx["best_dist"].get(
+            (curr_fn, clean_file_path(curr_file)), float("inf")
+        ):
             continue
         if is_syscall_root(curr_fn, ctx["target_syscall"]):
             return _finalize_root_path(curr_fn, "syscall", path, ctx["cap_map"])
@@ -332,27 +338,11 @@ def find_best_privilege_path(
                 )
 
         if hops < options.get("max_depth", 25):
-            _relax_privilege_callers(conn, (cost, hops, curr_fn, path), ctx)
+            _relax_privilege_callers(
+                conn, (cost, hops, curr_fn, curr_file, path), ctx
+            )
 
     return None, [], None
-
-
-def _verdict_rank(res: Dict[str, Any]) -> Tuple[int, int, int]:
-    """Rank a path result by privilege requirement, directness, and length."""
-    v = res.get("verdict", "")
-    direct_rank = 0 if res.get("trigger_directness") != "indirect" else 1
-    plen = len(res.get("path", []))
-    if v == "REACHABLE WITH NO PRIVILEGE (UNGATED)":
-        return (0, direct_rank, plen)
-    if v == "REACHABLE BEHIND USER NAMESPACE CAPABILITY":
-        return (1, direct_rank, plen)
-    if v == "REACHABLE VIA PHYSICAL DEVICE (USB)":
-        return (2, direct_rank, plen)
-    if v.startswith("REACHABLE, BUT ONLY BEHIND") and "CAP_SYS_ADMIN" not in v:
-        return (3, direct_rank, plen)
-    if "CAP_SYS_ADMIN" in v:
-        return (4, direct_rank, plen)
-    return (5, direct_rank, plen)
 
 
 def _evaluate_privilege_roots(
@@ -383,8 +373,13 @@ def _evaluate_privilege_roots(
             )
 
     if not all_results:
-        return "UNREACHABLE", {}, []
-    primary = min(all_results, key=_verdict_rank)
+        unreach = (
+            "UNREACHABLE (DEPTH-LIMITED)"
+            if target_info.get("depth_truncated")
+            else "UNREACHABLE"
+        )
+        return unreach, {}, []
+    primary = min(all_results, key=verdict_rank)
     return primary["verdict"] or "UNREACHABLE", primary, all_results
 
 
@@ -397,8 +392,17 @@ def _load_all_target_gates(
     )
     call_tunables, func_tunables = load_runtime_tunables(conn)
     fn_name = target_info["function"]
-    target_info["internal_gates"] = func_gates.get(fn_name, [])
-    target_info["internal_tunables"] = func_tunables.get(fn_name, [])
+    fn_file = clean_file_path(target_info["file"])
+    target_info["internal_gates"] = [
+        g
+        for g in func_gates.get(fn_name, [])
+        if not g.get("func_file") or g["func_file"] == fn_file
+    ]
+    target_info["internal_tunables"] = [
+        t
+        for t in func_tunables.get(fn_name, [])
+        if not t.get("func_file") or t["func_file"] == fn_file
+    ]
     return {
         "call_gates": call_gates,
         "func_gates": func_gates,
@@ -426,6 +430,7 @@ def analyze_target_privilege(
         file_path,
         line_number,
         is_function_entry=options.get("is_function_entry", False),
+        max_bridge_depth=options.get("max_bridge_depth", 6),
     )
     target_syscall = options.get("target_syscall")
 
@@ -440,7 +445,12 @@ def analyze_target_privilege(
         conn.close()
         if syzk_conn:
             syzk_conn.close()
-        return target_info, "UNREACHABLE", {}, []
+        unreach = (
+            "UNREACHABLE (DEPTH-LIMITED)"
+            if target_info.get("depth_truncated")
+            else "UNREACHABLE"
+        )
+        return target_info, unreach, {}, []
 
     gate_opts = _load_all_target_gates(
         conn, target_info, options.get("verbose", False)
@@ -495,38 +505,56 @@ def _format_ns_scope_hint(ns_scope: Optional[str]) -> str:
     """Format a human-readable namespace scope hint for a capability gate."""
     if not ns_scope:
         return ""
-    return f" [scope: {_NS_SCOPE_HINTS.get(ns_scope, ns_scope)}]"
+    base = f" [scope: {_NS_SCOPE_HINTS.get(ns_scope, ns_scope)}]"
+    if ns_scope != "init_user_ns":
+        return (
+            f"{base} (necessary, not sufficient — verify parent edges are not"
+            " init_net/init_user_ns-bound)"
+        )
+    return base
+
+
+_VERDICT_DETAILS = {
+    "REACHABLE WITH NO PRIVILEGE (UNGATED)": [
+        "Privilege Level: Unprivileged (No capabilities required)",
+        "Gating Status:   Ungated route available from userspace",
+        (
+            "Access Scope:    Reachable via standard userspace system calls"
+            " without special privileges."
+        ),
+    ],
+    "REACHABLE BEHIND USER NAMESPACE CAPABILITY": [
+        "Privilege Level: User Namespace Capability (e.g. ns_capable)",
+        "Gating Status:   Gated by user namespace capability check",
+        (
+            "Access Scope:    Reachable within user namespaces (e.g. via"
+            " CLONE_NEWUSER / unshare -U); necessary, not sufficient —"
+            " verify parent edges are not init_net/init_user_ns-bound."
+        ),
+    ],
+    "REACHABLE VIA PHYSICAL DEVICE (USB)": [
+        "Privilege Level: Physical / Malicious USB Device",
+        "Gating Status:   Reachable from USB driver probe/disconnect",
+        (
+            "Access Scope:    Requires physical USB / BadUSB / usbip /"
+            " gadget attachment."
+        ),
+    ],
+    "UNREACHABLE (DEPTH-LIMITED)": [
+        "Privilege Level: Unreachable within traversal depth limit",
+        "Gating Status:   Backward bridge/call traversal hit depth cap",
+        (
+            "Access Scope:    Re-run with a larger --max-bridge-depth or"
+            " --max-depth to verify."
+        ),
+    ],
+}
 
 
 def _format_verdict_details(overall_verdict: str) -> List[str]:
     """Return 3-line privilege, gating, and scope summary for a verdict."""
-    if overall_verdict == "REACHABLE WITH NO PRIVILEGE (UNGATED)":
-        return [
-            "Privilege Level: Unprivileged (No capabilities required)",
-            "Gating Status:   Ungated route available from userspace",
-            (
-                "Access Scope:    Reachable via standard userspace system calls"
-                " without special privileges."
-            ),
-        ]
-    if overall_verdict == "REACHABLE BEHIND USER NAMESPACE CAPABILITY":
-        return [
-            "Privilege Level: User Namespace Capability (e.g. ns_capable)",
-            "Gating Status:   Gated by user namespace capability check",
-            (
-                "Access Scope:    Reachable within user namespaces (e.g. via"
-                " CLONE_NEWUSER / unshare -U)."
-            ),
-        ]
-    if overall_verdict == "REACHABLE VIA PHYSICAL DEVICE (USB)":
-        return [
-            "Privilege Level: Physical / Malicious USB Device",
-            "Gating Status:   Reachable from USB driver probe/disconnect",
-            (
-                "Access Scope:    Requires physical USB / BadUSB / usbip /"
-                " gadget attachment."
-            ),
-        ]
+    if overall_verdict in _VERDICT_DETAILS:
+        return list(_VERDICT_DETAILS[overall_verdict])
     if "CAP_SYS_ADMIN" in overall_verdict:
         return [
             "Privilege Level: Privileged Root (CAP_SYS_ADMIN in init_user_ns)",

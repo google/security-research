@@ -81,17 +81,25 @@ def find_shortest_path(
 ) -> Optional[List[Dict[str, Any]]]:
     """Perform a backward BFS from target_fn to target_syscall or any root."""
     target_syscall: Optional[str] = options.get("target_syscall")
-    syzk_conn: Optional[sqlite3.Connection] = options.get("syzk_conn")
     reachable_set = load_target_reachable_set(conn, target_syscall)
     entry_roots = load_entry_roots(conn)
     queue = deque([(
         target_fn,
-        [make_path_step(conn, syzk_conn, target_fn, target_file, target_line)],
+        clean_file_path(target_file),
+        [
+            make_path_step(
+                conn,
+                options.get("syzk_conn"),
+                target_fn,
+                clean_file_path(target_file),
+                target_line,
+            )
+        ],
     )])
     visited: Set[str] = {target_fn}
 
     while queue:
-        curr_fn, path = queue.popleft()
+        curr_fn, curr_file, path = queue.popleft()
         if is_syscall_root(curr_fn, target_syscall):
             path[0]["entry_kind"] = "syscall"
             return path
@@ -103,13 +111,19 @@ def find_shortest_path(
             continue
 
         for caller in iter_pruned_callers(
-            conn, curr_fn, reachable_set, exclude=visited
+            conn,
+            curr_fn,
+            reachable_set,
+            exclude=visited,
+            target_file=curr_file,
         ):
             if caller[0] not in visited:
                 visited.add(caller[0])
                 queue.append((
                     caller[0],
-                    [make_caller_step(conn, syzk_conn, caller)] + path,
+                    clean_file_path(caller[1]),
+                    [make_caller_step(conn, options.get("syzk_conn"), caller)]
+                    + path,
                 ))
 
     return None
@@ -173,6 +187,11 @@ def _format_tree_header(
             f"Non-Syscall Entries (CodeQL): Reachable from {len(all_entries)}"
             f" entry root(s) ({', '.join(ent_strs)}"
             f"{'...' if len(all_entries) > 5 else ''})"
+        )
+    if target_info.get("depth_truncated"):
+        out.append(
+            "Reachability Note: Backward traversal hit depth limit"
+            " (--max-bridge-depth)"
         )
     if target_info.get("configs"):
         out.append(
@@ -337,11 +356,11 @@ def find_paths_to_line(
 ) -> Tuple[Dict[str, Any], Dict[str, List[Dict[str, Any]]]]:
     """Main programmatic interface to find callgraph paths to a kernel line."""
     conn, syzk_conn = open_databases(
-        db_file,
-        syzkaller_db=options.get("syzkaller_db"),
-        verbose=options.get("verbose", False),
+        db_file, options.get("syzkaller_db"), options.get("verbose", False)
     )
-    target_info = build_target_info(conn, syzk_conn, file_path, line_number)
+    target_info = build_target_info(
+        conn, syzk_conn, file_path, line_number, **options
+    )
     if not target_info["all_syscalls"] and not target_info["all_entries"]:
         conn.close()
         if syzk_conn:
@@ -389,7 +408,9 @@ def find_paths_to_function_recursive(
 
     _fn_name, file_path, start_line, _end_line = fn_row
     results = []
-    for sc in get_reachable_syscalls(conn, function)[:10]:
+    for sc in get_reachable_syscalls(conn, function, target_file=file_path)[
+        :10
+    ]:
         path = find_shortest_path(
             conn,
             function,
@@ -444,9 +465,14 @@ def main() -> None:
         sys.exit(f"Error: {e}")
 
     if not paths:
+        trunc_note = (
+            " (depth-limited; try increasing --max-bridge-depth)"
+            if target_info.get("depth_truncated")
+            else ""
+        )
         print(
             f"No reachability path found for {args.file}:{args.line} (Function:"
-            f" {target_info.get('function')}).",
+            f" {target_info.get('function')}){trunc_note}.",
             file=sys.stderr,
         )
         sys.exit(1)

@@ -193,6 +193,7 @@ def _attach_function_gates(
             if s_line <= def_line <= e_line:
                 fg = dict(
                     g,
+                    func_file=f_clean,
                     check_line=def_line,
                     fn_span=(s_line, e_line),
                     max_controlled_line=_compute_controlled_end(
@@ -306,6 +307,9 @@ def get_call_site_gates(
     gates = list(call_gates.get((f_clean, line_number), []))
     if caller_fn and caller_fn in func_gates:
         for fg in func_gates[caller_fn]:
+            fg_file = fg.get("func_file")
+            if fg_file and fg_file != f_clean:
+                continue
             check_line = fg.get("check_line", 0)
             max_line = fg.get("max_controlled_line")
             if line_number >= check_line and (
@@ -352,7 +356,12 @@ def load_runtime_tunables(
     for tun, f_clean, cond_line in records:
         for fn_name, s_line, e_line in file_funcs.get(f_clean, []):
             if s_line <= cond_line <= e_line:
-                ft = dict(tun, check_line=cond_line, fn_span=(s_line, e_line))
+                ft = dict(
+                    tun,
+                    func_file=f_clean,
+                    check_line=cond_line,
+                    fn_span=(s_line, e_line),
+                )
                 func_tunables.setdefault(fn_name, []).append(ft)
 
     return (
@@ -429,7 +438,8 @@ def get_entry_precondition(
             "entry_note": (
                 "BPF helper/kfunc (requires BPF program load;"
                 " CAP_BPF/CAP_SYS_ADMIN when"
-                " kernel.unprivileged_bpf_disabled != 0)"
+                " kernel.unprivileged_bpf_disabled != 0, plus"
+                " per-program-type BPF verifier helper/kfunc allowlist)"
             ),
         })
     elif entry_kind == "device_usb":
@@ -480,3 +490,33 @@ def classify_gates(
         return f"REACHABLE, BUT ONLY BEHIND {root_caps[0]}"
 
     return "REACHABLE WITH NO PRIVILEGE (UNGATED)"
+
+
+def _attacker_position_rank(pos: Optional[str]) -> int:
+    """Rank attacker position severity (remote < local < physical)."""
+    if not pos:
+        return 1
+    if pos.startswith("remote"):
+        return 0
+    if pos.startswith("physical"):
+        return 2
+    return 1
+
+
+def verdict_rank(res: Dict[str, Any]) -> Tuple[int, int, int, int]:
+    """Rank a path result by privilege tier, position, directness, length."""
+    v = res.get("verdict") or ""
+    pos_rank = _attacker_position_rank(res.get("attacker_position"))
+    direct_rank = 0 if res.get("trigger_directness") != "indirect" else 1
+    plen = len(res.get("path", []))
+    if v == "REACHABLE WITH NO PRIVILEGE (UNGATED)":
+        return (0, pos_rank, direct_rank, plen)
+    if v == "REACHABLE BEHIND USER NAMESPACE CAPABILITY":
+        return (1, pos_rank, direct_rank, plen)
+    if v == "REACHABLE VIA PHYSICAL DEVICE (USB)":
+        return (2, pos_rank, direct_rank, plen)
+    if v.startswith("REACHABLE, BUT ONLY BEHIND") and "CAP_SYS_ADMIN" not in v:
+        return (3, pos_rank, direct_rank, plen)
+    if "CAP_SYS_ADMIN" in v:
+        return (4, pos_rank, direct_rank, plen)
+    return (5, pos_rank, direct_rank, plen)

@@ -428,6 +428,10 @@ predicate asyncCallbackField(string structName, string fieldName, string mechani
     or
     structName = "virtqueue_info" and fieldName = "callback"
     or
+    // Note: perf_event.overflow_handler (PMI/NMI), kprobe/kretprobe (INT3/trap),
+    // and ftrace_ops.func (arbitrary function entry context) are grouped under
+    // mechanism = "irq" (hardirq/atomic context bucket) for backward bridge
+    // reachability; treat context as "hardirq / NMI / arbitrary atomic context".
     structName = "perf_event" and fieldName = "overflow_handler"
     or
     structName = "ice_vsi" and fieldName = "irq_handler"

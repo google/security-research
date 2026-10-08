@@ -152,3 +152,16 @@ pytest tools/tests -v
 pyformat -i -s 4 tools/*.py tools/lib/*.py tools/tests/*.py
 pylint --max-line-length=80 tools/*.py tools/lib/*.py tools/tests/*.py
 ```
+
+---
+
+## 6. Known Limitations & Design Tradeoffs
+
+- **Out-of-Line Capability Wrapper Depth (`queries/condition_graph.qll`)**: `DirectCapabilityCheck` resolves up to 2 hops of out-of-line helper wrappers (`f -> g -> capable`). Deeper capability chains (3+ hops) where intermediate helpers perform side effects before returning a boolean are intentionally not treated as pure capability predicates.
+- **Conjunctive vs. Disjunctive Guarded Spans (`__guarded_span__`)**: When a single `if` condition combines multiple capability checks (`if (!capable(A) && !capable(B)) return -EPERM` vs. `if (!capable(A) || !capable(B)) return -EPERM`), both capability checks share the same guarded line span `[minLine, maxLine]`. Consumers union the gates covering a call site rather than solving full boolean SAT over compound branch conditions.
+- **Build-Configuration Scope (`codeql_data-<ver>.db`)**: The CodeQL database reflects a single compiled kernel configuration and architecture (`x86_64`). Code inside `#ifdef CONFIG_X` blocks disabled in that build is not compiled into the AST and will not appear in `function_locations`, `edges`, or `conditions` (though raw `#ifdef` ranges remain visible in `configs`).
+- **User-Namespace Scope (`ns_capable`) is Necessary, Not Sufficient**: When a path is gated by `ns_capable(ns->user_ns, CAP_*)` (`REACHABLE BEHIND USER NAMESPACE CAPABILITY`), unprivileged user-namespace reachability requires *both* the `ns_capable` check and that the object/subsystem can be instantiated inside a non-`init_net` / non-`init_user_ns` namespace. If an earlier caller or ops table binds the path to `init_net` or `init_user_ns`, global privilege is still required.
+- **BPF Verifier Program-Type Allowlists (`bpf_entry`)**: Reachability from a `bpf_entry` root assumes `BPF_PROG_LOAD` succeeds (`CAP_BPF` or `kernel.unprivileged_bpf_disabled=0`), but individual BPF helpers and kfuncs are further restricted by per-program-type verifier allowlists (`get_func_proto` / `btf_kfunc_id_set`).
+- **Bridge Traversal Depth Cap (`--max-bridge-depth`)**: Backward root collection (`get_reachable_syscalls`, `get_reachable_entries`) caps indirect/async bridge hops at `--max-bridge-depth` (default `6`) and direct hops at `20`. If traversal hits this cap with unexplored callers remaining and no root is found, `check_privilege.py` reports `UNREACHABLE (DEPTH-LIMITED)` (`target_info["depth_truncated"] = True`).
+- **Async Context Bucketing (`queries/async_edges.qll`)**: `perf_event.overflow_handler` (PMI/NMI), `kprobe`/`kretprobe` handlers (trap context), and `ftrace_ops.func` (arbitrary function-entry context) are grouped under `mechanism = "irq"` (`context = "hardirq"`) for backward call-graph bridging.
+

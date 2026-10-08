@@ -28,6 +28,7 @@ from tools.lib.callgraph import (
     get_function_by_name,
     is_syscall_root,
     open_databases,
+    query_direct_edge_rows,
 )
 from tools.lib.metadata import (
     add_common_cli_args,
@@ -100,34 +101,29 @@ def _query_direct_callers(
     options: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     """Query direct callers from CodeQL edges and locations tables."""
-    cur.execute(
-        "SELECT DISTINCT s.message AS caller_fn, s.uri AS caller_file,"
-        " s.startLine AS caller_line, t.startLine AS call_site_line"
-        " FROM edges e"
-        " JOIN locations s ON e.source_location_id = s.id"
-        " JOIN locations t ON e.target_location_id = t.id"
-        " WHERE (t.message = ? OR t.message = ?)"
-        ' AND s.message NOT LIKE "call to %"',
-        (function_name, f"call to {function_name}"),
+    rows = query_direct_edge_rows(
+        cur, function_name, options.get("target_file")
     )
     results: List[Dict[str, Any]] = []
-    for caller_fn, caller_file, caller_line, call_site_line in cur.fetchall():
-        clean_file = clean_file_path(caller_file)
-        key = (caller_fn, clean_file, call_site_line, "direct")
+    for row in rows:
+        if row[0].startswith("call to "):
+            continue
+        clean_file = clean_file_path(row[1])
+        key = (row[0], clean_file, row[5], "direct")
         if key in seen:
             continue
         seen.add(key)
         gates, syzk_covered = _site_annotations(
-            caller_fn, clean_file, call_site_line, options
+            row[0], clean_file, row[5], options
         )
         results.append({
-            "caller": caller_fn,
+            "caller": row[0],
             "file": clean_file,
-            "line": caller_line,
-            "call_site_line": call_site_line,
+            "line": row[2],
+            "call_site_line": row[5],
             "call_type": "direct",
             "dispatch": None,
-            "is_syscall": check_is_syscall_root(caller_fn),
+            "is_syscall": check_is_syscall_root(row[0]),
             "gates": gates,
             "syzk_covered": syzk_covered,
         })
@@ -159,29 +155,33 @@ def _query_indirect_callers(
     options: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     """Query indirect function-pointer callers from ops_targets table."""
+    target_file = options.get("target_file")
+    clean_tgt = clean_file_path(target_file) if target_file else None
     cur.execute(
-        "SELECT DISTINCT o.parent, o.field, o.exprcall_file, o.exprcall_line"
-        " FROM ops_targets o WHERE o.target = ?",
+        "SELECT DISTINCT o.parent, o.field, o.target_file, o.exprcall_file,"
+        " o.exprcall_line FROM ops_targets o WHERE o.target = ?",
         (function_name,),
     )
     results: List[Dict[str, Any]] = []
     for row in cur.fetchall():
+        if clean_tgt and row[2] and clean_file_path(row[2]) != clean_tgt:
+            continue
         caller_fn, caller_file, caller_line = _resolve_indirect_caller_loc(
-            cur, row[2], row[3]
+            cur, row[3], row[4]
         )
         dispatch = f"{row[0]}->{row[1]}"
-        key = (caller_fn, caller_file, row[3], dispatch)
+        key = (caller_fn, caller_file, row[4], dispatch)
         if key in seen:
             continue
         seen.add(key)
         gates, syzk_covered = _site_annotations(
-            caller_fn, caller_file, row[3], options
+            caller_fn, caller_file, row[4], options
         )
         results.append({
             "caller": caller_fn,
             "file": caller_file,
             "line": caller_line,
-            "call_site_line": row[3],
+            "call_site_line": row[4],
             "call_type": "indirect",
             "dispatch": dispatch,
             "is_syscall": check_is_syscall_root(caller_fn),
@@ -231,7 +231,12 @@ def build_caller_tree(
         for k, v in options.items()
         if k in ("call_gates", "func_gates", "syzk_conn")
     }
-    callers = get_callers_for_function(conn, target_fn, **sub_opts)
+    callers = get_callers_for_function(
+        conn,
+        target_fn,
+        target_file=options.get("target_file"),
+        **sub_opts,
+    )
 
     for c in callers:
         c["depth"] = current_depth
@@ -239,6 +244,7 @@ def build_caller_tree(
             c["callers"] = build_caller_tree(
                 conn,
                 c["caller"],
+                target_file=c.get("file"),
                 max_depth=max_depth,
                 current_depth=current_depth + 1,
                 visited=set(visited),
@@ -415,7 +421,11 @@ def build_callee_tree(
         if current_depth < max_depth and c["call_type"] == "direct":
             target_fn = c.get("callee")
             if target_fn and target_fn not in visited:
-                fn_info = get_function_by_name(conn, target_fn)
+                fn_info = get_function_by_name(
+                    conn,
+                    target_fn,
+                    c.get("file") if c.get("file") != "unknown" else file_path,
+                )
                 if fn_info:
                     c["callees"] = build_callee_tree(
                         conn,
@@ -450,7 +460,7 @@ def _resolve_inspect_target(
                 "query_line": line_number,
             }
     elif function_name:
-        fn_row = get_function_by_name(conn, function_name)
+        fn_row = get_function_by_name(conn, function_name, file_path)
         if fn_row:
             return {
                 "function": fn_row[0],
@@ -494,6 +504,7 @@ def inspect_function_calls(
         "call_gates": call_gates,
         "func_gates": func_gates,
         "syzk_conn": syzk_conn,
+        "target_file": target_info["file"],
     }
     callers = (
         build_caller_tree(conn, target_info["function"], **tree_opts)
