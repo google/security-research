@@ -1,107 +1,35 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code
 """Unit tests for tools/find_paths.py."""
 
 import os
 import sqlite3
-import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 
-try:
-    from tools import find_paths
-except ImportError:
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    import find_paths  # pylint: disable=import-error
+from tools import find_paths
+from tools.tests.fixtures import (
+    BaseToolsTestCase,
+    create_async_edges_schema,
+    create_entry_node_schema,
+    create_kconfig_schema,
+    create_syzkaller_schema,
+)
 
 
-class TestFindPaths(unittest.TestCase):
+class TestFindPaths(BaseToolsTestCase):
     """Test suite for callgraph reachability path finding."""
 
     def setUp(self):
         """Set up temporary SQLite database with sample callgraph tables."""
-        self.tmp_dir = (
-            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        )
-        self.db_path = os.path.join(self.tmp_dir.name, "test_codeql.db")
-        self.conn = sqlite3.connect(self.db_path)
-        cur = self.conn.cursor()
-
-        # Create schema
-        cur.execute("""
-            CREATE TABLE function_locations (
-                function_name TEXT,
-                file_path TEXT,
-                start_line INTEGER,
-                end_line INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE syscall_node (
-                syscall TEXT,
-                function TEXT,
-                syscall_location TEXT,
-                function_location TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE locations (
-                id INTEGER PRIMARY KEY,
-                threadFlow_id INTEGER,
-                message TEXT,
-                uri TEXT,
-                startLine INTEGER,
-                startColumn INTEGER,
-                endLine INTEGER,
-                endColumn INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE edges (
-                id INTEGER PRIMARY KEY,
-                source_location_id INTEGER,
-                target_location_id INTEGER,
-                rule_id TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE ops_targets (
-                definition TEXT,
-                parent TEXT,
-                field TEXT,
-                target TEXT,
-                target_file TEXT,
-                target_start INTEGER,
-                target_end INTEGER,
-                exprcall_file TEXT,
-                exprcall_line INTEGER,
-                exprcall_parent_start INTEGER,
-                exprcall_parent_end INTEGER
-            )
-        """)
-
-        # Insert test data
-        cur.executemany(
-            """
-            INSERT INTO function_locations VALUES (?, ?, ?, ?)
-        """,
-            [
+        super().setUp()
+        self.insert_rows(
+            function_locations=[
                 ("__do_sys_foo", "fs/read.c", 10, 30),
                 ("vfs_foo", "fs/read.c", 40, 60),
                 ("target_worker", "fs/internal.c", 100, 150),
                 ("ops_callback", "drivers/bar.c", 200, 250),
             ],
-        )
-
-        # Syscall reachability:
-        cur.executemany(
-            """
-            INSERT INTO syscall_node VALUES (?, ?, ?, ?)
-        """,
-            [
+            syscall_node=[
                 ("__do_sys_foo", "vfs_foo", "fs/read.c:10", "fs/read.c:40"),
                 (
                     "__do_sys_foo",
@@ -116,49 +44,33 @@ class TestFindPaths(unittest.TestCase):
                     "drivers/bar.c:200",
                 ),
             ],
-        )
-
-        # Locations:
-        cur.executemany(
-            """
-            INSERT INTO locations (id, message, uri, startLine)
-            VALUES (?, ?, ?, ?)
-        """,
-            [
+            locations=[
                 (1, "__do_sys_foo", "fs/read.c", 10),
                 (2, "call to vfs_foo", "fs/read.c", 20),
                 (3, "vfs_foo", "fs/read.c", 40),
                 (4, "call to target_worker", "fs/read.c", 50),
                 (5, "target_worker", "fs/internal.c", 100),
             ],
-        )
-
-        # Edges:
-        cur.executemany(
-            """
-            INSERT INTO edges (source_location_id, target_location_id, rule_id)
-            VALUES (?, ?, ?)
-        """,
-            [
+            edges=[
                 (1, 2, "callgraph-all"),
                 (3, 4, "callgraph-all"),
             ],
+            ops_targets=[
+                (
+                    "def",
+                    "foo_ops",
+                    "bar",
+                    "ops_callback",
+                    "drivers/bar.c",
+                    200,
+                    250,
+                    "fs/read.c",
+                    55,
+                    40,
+                    60,
+                ),
+            ],
         )
-
-        # Ops targets:
-        cur.execute("""
-            INSERT INTO ops_targets VALUES (
-                "def", "foo_ops", "bar", "ops_callback", "drivers/bar.c",
-                200, 250, "fs/read.c", 55, 40, 60
-            )
-        """)
-
-        self.conn.commit()
-
-    def tearDown(self):
-        """Close SQLite connection and clean up temporary directory."""
-        self.conn.close()
-        self.tmp_dir.cleanup()
 
     def test_ensure_indexes(self):
         """Verify SQLite indexes are created on the database."""
@@ -276,22 +188,9 @@ class TestFindPaths(unittest.TestCase):
         )
         self.assertFalse(target_info["syzkaller"]["configured"])
 
-        syzk_path = os.path.join(self.tmp_dir.name, "syzkaller_test.db")
+        syzk_path = os.path.join(self.tmp_dir, "syzkaller_test.db")
         syzk_conn = sqlite3.connect(syzk_path)
-        syzk_conn.execute(
-            "CREATE TABLE file_path"
-            " (file_id INTEGER PRIMARY KEY, file_path TEXT)"
-        )
-        syzk_conn.execute(
-            "CREATE TABLE syzk_cov"
-            " (file_id INTEGER, code_line_no INTEGER, prog_id INTEGER)"
-        )
-        syzk_conn.execute(
-            "CREATE TABLE syscalls (prog_id INTEGER, syscall TEXT)"
-        )
-        syzk_conn.execute(
-            "CREATE TABLE syzk_prog (prog_id INTEGER, prog_code TEXT)"
-        )
+        create_syzkaller_schema(syzk_conn.cursor())
         syzk_conn.commit()
         syzk_conn.close()
 
@@ -307,28 +206,7 @@ class TestFindPaths(unittest.TestCase):
     def test_kconfig_configs_and_else_polarity(self):
         """Verify configs (#ifdef/#else/Makefile) and kconfig_symbols lookup."""
         cur = self.conn.cursor()
-        cur.execute("""
-            CREATE TABLE configs (
-                config TEXT,
-                path TEXT,
-                ifdef INTEGER,
-                endif INTEGER,
-                else_ INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE kconfig_symbols (
-                config TEXT NOT NULL,
-                type TEXT,
-                prompt TEXT,
-                depends_on TEXT,
-                select_list TEXT,
-                default_val TEXT,
-                build_val TEXT,
-                kconfig_file TEXT NOT NULL,
-                line_no INTEGER NOT NULL
-            )
-        """)
+        create_kconfig_schema(cur)
         cur.executemany(
             "INSERT INTO configs VALUES (?, ?, ?, ?, ?)",
             [
@@ -374,24 +252,12 @@ class TestFindPaths(unittest.TestCase):
             "Kernel Configs (Target): CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH",
             tree,
         )
-        self.assertIn(
-            "[Kconfig: CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH]", tree
-        )
+        self.assertIn("[Kconfig: CONFIG_FS_INTERNAL, !CONFIG_FAST_PATH]", tree)
 
     def test_async_edges_path_resolution(self):
         """Verify async_edges bridges asynchronous callbacks to syscalls."""
         cur = self.conn.cursor()
-        cur.execute("""
-            CREATE TABLE async_edges (
-                caller TEXT NOT NULL,
-                callee TEXT NOT NULL,
-                mechanism TEXT NOT NULL,
-                form TEXT NOT NULL,
-                file TEXT NOT NULL,
-                line INTEGER NOT NULL,
-                context TEXT NOT NULL
-            )
-        """)
+        create_async_edges_schema(cur)
         cur.execute(
             "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
             ("async_work_fn", "fs/internal.c", 300, 320),
@@ -499,52 +365,30 @@ class TestFindPaths(unittest.TestCase):
 
     def test_entry_node_reachability_and_path(self):
         """Verify entry_node reachability and path resolution."""
-        cur = self.conn.cursor()
-        cur.execute("""
-            CREATE TABLE entry_node (
-                entry_kind TEXT NOT NULL,
-                entry TEXT NOT NULL,
-                function TEXT NOT NULL,
-                entry_location TEXT NOT NULL,
-                function_location TEXT NOT NULL
-            )
-        """)
-        cur.executemany(
-            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
-            [
+        create_entry_node_schema(self.conn.cursor())
+        self.insert_rows(
+            function_locations=[
                 ("ip_rcv", "net/ipv4/ip_input.c", 500, 540),
                 ("tcp_v4_rcv", "net/ipv4/tcp_ipv4.c", 2000, 2100),
             ],
-        )
-        cur.execute(
-            "INSERT INTO entry_node VALUES (?, ?, ?, ?, ?)",
-            (
-                "net_rx",
-                "ip_rcv",
-                "tcp_v4_rcv",
-                "net/ipv4/ip_input.c:500",
-                "net/ipv4/tcp_ipv4.c:2000",
-            ),
-        )
-        cur.executemany(
-            "INSERT INTO locations (id, message, uri, startLine) VALUES"
-            " (?, ?, ?, ?)",
-            [
+            entry_node=[
+                (
+                    "net_rx",
+                    "ip_rcv",
+                    "tcp_v4_rcv",
+                    "net/ipv4/ip_input.c:500",
+                    "net/ipv4/tcp_ipv4.c:2000",
+                ),
+            ],
+            locations=[
                 (20, "ip_rcv", "net/ipv4/ip_input.c", 500),
                 (21, "call to tcp_v4_rcv", "net/ipv4/ip_input.c", 525),
             ],
+            edges=[(20, 21, "callgraph-all")],
         )
-        cur.execute(
-            "INSERT INTO edges (source_location_id, target_location_id,"
-            " rule_id) VALUES (?, ?, ?)",
-            (20, 21, "callgraph-all"),
-        )
-        self.conn.commit()
 
         entries = find_paths.get_reachable_entries(self.conn, "tcp_v4_rcv")
-        self.assertEqual(
-            entries, [{"entry_kind": "net_rx", "entry": "ip_rcv"}]
-        )
+        self.assertEqual(entries, [{"entry_kind": "net_rx", "entry": "ip_rcv"}])
 
         target_info, paths = find_paths.find_paths_to_line(
             self.db_path, "net/ipv4/tcp_ipv4.c", 2050

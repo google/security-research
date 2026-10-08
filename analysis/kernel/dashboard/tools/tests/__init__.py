@@ -1,4 +1,4 @@
-"""Unit tests for the Kernel Dashboard CLI tools."""
+"""Unit tests for Dashboard CLI tools."""
 
 from pathlib import Path
 

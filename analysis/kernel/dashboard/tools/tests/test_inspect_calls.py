@@ -1,118 +1,25 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code
 """Unit tests for tools/inspect_calls.py."""
 
 import json
 import os
 import sqlite3
-import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 
-try:
-    from tools import inspect_calls
-except ImportError:
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    import inspect_calls  # pylint: disable=import-error
+from tools import inspect_calls
+from tools.tests.fixtures import BaseToolsTestCase
 
 
-class TestInspectCalls(
-    unittest.TestCase
-):  # pylint: disable=too-many-public-methods
-    """Test suite for 1-hop and multi-hop callgraph inspection."""
+class InspectCallsTestBase(BaseToolsTestCase):
+    """Base fixture with callgraph and Syzkaller tables for inspect_calls."""
 
     def setUp(self):
         """Set up temporary CodeQL and Syzkaller databases."""
-        self.tmp_dir = (
-            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        )
-        self.db_path = os.path.join(self.tmp_dir.name, "test_codeql.db")
-        self.syzk_path = os.path.join(self.tmp_dir.name, "test_syzkaller.db")
-
-        # Set up CodeQL DB
-        self.conn = sqlite3.connect(self.db_path)
-        cur = self.conn.cursor()
-
-        # Create schema
-        cur.execute("""
-            CREATE TABLE function_locations (
-                function_name TEXT,
-                file_path TEXT,
-                start_line INTEGER,
-                end_line INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE syscall_node (
-                syscall TEXT,
-                function TEXT,
-                syscall_location TEXT,
-                function_location TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE locations (
-                id INTEGER PRIMARY KEY,
-                threadFlow_id INTEGER,
-                message TEXT,
-                uri TEXT,
-                startLine INTEGER,
-                startColumn INTEGER,
-                endLine INTEGER,
-                endColumn INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE edges (
-                id INTEGER PRIMARY KEY,
-                source_location_id INTEGER,
-                target_location_id INTEGER,
-                rule_id TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE ops_targets (
-                definition TEXT,
-                parent TEXT,
-                field TEXT,
-                target TEXT,
-                target_file TEXT,
-                target_start INTEGER,
-                target_end INTEGER,
-                exprcall_file TEXT,
-                exprcall_line INTEGER,
-                exprcall_parent_start INTEGER,
-                exprcall_parent_end INTEGER
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE conditions (
-                type TEXT,
-                definition TEXT,
-                condition TEXT,
-                argument TEXT,
-                call TEXT,
-                call_location TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE macroinvocation_locations (
-                macroinvocation_name TEXT,
-                file_path TEXT,
-                start_line INTEGER,
-                end_line INTEGER
-            )
-        """)
-
-        # Insert function spans
-        cur.executemany(
-            """
-            INSERT INTO function_locations VALUES (?, ?, ?, ?)
-        """,
-            [
+        super().setUp()
+        self.syzk_path = os.path.join(self.tmp_dir, "test_syzkaller.db")
+        self.insert_rows(
+            function_locations=[
                 ("__do_sys_sample", "fs/sample.c", 10, 30),
                 ("vfs_dispatcher", "fs/sample.c", 40, 70),
                 ("direct_callee", "fs/helper.c", 10, 30),
@@ -130,14 +37,7 @@ class TestInspectCalls(
                 ("poll_cand4", "fs/poll4.c", 10, 30),
                 ("poll_cand5", "fs/poll5.c", 10, 30),
             ],
-        )
-
-        # Syscall reachability
-        cur.executemany(
-            """
-            INSERT INTO syscall_node VALUES (?, ?, ?, ?)
-        """,
-            [
+            syscall_node=[
                 (
                     "__do_sys_sample",
                     "vfs_dispatcher",
@@ -157,15 +57,7 @@ class TestInspectCalls(
                     "mm/shmem.c:100",
                 ),
             ],
-        )
-
-        # Locations
-        cur.executemany(
-            """
-            INSERT INTO locations (id, message, uri, startLine)
-            VALUES (?, ?, ?, ?)
-        """,
-            [
+            locations=[
                 (1, "__do_sys_sample", "fs/sample.c", 10),
                 (2, "call to vfs_dispatcher", "fs/sample.c", 20),
                 (3, "vfs_dispatcher", "fs/sample.c", 40),
@@ -181,15 +73,7 @@ class TestInspectCalls(
                 (13, "cycle_b", "fs/cycle.c", 40),
                 (14, "call to cycle_a", "fs/cycle.c", 50),
             ],
-        )
-
-        # Direct Edges
-        cur.executemany(
-            """
-            INSERT INTO edges (source_location_id, target_location_id, rule_id)
-            VALUES (?, ?, ?)
-        """,
-            [
+            edges=[
                 (1, 2, "callgraph-all"),
                 (2, 3, "callgraph-all"),
                 (3, 4, "callgraph-all"),
@@ -203,14 +87,7 @@ class TestInspectCalls(
                 (13, 14, "callgraph-all"),
                 (14, 11, "callgraph-all"),
             ],
-        )
-
-        # Indirect dispatches in ops_targets
-        cur.executemany(
-            """
-            INSERT INTO ops_targets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            [
+            ops_targets=[
                 (
                     "d1",
                     "file_operations",
@@ -303,14 +180,7 @@ class TestInspectCalls(
                     40,
                 ),
             ],
-        )
-
-        # Conditions: call to direct_callee at line 45 gated by capable(21)
-        cur.executemany(
-            """
-            INSERT INTO conditions VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            [
+            conditions=[
                 (
                     "capable",
                     "fs/sample.c:42:5:42:11",
@@ -320,25 +190,17 @@ class TestInspectCalls(
                     "fs/sample.c:45:2:45:15",
                 ),
             ],
-        )
-
-        cur.executemany(
-            """
-            INSERT INTO macroinvocation_locations VALUES (?, ?, ?, ?)
-        """,
-            [
+            macroinvocation_locations=[
                 ("CAP_SYS_ADMIN", "fs/sample.c", 42, 42),
             ],
         )
-
-        self.conn.commit()
 
         # Set up dummy Syzkaller DB
         syzk_conn = sqlite3.connect(self.syzk_path)
         s_cur = syzk_conn.cursor()
         s_cur.execute(
-            "CREATE TABLE file_path"
-            " (file_id INTEGER PRIMARY KEY, file_path TEXT)"
+            "CREATE TABLE file_path (file_id INTEGER PRIMARY KEY, file_path"
+            " TEXT)"
         )
         s_cur.execute(
             "CREATE TABLE syzk_cov"
@@ -349,10 +211,9 @@ class TestInspectCalls(
         syzk_conn.commit()
         syzk_conn.close()
 
-    def tearDown(self):
-        """Close database connection and clean up temporary directory."""
-        self.conn.close()
-        self.tmp_dir.cleanup()
+
+class TestInspectCallsCore(InspectCallsTestBase):
+    """Test suite for 1-hop and multi-hop callgraph traversal."""
 
     def test_get_function_by_name(self):
         """Verify function metadata lookup by function name."""
@@ -410,9 +271,7 @@ class TestInspectCalls(
         self.assertEqual(len(indirect), 1)
         self.assertEqual(indirect[0]["call_site_line"], 55)
         self.assertEqual(indirect[0]["dispatch"], "file_operations->read_iter")
-        candidate_names = {
-            cand["target"] for cand in indirect[0]["candidates"]
-        }
+        candidate_names = {cand["target"] for cand in indirect[0]["candidates"]}
         self.assertIn("shmem_reader", candidate_names)
         self.assertIn("ext4_reader", candidate_names)
 
@@ -491,6 +350,10 @@ class TestInspectCalls(
         self.assertEqual(target_info["function"], "cycle_a")
         self.assertTrue(len(callers) > 0)
         self.assertTrue(len(callees) > 0)
+
+
+class TestInspectCallsFormatting(InspectCallsTestBase):
+    """Test suite for callgraph summary formatting, coverage, and CLI."""
 
     def test_candidate_limit_truncation(self):
         """Verify truncation of indirect dispatch candidates at limit."""
