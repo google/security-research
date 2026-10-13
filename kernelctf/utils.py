@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import re
+import sys
 import requests
 import time
 from urllib.parse import urlparse
@@ -28,6 +29,8 @@ def warning(msg):
 
 def fail(msg):
     print("\n[!] [FAIL] " + msg.replace('\n', '\n    '))
+    sys.stdout.flush()
+    sys.stderr.flush()
     os._exit(1)
 
 def run(cmd):
