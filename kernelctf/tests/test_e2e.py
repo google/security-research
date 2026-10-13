@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import resource
 import shutil
 import subprocess
 import tarfile
@@ -163,7 +164,7 @@ class TestEndToEndSubmissionAndRepro(FakeSheetsTestCase):
                 log_content = f.read()
             self.assertIn("kernelCTF{", log_content)
 
-            # Also verify unprivileged exploit execution fails to read /flag
+            # Also verify unprivileged exploit execution fails to read /flag (and boots cleanly under restricted memlock ulimit)
             repro_env_unprivileged = dict(
                 os.environ,
                 RELEASE_ID=targets[0],
@@ -173,6 +174,7 @@ class TestEndToEndSubmissionAndRepro(FakeSheetsTestCase):
                 ["bash", repro_script, "2"],
                 cwd=repro_dir,
                 env=repro_env_unprivileged,
+                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_MEMLOCK, (64 * 1024 * 1024, 64 * 1024 * 1024)),
                 capture_output=True,
                 text=True
             )

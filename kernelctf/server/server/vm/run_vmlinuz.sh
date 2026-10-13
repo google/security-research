@@ -156,8 +156,15 @@ fi
 TIMEOUT_CMD=()
 if [ -n "$TIMEOUT_SECS" ] && [ "$TIMEOUT_SECS" -gt 0 ] 2>/dev/null; then TIMEOUT_CMD=(timeout --foreground -s KILL "${TIMEOUT_SECS}s"); fi
 
+if [ "$(ulimit -H -l)" = "unlimited" ] && [ "$(ulimit -S -l)" != "unlimited" ]; then
+    ulimit -S -l unlimited
+fi
+if [ "$(ulimit -l)" = "unlimited" ]; then
+    QEMU_ARGS+=" -overcommit mem-lock=on -mem-prealloc"
+fi
+
 "${TIMEOUT_CMD[@]}" stdbuf -o0 qemu-system-x86_64 -m 5G -nographic -nodefaults -no-reboot \
-    -enable-kvm -cpu host,-la57 -smp cores=2 -overcommit mem-lock=on -mem-prealloc \
+    -enable-kvm -cpu host,-la57 -smp cores=2 \
     -kernel $VMLINUZ \
     -initrd $WORKDIR/initramfs.cpio \
     -nic user,model=virtio-net-pci \

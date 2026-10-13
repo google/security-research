@@ -267,6 +267,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Set unlimited memlock - Linux only
+        if: startsWith(matrix.target, 'android') == false
+        run: sudo prlimit --memlock=unlimited:unlimited --pid $PPID
+
       - name: Install tools (QEMU, inotify, expect) - Linux only
         if: startsWith(matrix.target, 'android') == false
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 inotify-tools expect
