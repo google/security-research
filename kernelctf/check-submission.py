@@ -4,6 +4,7 @@ import sys
 import json
 import jsonschema
 import hashlib
+import tarfile
 import glob
 import argparse
 from utils import *
@@ -119,6 +120,11 @@ def flagTarget(flag):
     target = match.group(1) or match.group(2)  # v1 or v2 flag
     return "mitigation-6.1" if target == "mitigation-6.1-v2" else target
 
+def v5ExploitHashes(archivePath):
+    """Returns {member_name: sha256} for every regular file named `exploit` in the archive, read in memory without extraction to disk."""
+    with tarfile.open(archivePath, "r:gz") as tar:
+        return { m.name: hashlib.sha256(tar.extractfile(m).read()).hexdigest() for m in tar.getmembers() if m.isfile() and os.path.basename(m.name) == "exploit" }
+
 targetFlagTimes = {}
 flags = []
 flagTargets = set()
@@ -128,20 +134,31 @@ for submissionId in submissionIds:
     exploitHash = publicData["Exploit hash"]
     archiveFn = "original.tar.gz" if len(submissionIds) == 1 else f"original_{submissionId}.tar.gz"
 
-    if exploitHash != "":
-        if archiveFn not in files:
-            if not is0Day:
-                warning(f"The file `{archiveFn}` is missing, but submission is not a 0-day submission, so skipping exploit hash verification.")
-            else:
-                error(f"The file `{archiveFn}` is missing. Expected file with SHA256 hash of `{exploitHash}`.")
-        else:
-            with open(f"{submissionFolder}{archiveFn}", "rb") as f: originalTarGz = f.read()
-            calculated = hashlib.sha256(originalTarGz).hexdigest()
+    if exploitHash == "":
+        fail(f"The exploit hash for submission `{submissionId}` is empty on the public spreadsheet.")
 
-            if exploitHash != calculated:
-                error(f"Expected `{archiveFn}` with SHA256 hash of `{exploitHash}`, but the file's checksum is `{calculated}`.")
-            else:
-                print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
+    if archiveFn not in files:
+        if not is0Day:
+            warning(f"The file `{archiveFn}` is missing, but submission is not a 0-day submission, so skipping exploit hash verification.")
+        else:
+            error(f"The file `{archiveFn}` is missing. Expected file with SHA256 hash of `{exploitHash}`.")
+    elif publicData["is_v5"]:
+        exploitHashes = v5ExploitHashes(f"{submissionFolder}{archiveFn}")
+        matching = [name for name, h in exploitHashes.items() if h == exploitHash]
+        if not exploitHashes:
+            error(f"No `exploit` binary was found in `{archiveFn}`. Expected an `exploit` binary with SHA256 hash of `{exploitHash}`.")
+        elif not matching:
+            error(f"Expected an `exploit` binary in `{archiveFn}` with SHA256 hash of `{exploitHash}`, but found: {', '.join(f'`{n}` (`{h}`)' for n, h in exploitHashes.items())}.")
+        else:
+            print(f"[+] The hash of the `{matching[0]}` binary in `{archiveFn}` matches the expected `{exploitHash}` value.")
+    else:
+        with open(f"{submissionFolder}{archiveFn}", "rb") as f: originalTarGz = f.read()
+        calculated = hashlib.sha256(originalTarGz).hexdigest()
+
+        if exploitHash != calculated:
+            error(f"Expected `{archiveFn}` with SHA256 hash of `{exploitHash}`, but the file's checksum is `{calculated}`.")
+        else:
+            print(f"[+] The hash of the file `{archiveFn}` matches the expected `{exploitHash}` value.")
 
     if publicData["is_v5"]:
         target = publicData["Target"]
