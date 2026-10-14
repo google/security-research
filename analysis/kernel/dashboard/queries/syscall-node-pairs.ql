@@ -16,9 +16,19 @@ class SyscallEntry extends Function {
   SyscallEntry() { this.getName().regexpMatch("__do_sys_.*") and exists(this.getBlock()) }
 }
 
+pragma[nomagic]
+predicate syscallReachableNode(SyscallEntry entry, ControlFlowNode n) {
+  edges(entry, n)
+  or
+  exists(ControlFlowNode mid |
+    syscallReachableNode(entry, mid) and
+    edges(mid, n)
+  )
+}
+
 from SyscallEntry entry, Function reached
 where
-  edges+(entry, reached) and
+  syscallReachableNode(entry, reached) and
   reached != entry and
   not notInteresting(reached)
 select

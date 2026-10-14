@@ -118,7 +118,7 @@ struct demo_obj {
 ```bash
 # Extract BTF from vmlinux into SQLite (and optionally save raw JSON):
 python3 -m data.btf_data.extract_btf /path/to/vmlinux \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--json_file /path/to/btf_dump.json]
 
 # Run unit tests:

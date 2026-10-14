@@ -1,6 +1,6 @@
 /**
  * Shared direct + points-to/taint call-graph edge relation used by
- * syscall-node-pairs.ql and entry-node-pairs.ql.
+ * all-calls.ql, syscall-node-pairs.ql, and entry-node-pairs.ql.
  */
 
 import cpp

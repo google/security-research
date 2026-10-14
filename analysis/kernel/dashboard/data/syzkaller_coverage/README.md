@@ -131,7 +131,7 @@ Syzbot coverage reports are often generated on an upstream commit (`cov_commit`)
 # Import a local JSONL.gz coverage file and remap lines to repo HEAD:
 python3 -m data.syzkaller_coverage.syzkaller_coverage \
   /path/to/coverage.jsonl.gz \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   --remap_lines --repo_dir /path/to/linux --target_commit HEAD
 
 # Run unit tests:

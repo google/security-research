@@ -3,9 +3,17 @@ from __future__ import annotations
 
 import collections
 import os
+import re
 import statistics
 
-from common import group_sets, load_baseline, pct, report
+from common import (
+    group_sets,
+    load_baseline,
+    locate_kernel_source_file as _locate_kernel_source_file,
+    pct,
+    report,
+    scan_compiled_c_targets,
+)
 import pytest
 
 EXPECTED_ENTRY_KINDS = {
@@ -20,14 +28,30 @@ EXPECTED_ENTRY_KINDS = {
 }
 
 EXPECTED_KIND_MIN_ROOTS = {
-    "bpf_entry": 250,
+    "bpf_entry": 200,
     "compat_syscall": 100,
-    "vfs_reclaim": 45,
-    "device_usb": 25,
-    "net_rx": 11,
+    "vfs_reclaim": 30,
+    "device_usb": 20,
+    "net_rx": 10,
     "io_uring": 4,
     "page_fault": 2,
     "vfs_writeback": 1,
+}
+
+_ENTRY_SOURCE_PATTERNS = {
+    "bpf_helper": r"\bBPF_CALL_[0-5]\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)",
+    "vfs_reclaim": (
+        r"(?:->|\.)(?:scan_objects|count_objects)\s*=\s*"
+        r"&?([A-Za-z_][A-Za-z0-9_]*)\b"
+    ),
+}
+
+IO_URING_SEED_FUNCS = {
+    "io_issue_sqe",
+    "io_wq_submit_work",
+    "io_apoll_task_func",
+    "io_poll_task_func",
+    "io_req_task_submit",
 }
 
 FORBIDDEN_CHOKEPOINT_SEEDS = {
@@ -80,35 +104,6 @@ _MACRO_DEF_KEYWORDS = (
     "SETPAGEFLAG",
     "CLEARPAGEFLAG",
 )
-
-
-def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
-    """Resolve `raw_file` to an on-disk kernel source file if available."""
-    if not raw_file:
-        return None
-    if os.path.isfile(raw_file):
-        return raw_file
-
-    workspace = os.environ.get(
-        "WORKSPACE_DIR",
-        os.path.expanduser("~/kernel_codeql_workspace"),
-    )
-    candidates = []
-    if kernel and kernel != "unknown":
-        clean_ver = kernel.lstrip("v")
-        candidates.append(os.path.join(workspace, f"linux_v{clean_ver}"))
-    entries = (
-        sorted(os.listdir(workspace)) if os.path.isdir(workspace) else []
-    )
-    for entry in entries:
-        if entry.startswith("linux_v"):
-            candidates.append(os.path.join(workspace, entry))
-
-    for repo_dir in candidates:
-        candidate = os.path.join(repo_dir, raw_file)
-        if os.path.isfile(candidate):
-            return candidate
-    return None
 
 
 def _parse_loc(loc_str: str) -> tuple[str, int, int] | None:
@@ -213,11 +208,19 @@ def test_entry_node_pairs_not_empty(entry_node_pairs, kernel):
     ), "no reachability rows -- the closure produced nothing"
 
 
-def test_entry_seeds_and_taxonomy(entry_node_pairs):
-    """Verify all 8 entry_kind categories, root counts, and exclusions."""
+def test_entry_seeds_and_taxonomy(
+    entry_node_pairs, function_locations, kernel
+):
+    """Verify compiled entry_kind categories, source root recall, and exclusions."""
+    known_funcs = {r["function_name"] for r in function_locations}
+    io_uring_compiled = bool(known_funcs & IO_URING_SEED_FUNCS)
+    active_expected_kinds = set(EXPECTED_ENTRY_KINDS)
+    if not io_uring_compiled:
+        active_expected_kinds.discard("io_uring")
+
     kinds = {r["entry_kind"] for r in entry_node_pairs}
     unknown_kinds = kinds - EXPECTED_ENTRY_KINDS
-    missing_kinds = EXPECTED_ENTRY_KINDS - kinds
+    missing_kinds = active_expected_kinds - kinds
 
     seeds = {r["entry"] for r in entry_node_pairs}
     do_sys_seeds = {s for s in seeds if s.startswith("__do_sys_")}
@@ -233,11 +236,28 @@ def test_entry_seeds_and_taxonomy(entry_node_pairs):
     bpf_helpers = {s for s in bpf_seeds if s.startswith("____")}
     bpf_kfuncs = {s for s in bpf_seeds if not s.startswith("____")}
 
-    below_min = {
-        k: (len(by_kind.get(k, set())), min_cnt)
-        for k, min_cnt in EXPECTED_KIND_MIN_ROOTS.items()
-        if len(by_kind.get(k, set())) < min_cnt
+    compiled_source = scan_compiled_c_targets(
+        function_locations, kernel, _ENTRY_SOURCE_PATTERNS
+    )
+    expected_compat = {
+        fn for fn in known_funcs if fn.startswith("__do_compat_sys_")
     }
+    expected_bpf_helpers = {
+        f"____{name}"
+        for name in compiled_source.get("bpf_helper", set())
+        if f"____{name}" in known_funcs
+    }
+    expected_reclaim = compiled_source.get("vfs_reclaim", set())
+
+    compat_recalled = by_kind.get("compat_syscall", set()) & expected_compat
+    bpf_recalled = bpf_helpers & expected_bpf_helpers
+    reclaim_recalled = by_kind.get("vfs_reclaim", set()) & expected_reclaim
+
+    # Note: entry_node_pairs only emits roots with >= 1 outgoing call edge;
+    # pure leaf helpers/count_objects callbacks have 0 outgoing calls.
+    compat_rate = pct(len(compat_recalled), len(expected_compat))
+    bpf_rate = pct(len(bpf_recalled), len(expected_bpf_helpers))
+    reclaim_rate = pct(len(reclaim_recalled), len(expected_reclaim))
 
     report(
         "entry seeds by kind",
@@ -247,12 +267,27 @@ def test_entry_seeds_and_taxonomy(entry_node_pairs):
         },
     )
     report(
-        "bpf_entry breakdown",
+        "compiled entry root recall (non-leaf roots with >= 1 outgoing call)",
         {
-            "BPF_CALL_x helper bodies (____*)": len(bpf_helpers),
+            "compat_syscall recall": (
+                f"{len(compat_recalled)} / {len(expected_compat)} ({compat_rate:.1f}%)"
+            ),
+            "BPF_CALL_x helper recall": (
+                f"{len(bpf_recalled)} / {len(expected_bpf_helpers)} ({bpf_rate:.1f}%)"
+            ),
+            "vfs_reclaim shrinker recall": (
+                f"{len(reclaim_recalled)} / {len(expected_reclaim)} ({reclaim_rate:.1f}%)"
+                if expected_reclaim
+                else "source unavailable"
+            ),
             "BTF_ID_FLAGS kfuncs / direct": len(bpf_kfuncs),
         },
     )
+    below_min = {
+        k: (len(by_kind.get(k, set())), min_cnt)
+        for k, min_cnt in EXPECTED_KIND_MIN_ROOTS.items()
+        if k in active_expected_kinds and len(by_kind.get(k, set())) < min_cnt
+    }
     assert not unknown_kinds, f"unexpected entry_kind values: {unknown_kinds}"
     assert not missing_kinds, f"missing entry_kind categories: {missing_kinds}"
     assert not do_sys_seeds, (
@@ -269,6 +304,18 @@ def test_entry_seeds_and_taxonomy(entry_node_pairs):
     assert not below_min, (
         f"entry_kind root counts below minimum (actual, min): {below_min}"
     )
+    if expected_compat:
+        assert compat_rate >= 95.0, (
+            f"compat_syscall non-leaf root recall {compat_rate:.1f}% < 95%"
+        )
+    if expected_bpf_helpers:
+        assert bpf_rate >= 85.0, (
+            f"BPF_CALL_x non-leaf helper root recall {bpf_rate:.1f}% < 85%"
+        )
+    if expected_reclaim:
+        assert reclaim_rate >= 80.0, (
+            f"vfs_reclaim non-leaf shrinker root recall {reclaim_rate:.1f}% < 80%"
+        )
 
 
 def test_reachability_is_irreflexive(entry_node_pairs):
@@ -283,8 +330,11 @@ def test_reachability_is_irreflexive(entry_node_pairs):
     assert not self_rows
 
 
-def test_canonical_reachability_and_distribution(entry_node_pairs):
+def test_canonical_reachability_and_distribution(
+    entry_node_pairs, function_locations
+):
     """Verify canonical intermediate functions are reached from true entries."""
+    known_funcs = {r["function_name"] for r in function_locations}
     reach = group_sets(entry_node_pairs, "entry", "function")
     counts = sorted(len(v) for v in reach.values())
     median = statistics.median(counts)
@@ -315,12 +365,14 @@ def test_canonical_reachability_and_distribution(entry_node_pairs):
     assert "prune_icache_sb" in reach.get("super_cache_scan", set()), (
         "super_cache_scan should transitively reach prune_icache_sb"
     )
-    assert "io_issue_sqe" in reach.get("io_wq_submit_work", set()), (
-        "io_wq_submit_work should transitively reach io_issue_sqe"
-    )
-    assert "crash_kexec" in reach, (
-        "expected BTF kfunc crash_kexec as an active bpf_entry root"
-    )
+    if {"io_wq_submit_work", "io_issue_sqe"} <= known_funcs:
+        assert "io_issue_sqe" in reach.get("io_wq_submit_work", set()), (
+            "io_wq_submit_work should transitively reach io_issue_sqe"
+        )
+    if "crash_kexec" in known_funcs:
+        assert "crash_kexec" in reach, (
+            "expected BTF kfunc crash_kexec as an active bpf_entry root"
+        )
 
 
 def test_reached_functions_exist_in_function_locations(

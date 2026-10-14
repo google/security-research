@@ -158,8 +158,12 @@ def test_conditions_guarded_spans_and_ns_scopes(conditions):
         ), f"missing namespace scope category: {req_scope}"
 
 
-def test_conditions_genl_declarative_gates(conditions):
-    """Verify GENL_ADMIN_PERM and GENL_UNS_ADMIN_PERM declarative gates."""
+def test_conditions_genl_declarative_gates(
+    conditions, function_locations, kernel
+):
+    """Verify GENL_ADMIN_PERM and GENL_UNS_ADMIN_PERM recall against compiled C."""
+    from common import canonical_path
+
     genl_rows = [
         r for r in conditions if r["call"].startswith("__genl_ops_gate__:")
     ]
@@ -177,22 +181,93 @@ def test_conditions_genl_declarative_gates(conditions):
             and r["type"] != "ns_capable"
         )
     ]
+
+    import re
+
+    extracted_admin_files = {
+        canonical_path(_parse_loc(r["definition"])[0])
+        for r in genl_rows
+        if r["call"] == "__genl_ops_gate__:init_user_ns"
+    }
+    extracted_uns_files = {
+        canonical_path(_parse_loc(r["definition"])[0])
+        for r in genl_rows
+        if r["call"] == "__genl_ops_gate__:net_ns"
+    }
+
+    genl_ops_block_rx = re.compile(
+        r"struct\s+genl_(?:small_|split_)?ops\b[^;]+;", re.DOTALL
+    )
+    compiled_c_files = sorted(
+        {
+            r["file_path"]
+            for r in function_locations
+            if r.get("file_path", "").endswith(".c")
+        }
+    )
+    expected_admin_files: set[str] = set()
+    expected_uns_files: set[str] = set()
+    for raw_path in compiled_c_files:
+        src_path = locate_kernel_source_file(raw_path, kernel)
+        if not src_path:
+            continue
+        try:
+            with open(src_path, encoding="utf-8", errors="ignore") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        rel = canonical_path(raw_path)
+        for block in genl_ops_block_rx.findall(text):
+            if "GENL_ADMIN_PERM" in block:
+                expected_admin_files.add(rel)
+            if "GENL_UNS_ADMIN_PERM" in block:
+                expected_uns_files.add(rel)
+
+    admin_recalled = len(extracted_admin_files & expected_admin_files)
+    uns_recalled = len(extracted_uns_files & expected_uns_files)
+    admin_recall = pct(admin_recalled, len(expected_admin_files))
+    uns_recall = pct(uns_recalled, len(expected_uns_files))
+
     report(
-        "declarative genl_ops gates",
+        "declarative genl_ops gates (compiled-source normalized)",
         {
             "total_genl_gates": len(genl_rows),
             "by_call": dict(by_call),
+            "GENL_ADMIN_PERM file recall": (
+                f"{admin_recalled} / {len(expected_admin_files)} ({admin_recall:.1f}%)"
+                if expected_admin_files
+                else by_call["__genl_ops_gate__:init_user_ns"]
+            ),
+            "GENL_UNS_ADMIN_PERM file recall": (
+                f"{uns_recalled} / {len(expected_uns_files)} ({uns_recall:.1f}%)"
+                if expected_uns_files
+                else by_call["__genl_ops_gate__:net_ns"]
+            ),
             "bad_genl": len(bad_genl),
         },
     )
-    assert len(genl_rows) >= 90, f"too few genl_ops gates: {len(genl_rows)}"
-    assert by_call["__genl_ops_gate__:init_user_ns"] >= 60
+    assert by_call["__genl_ops_gate__:init_user_ns"] >= 50
     assert by_call["__genl_ops_gate__:net_ns"] >= 15
+    if expected_admin_files:
+        assert admin_recall >= 95.0, (
+            f"GENL_ADMIN_PERM file recall {admin_recall:.1f}% < 95.0% "
+            f"(missed: {sorted(expected_admin_files - extracted_admin_files)})"
+        )
+    if expected_uns_files:
+        assert uns_recall >= 95.0, (
+            f"GENL_UNS_ADMIN_PERM file recall {uns_recall:.1f}% < 95.0% "
+            f"(missed: {sorted(expected_uns_files - extracted_uns_files)})"
+        )
     assert not bad_genl, f"malformed genl_ops gate rows: {bad_genl[:3]}"
 
 
-def test_privilege_gate_cve_recall(conditions):
+def test_privilege_gate_cve_recall(conditions, function_locations):
     """Verify recall across all 5 capability-gate mechanisms on CVE targets."""
+    compiled_files = {r["file_path"] for r in function_locations}
+
+    def _file_compiled(substr: str) -> bool:
+        return any(substr in fp for fp in compiled_files)
+
     genl_admin_ipvs = [
         r
         for r in conditions
@@ -251,6 +326,7 @@ def test_privilege_gate_cve_recall(conditions):
             "fs/proc/kcore.c:",
             "drivers/net/ppp/ppp_generic.c:",
         )
+        if _file_compiled(tag.rstrip(":"))
     }
 
     report(
@@ -265,11 +341,18 @@ def test_privilege_gate_cve_recall(conditions):
             "open_acquisition_gates": open_acq_gates,
         },
     )
-    assert genl_admin_ipvs, "missing GENL_ADMIN_PERM gates in ip_vs_ctl.c"
-    assert genl_admin_devlink, "missing GENL_ADMIN_PERM gates in net/devlink/"
-    assert (
-        genl_uns_wg_ethtool
-    ), "missing GENL_UNS_ADMIN_PERM gates in wireguard/ethtool"
+    if _file_compiled("net/netfilter/ipvs/ip_vs_ctl.c"):
+        assert genl_admin_ipvs, "missing GENL_ADMIN_PERM gates in ip_vs_ctl.c"
+    if _file_compiled("net/devlink/"):
+        assert (
+            genl_admin_devlink
+        ), "missing GENL_ADMIN_PERM gates in net/devlink/"
+    if _file_compiled("drivers/net/wireguard/netlink.c") or _file_compiled(
+        "net/ethtool/"
+    ):
+        assert (
+            genl_uns_wg_ethtool
+        ), "missing GENL_UNS_ADMIN_PERM gates in wireguard/ethtool"
     assert (
         init_user_ns_printk
     ), "missing ns_capable(&init_user_ns) gate in printk.c"

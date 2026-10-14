@@ -145,19 +145,19 @@ pytest data_test -v \
 
 ### 4. Import Decoded Outputs into SQLite (`data/codeql_importers/`)
 ```bash
-python3 data/codeql_importers/import_functions.py /path/to/results_dir/functions.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_configs.py /path/to/results_dir/kernel-configs-needed.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_ops_targets.py /path/to/results_dir/ops_edges.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_allocs.py /path/to/results_dir/allocs.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_allocations.py /path/to/results_dir/allocations.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_field_access.py /path/to/results_dir/field-acces-type.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_macros.py /path/to/results_dir/macro-locations.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_macro_invocations.py /path/to/results_dir/macro-invocations.csv /path/to/codeql_data.db
+python3 data/codeql_importers/import_functions.py /path/to/results_dir/functions.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_configs.py /path/to/results_dir/kernel-configs-needed.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_ops_targets.py /path/to/results_dir/ops_edges.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_allocs.py /path/to/results_dir/allocs.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_allocations.py /path/to/results_dir/allocations.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_field_access.py /path/to/results_dir/field-acces-type.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_macros.py /path/to/results_dir/macro-locations.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_macro_invocations.py /path/to/results_dir/macro-invocations.csv /path/to/kernel_dashboard.db
 python3 data/codeql_importers/import_syscall_node.py \
   --pairs /path/to/results_dir/syscall-node-pairs.csv \
   --locs /path/to/results_dir/syscall-node-locs.csv \
-  --db /path/to/codeql_data.db
-python3 data/codeql_importers/import_conditions.py /path/to/results_dir/condition-graph-direct.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_conditions_reachable.py /path/to/results_dir/condition-graph-all.csv /path/to/codeql_data.db
-python3 data/codeql_importers/import_all_calls.py /path/to/results_dir/all-calls.sarif /path/to/codeql_data.db
+  --db /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_conditions.py /path/to/results_dir/condition-graph-direct.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_conditions_reachable.py /path/to/results_dir/condition-graph-all.csv /path/to/kernel_dashboard.db
+python3 data/codeql_importers/import_all_calls.py /path/to/results_dir/all-calls.csv /path/to/kernel_dashboard.db
 ```

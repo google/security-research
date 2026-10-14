@@ -1,6 +1,6 @@
 # Kernel Call-Graph & Privilege Analysis CLI Tools (`tools/`)
 
-This directory contains three command-line analysis tools (`find_paths.py`, `inspect_calls.py`, `check_privilege.py`) backed by shared domain libraries under `tools/lib/` (`callgraph.py`, `metadata.py`, `privilege.py`) that query the unified Dashboard SQLite database (`codeql_data-<version>.db`) and optional Syzkaller coverage database to answer core vulnerability triage and attack-surface questions:
+This directory contains three command-line analysis tools (`find_paths.py`, `inspect_calls.py`, `check_privilege.py`) backed by shared domain libraries under `tools/lib/` (`callgraph.py`, `metadata.py`, `privilege.py`) that query the unified Dashboard SQLite database (`kernel_dashboard-<version>.db`) and optional Syzkaller coverage database to answer core vulnerability triage and attack-surface questions:
 
 1. **`find_paths.py`** — *"Which syscalls or non-syscall entry points can reach this line or function, and what is the call chain?"*
 2. **`inspect_calls.py`** — *"Who calls this function (directly, asynchronously, or via `ops_targets` function pointers), and what does it call?"*
@@ -9,7 +9,7 @@ This directory contains three command-line analysis tools (`find_paths.py`, `ins
 ```text
                                                       ┌──► find_paths.py       (Syscall/entry-to-target shortest call chains + coverage)
                                                       │
-codeql_data-<ver>.db ──► tools/lib/{callgraph,        ┼──► inspect_calls.py    (1-hop & multi-hop caller/callee neighborhood + ops dispatch)
+kernel_dashboard-<ver>.db ──► tools/lib/{callgraph,        ┼──► inspect_calls.py    (1-hop & multi-hop caller/callee neighborhood + ops dispatch)
                                     metadata,         │
                                     privilege}.py     └──► check_privilege.py  (Dijkstra capability-gate & 2D entry precondition verdict)
 ```
@@ -46,18 +46,18 @@ codeql_data-<ver>.db ──► tools/lib/{callgraph,        ┼──► inspect
 ```bash
 # Find the shortest syscall path to a specific source line:
 python3 -m tools.find_paths \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --file mm/shmem.c --line 1500
 
 # Find paths to a function across all reachable syscalls (up to 10 syscalls):
 python3 -m tools.find_paths \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function sk_setsockopt \
   --all-syscalls --limit-syscalls 10
 
 # Pin reachability search to a specific syscall and output a Mermaid diagram:
 python3 -m tools.find_paths \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function unix_stream_connect \
   --syscall connect \
   --format mermaid
@@ -79,18 +79,18 @@ python3 -m tools.find_paths \
 ```bash
 # Inspect both callers and callees of a function (1-hop summary):
 python3 -m tools.inspect_calls \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function shmem_link
 
 # Inspect 2 hops of callers for a specific file and line in JSON format:
 python3 -m tools.inspect_calls \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --file net/core/sock.c --line 1250 \
   --callers --depth 2 --format json
 
 # Show all indirect dispatch candidates without truncation:
 python3 -m tools.inspect_calls \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function vfs_ioctl \
   --callees --all
 ```
@@ -121,19 +121,19 @@ The `conditions` table (`condition_type`, `condition_loc`, `if_stmt_loc`, `condi
 ```bash
 # Check whether a specific kernel line is reachable without privileges:
 python3 -m tools.check_privilege \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --file net/core/sock.c --line 1420
 
 # Evaluate privilege requirements across all reachable syscalls:
 python3 -m tools.check_privilege \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function sk_setsockopt \
   --all-syscalls --limit-syscalls 10 \
   --format tree
 
 # Print compact arrow-separated call chains with gate annotations:
 python3 -m tools.check_privilege \
-  --db /path/to/codeql_data.db \
+  --db /path/to/kernel_dashboard.db \
   --function shmem_link \
   --format paths
 ```
@@ -159,7 +159,7 @@ pylint --max-line-length=80 tools/*.py tools/lib/*.py tools/tests/*.py
 
 - **Out-of-Line Capability Wrapper Depth (`queries/condition_graph.qll`)**: `DirectCapabilityCheck` resolves up to 2 hops of out-of-line helper wrappers (`f -> g -> capable`). Deeper capability chains (3+ hops) where intermediate helpers perform side effects before returning a boolean are intentionally not treated as pure capability predicates.
 - **Conjunctive vs. Disjunctive Guarded Spans (`__guarded_span__`)**: When a single `if` condition combines multiple capability checks (`if (!capable(A) && !capable(B)) return -EPERM` vs. `if (!capable(A) || !capable(B)) return -EPERM`), both capability checks share the same guarded line span `[minLine, maxLine]`. Consumers union the gates covering a call site rather than solving full boolean SAT over compound branch conditions.
-- **Build-Configuration Scope (`codeql_data-<ver>.db`)**: The CodeQL database reflects a single compiled kernel configuration and architecture (`x86_64`). Code inside `#ifdef CONFIG_X` blocks disabled in that build is not compiled into the AST and will not appear in `function_locations`, `edges`, or `conditions` (though raw `#ifdef` ranges remain visible in `configs`).
+- **Build-Configuration Scope (`kernel_dashboard-<ver>.db`)**: The CodeQL database reflects a single compiled kernel configuration and architecture (`x86_64`). Code inside `#ifdef CONFIG_X` blocks disabled in that build is not compiled into the AST and will not appear in `function_locations`, `edges`, or `conditions` (though raw `#ifdef` ranges remain visible in `configs`).
 - **User-Namespace Scope (`ns_capable`) is Necessary, Not Sufficient**: When a path is gated by `ns_capable(ns->user_ns, CAP_*)` (`REACHABLE BEHIND USER NAMESPACE CAPABILITY`), unprivileged user-namespace reachability requires *both* the `ns_capable` check and that the object/subsystem can be instantiated inside a non-`init_net` / non-`init_user_ns` namespace. If an earlier caller or ops table binds the path to `init_net` or `init_user_ns`, global privilege is still required.
 - **BPF Verifier Program-Type Allowlists (`bpf_entry`)**: Reachability from a `bpf_entry` root assumes `BPF_PROG_LOAD` succeeds (`CAP_BPF` or `kernel.unprivileged_bpf_disabled=0`), but individual BPF helpers and kfuncs are further restricted by per-program-type verifier allowlists (`get_func_proto` / `btf_kfunc_id_set`).
 - **Bridge Traversal Depth Cap (`--max-bridge-depth`)**: Backward root collection (`get_reachable_syscalls`, `get_reachable_entries`) caps indirect/async bridge hops at `--max-bridge-depth` (default `6`) and direct hops at `20`. If traversal hits this cap with unexplored callers remaining and no root is found, `check_privilege.py` reports `UNREACHABLE (DEPTH-LIMITED)` (`target_info["depth_truncated"] = True`).

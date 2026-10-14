@@ -86,8 +86,8 @@ CodeQL databases include functions compiled from build-time generated files (suc
 # Populate git_log in the unified database:
 python3 -m data.git_log.git_log_dump \
   --repo_dir /path/to/linux \
-  --codeql_db /path/to/codeql_data.db \
-  --db_file /path/to/codeql_data.db \
+  --codeql_db /path/to/kernel_dashboard.db \
+  --db_file /path/to/kernel_dashboard.db \
   --no_cpu 32 --force
 
 # Run unit tests:

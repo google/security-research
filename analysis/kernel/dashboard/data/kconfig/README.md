@@ -113,7 +113,7 @@ Reads `<repo_dir>/.config` (or `--dot_config`) into a lookup dictionary:
 # Extract Makefile/Kbuild guards and Kconfig symbols into SQLite:
 python3 -m data.kconfig.kconfig_dump \
   --repo_dir /path/to/linux \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--dot_config /path/to/linux/.config]
 
 # Run unit tests:

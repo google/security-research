@@ -278,45 +278,46 @@ def _has_sqlite_table(db_path: str | Path | None, table_name: str) -> bool:
         return False
 
 
-def _parse_all_calls_sarif(path: Path) -> dict:
-    """Parse an `all-calls.ql` SARIF file into summary statistics."""
-    with open(path, "r", encoding="utf-8", errors="ignore") as sarif_file:
-        sarif = json.load(sarif_file)
-    runs = sarif.get("runs", [])
-    stats = {
-        "source": f"SARIF ({path.name})",
-        "runs": len(runs),
-        "results": sum(len(run.get("results", [])) for run in runs),
-        "locations": 0,
-        "edges": 0,
-        "sample_uris": [],
-        "sample_messages": [],
+def _parse_all_calls_csv(path: Path) -> dict:
+    """Parse an `all-calls.ql` 12-column (or 4-column) CSV into summary stats."""
+    import csv
+
+    unique_locs: set[tuple[str, ...]] = set()
+    sample_uris: list[str] = []
+    sample_messages: list[str] = []
+    edge_count = 0
+
+    with open(path, "r", newline="", encoding="utf-8", errors="ignore") as fh:
+        reader = csv.reader(fh)
+        for idx, row in enumerate(reader):
+            if len(row) < 4:
+                continue
+            if idx == 0 and row[0] in ("src_label", "a", "nodeFrom"):
+                continue
+            if len(row) >= 12:
+                src_loc = tuple(row[0:6])
+                dst_loc = tuple(row[6:12])
+                pairs = ((row[0], row[1]), (row[6], row[7]))
+            else:
+                src_loc = (row[0], row[1])
+                dst_loc = (row[2], row[3])
+                pairs = (src_loc, dst_loc)
+            edge_count += 1
+            unique_locs.add(src_loc)
+            unique_locs.add(dst_loc)
+            for msg, url in pairs:
+                if url and len(sample_uris) < 200:
+                    sample_uris.append(url)
+                if msg and len(sample_messages) < 200:
+                    sample_messages.append(msg)
+
+    return {
+        "source": f"CSV ({path.name})",
+        "locations": len(unique_locs),
+        "edges": edge_count,
+        "sample_uris": sample_uris,
+        "sample_messages": sample_messages,
     }
-    thread_flows = [
-        tf
-        for run in runs
-        for res in run.get("results", [])
-        for cf in res.get("codeFlows", [])
-        for tf in cf.get("threadFlows", [])
-    ]
-    for tf in thread_flows:
-        locs = tf.get("locations", [])
-        stats["locations"] += len(locs)
-        if len(locs) >= 2:
-            stats["edges"] += len(locs) - 1
-        for loc_entry in locs[:2]:
-            loc = loc_entry.get("location", {})
-            msg = loc.get("message", {}).get("text", "")
-            uri = (
-                loc.get("physicalLocation", {})
-                .get("artifactLocation", {})
-                .get("uri", "")
-            )
-            if uri and len(stats["sample_uris"]) < 200:
-                stats["sample_uris"].append(uri)
-            if msg and len(stats["sample_messages"]) < 200:
-                stats["sample_messages"].append(msg)
-    return stats
 
 
 def _index_syscall_node_locs(
@@ -414,7 +415,17 @@ def _join_entry_pairs_and_locs(pairs_path: str, locs_path: str) -> list[dict]:
 @pytest.fixture(scope="session")
 def kernel(pytestconfig):
     """Return kernel version string under test."""
-    return pytestconfig.getoption("--kernel") or "unknown"
+    explicit = pytestconfig.getoption("--kernel")
+    if explicit:
+        return explicit
+    import re
+    for opt in ("--sqlite-db", "--btf-db", "--db", "--results-dir"):
+        val = pytestconfig.getoption(opt)
+        if val:
+            m = re.search(r"v?(\d+\.\d+\.\d+)", os.path.basename(str(val)))
+            if m:
+                return m.group(1)
+    return "unknown"
 
 
 @pytest.fixture(scope="session")
@@ -666,31 +677,21 @@ def conditions_node(pytestconfig, sqlite_db):
 
 @pytest.fixture(scope="session")
 def all_calls_stats(pytestconfig, sqlite_db):
-    """Return summary dict for all-calls SARIF file or SQLite tables."""
+    """Return summary dict for all-calls CSV file or SQLite tables."""
     path = _resolve_file(
         pytestconfig,
         "--all-calls",
-        ["all-calls.sarif", "all_calls.sarif"],
-        "all-calls SARIF output",
+        ["all-calls.csv", "all_calls.csv"],
+        "all-calls CSV output",
     )
     if path:
-        return _parse_all_calls_sarif(path)
+        return _parse_all_calls_csv(path)
 
     if _has_sqlite_table(sqlite_db, "edges") and _has_sqlite_table(
         sqlite_db, "locations"
     ):
         conn = sqlite3.connect(str(sqlite_db))
         cur = conn.cursor()
-        runs_cnt = (
-            cur.execute("SELECT count(*) FROM runs").fetchone()[0]
-            if _has_sqlite_table(sqlite_db, "runs")
-            else 1
-        )
-        res_cnt = (
-            cur.execute("SELECT count(*) FROM results").fetchone()[0]
-            if _has_sqlite_table(sqlite_db, "results")
-            else 0
-        )
         loc_cnt = cur.execute("SELECT count(*) FROM locations").fetchone()[0]
         edge_cnt = cur.execute("SELECT count(*) FROM edges").fetchone()[0]
         sample_rows = cur.execute(
@@ -699,8 +700,6 @@ def all_calls_stats(pytestconfig, sqlite_db):
         conn.close()
         return {
             "source": f"SQLite ({Path(sqlite_db).name})",
-            "runs": runs_cnt,
-            "results": res_cnt,
             "locations": loc_cnt,
             "edges": edge_cnt,
             "sample_uris": [r[0] for r in sample_rows if r[0]],
@@ -709,7 +708,7 @@ def all_calls_stats(pytestconfig, sqlite_db):
 
     return pytest.skip(
         "all-calls data not supplied (pass --all-calls, --results-dir with "
-        "all-calls.sarif, or --sqlite-db)"
+        "all-calls.csv, or --sqlite-db)"
     )
 
 

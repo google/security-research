@@ -1,6 +1,6 @@
 # CodeQL Output Importers (`data/codeql_importers/`)
 
-This package converts the decoded `.csv` and `.sarif` outputs from the 15 core CodeQL queries in `queries/` into indexed relational SQLite tables in `codeql_data.db`.
+This package converts the decoded `.csv` and `.sarif` outputs from the 15 core CodeQL queries in `queries/` into indexed relational SQLite tables in `kernel_dashboard.db`.
 
 ---
 

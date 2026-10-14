@@ -1,6 +1,6 @@
 # Dashboard Data Ingestion Pipelines (`data/`)
 
-This directory contains the **five data ingestion pipelines** and shared library (`data/lib/`) that populate the unified Linux Kernel Security Research Dashboard SQLite database (`codeql_data.db`):
+This directory contains the **five data ingestion pipelines** and shared library (`data/lib/`) that populate the unified Linux Kernel Security Research Dashboard SQLite database (`kernel_dashboard.db`):
 
 1. **`lib/`** — Shared SQLite connection/batch helpers (`db.py`) and path/CLI/Makefile validation utilities (`validation.py`).
 2. **`btf_data/`** — Extracts ground-truth struct and field layout information from `vmlinux` BTF debug info (`types` table).
@@ -12,7 +12,7 @@ This directory contains the **five data ingestion pipelines** and shared library
 ```text
 vmlinux (BTF / DWARF) ────────► data/btf_data/           ──┐
 CodeQL (*.csv / *.sarif) ─────► data/codeql_importers/   ──┤
-Linux Kbuild & Kconfig ───────► data/kconfig/            ──┼──► Unified SQLite DB (codeql_data.db)
+Linux Kbuild & Kconfig ───────► data/kconfig/            ──┼──► Unified SQLite DB (kernel_dashboard.db)
 Linux Git Repository ─────────► data/git_log/            ──┤
 Syzkaller Coverage Exports ───► data/syzkaller_coverage/ ──┘
 ```
@@ -58,7 +58,7 @@ Syzkaller Coverage Exports ───► data/syzkaller_coverage/ ──┘
 ### Usage
 ```bash
 python3 -m data.btf_data.extract_btf /path/to/vmlinux \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--json_file /path/to/btf_dump.json]
 ```
 
@@ -89,16 +89,16 @@ Each importer script reads the decoded `.csv` or `.sarif` file produced by its c
 ### Usage
 ```bash
 # Single-CSV/SARIF importers (<input_file> <db_file>):
-python3 -m data.codeql_importers.import_functions /path/to/results_dir/functions.csv /path/to/codeql_data.db
-python3 -m data.codeql_importers.import_ops_targets /path/to/results_dir/ops_edges.csv /path/to/codeql_data.db
-python3 -m data.codeql_importers.import_all_calls /path/to/results_dir/all-calls.sarif /path/to/codeql_data.db
-python3 -m data.codeql_importers.import_async_edges /path/to/results_dir/async-edges.sarif /path/to/codeql_data.db
+python3 -m data.codeql_importers.import_functions /path/to/results_dir/functions.csv /path/to/kernel_dashboard.db
+python3 -m data.codeql_importers.import_ops_targets /path/to/results_dir/ops_edges.csv /path/to/kernel_dashboard.db
+python3 -m data.codeql_importers.import_all_calls /path/to/results_dir/all-calls.sarif /path/to/kernel_dashboard.db
+python3 -m data.codeql_importers.import_async_edges /path/to/results_dir/async-edges.sarif /path/to/kernel_dashboard.db
 
 # Reachability node importers (--pairs, --locs, --db):
 python3 -m data.codeql_importers.import_syscall_node \
   --pairs /path/to/results_dir/syscall-node-pairs.csv \
   --locs /path/to/results_dir/syscall-node-locs.csv \
-  --db /path/to/codeql_data.db
+  --db /path/to/kernel_dashboard.db
 ```
 
 ---
@@ -114,7 +114,7 @@ python3 -m data.codeql_importers.import_syscall_node \
 ```bash
 python3 -m data.kconfig.kconfig_dump \
   --repo_dir /path/to/linux \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--dot_config /path/to/linux/.config]
 ```
 
@@ -132,8 +132,8 @@ python3 -m data.kconfig.kconfig_dump \
 ```bash
 python3 -m data.git_log.git_log_dump \
   --repo_dir /path/to/linux \
-  --codeql_db /path/to/codeql_data.db \
-  --db_file /path/to/codeql_data.db \
+  --codeql_db /path/to/kernel_dashboard.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--no_cpu 32] [--force]
 ```
 
@@ -151,7 +151,7 @@ python3 -m data.git_log.git_log_dump \
 ```bash
 python3 -m data.syzkaller_coverage.syzkaller_coverage \
   /path/to/syzkaller_coverage.jsonl.gz \
-  --db_file /path/to/codeql_data.db \
+  --db_file /path/to/kernel_dashboard.db \
   [--remap_lines --repo_dir /path/to/linux --target_commit HEAD]
 ```
 

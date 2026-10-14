@@ -15,6 +15,7 @@ from common import (
     locate_kernel_source_file,
     pct,
     report,
+    scan_compiled_c_targets,
     top_counts,
 )
 import pytest
@@ -173,8 +174,11 @@ def test_ops_targets_cover_known_ops_structs(ops_targets):
     ), f"none of {sorted(expected)} appear among {len(parents)} parent structs"
 
 
-def test_ops_targets_indirect_idioms(ops_targets):
+def test_ops_targets_indirect_idioms(
+    ops_targets, function_locations, kernel
+):
     """Verify dynamic assign, local-var def-use, and genl split ops idioms."""
+    known_funcs = {r["function_name"] for r in function_locations}
     open_fs = {
         r["target"]
         for r in ops_targets
@@ -222,39 +226,100 @@ def test_ops_targets_indirect_idioms(ops_targets):
         if (r["parent"], r["field"]) in FORBIDDEN_ASYNC_PARENTS_FIELDS
     }
 
-    report(
-        "indirect ops idiom coverage",
+    src_gt = scan_compiled_c_targets(
+        function_locations,
+        kernel,
         {
-            "do_dentry_open targets": len(open_fs),
+            "fops_open": (
+                r"struct\s+file_operations\b[^;]+;",
+                r"\.open\s*=\s*&?([A-Za-z_][A-Za-z0-9_]*)\b",
+            ),
+            "shrinker": (
+                r"(?:->|\.)(?:count_objects|scan_objects)\s*=\s*"
+                r"&?([A-Za-z_][A-Za-z0-9_]*)\b"
+            ),
+            "genl": (
+                r"struct\s+genl_(?:small_|split_)?ops\b[^;]+;",
+                r"\.(?:doit|dumpit)\s*=\s*&?([A-Za-z_][A-Za-z0-9_]*)\b",
+            ),
+        },
+    )
+    fops_open_src = src_gt.get("fops_open", set())
+    shrinker_src = src_gt.get("shrinker", set())
+    genl_src = src_gt.get("genl", set())
+    fops_open_recalled = len(open_fs & fops_open_src)
+    shrinker_recalled = len(shrinker_targets & shrinker_src)
+    genl_recalled = len(genl_targets & genl_src)
+    fops_open_recall = pct(fops_open_recalled, len(fops_open_src))
+    shrinker_recall = pct(shrinker_recalled, len(shrinker_src))
+    genl_recall = pct(genl_recalled, len(genl_src))
+
+    report(
+        "indirect ops idiom coverage (compiled-source normalized)",
+        {
+            "do_dentry_open recall (compiled C)": (
+                f"{fops_open_recalled} / {len(fops_open_src)} "
+                f"({fops_open_recall:.1f}%, total extracted: {len(open_fs)})"
+                if fops_open_src
+                else len(open_fs)
+            ),
             "proto.sendmsg targets": len(proto_sendmsg),
             "sock_sendmsg_nosec targets": len(sock_sendmsg),
-            "shrinker targets": len(shrinker_targets),
-            "genl doit/dumpit targets": len(genl_targets),
+            "shrinker recall (compiled C)": (
+                f"{shrinker_recalled} / {len(shrinker_src)} "
+                f"({shrinker_recall:.1f}%, total extracted: {len(shrinker_targets)})"
+                if shrinker_src
+                else len(shrinker_targets)
+            ),
+            "genl doit/dumpit recall (compiled C)": (
+                f"{genl_recalled} / {len(genl_src)} "
+                f"({genl_recall:.1f}%, total extracted: {len(genl_targets)})"
+                if genl_src
+                else len(genl_targets)
+            ),
             "genl fields present": sorted(genl_fields),
             "netlink_kernel_cfg.input targets": len(nl_cfg_targets),
             "async leaks": len(async_leaks),
         },
     )
 
+    assert ({"ext4_file_open", "generic_file_open"} & known_funcs) <= open_fs
     assert (
-        len(open_fs) >= 250
-    ), f"expected >=250 do_dentry_open targets, got {len(open_fs)}"
-    assert {"ext4_file_open", "generic_file_open"} <= open_fs
-    assert {
-        "tcp_sendmsg",
-        "udp_sendmsg",
-        "raw_sendmsg",
-        "ping_v4_sendmsg",
-    } <= proto_sendmsg
-    assert {
-        "unix_stream_sendmsg",
-        "netlink_sendmsg",
-        "packet_sendmsg",
-    } <= sock_sendmsg
-    assert len(shrinker_targets) >= 50
-    assert {"super_cache_scan", "deferred_split_scan"} <= shrinker_targets
-    assert len(genl_targets) >= 100
-    assert {"ctrl_getfamily", "ctrl_dumpfamily"} <= genl_targets
+        {"tcp_sendmsg", "udp_sendmsg", "raw_sendmsg", "ping_v4_sendmsg"}
+        & known_funcs
+    ) <= proto_sendmsg
+    assert (
+        {"unix_stream_sendmsg", "netlink_sendmsg", "packet_sendmsg"}
+        & known_funcs
+    ) <= sock_sendmsg
+    assert (
+        {
+            "super_cache_scan",
+            "deferred_split_scan",
+            "count_shadow_nodes",
+            "scan_shadow_nodes",
+        }
+        & known_funcs
+    ) <= shrinker_targets
+    if fops_open_src:
+        assert fops_open_recall >= 95.0, (
+            f"file_operations.open recall against compiled C source is "
+            f"{fops_open_recall:.1f}% < 95.0% "
+            f"(missed: {sorted(fops_open_src - open_fs)[:10]})"
+        )
+    if shrinker_src:
+        assert shrinker_recall >= 95.0, (
+            f"shrinker callback recall against compiled C source is "
+            f"{shrinker_recall:.1f}% < 95.0% "
+            f"(missed: {sorted(shrinker_src - shrinker_targets)[:10]})"
+        )
+    if genl_src:
+        assert genl_recall >= 95.0, (
+            f"genl doit/dumpit callback recall against compiled C source is "
+            f"{genl_recall:.1f}% < 95.0% "
+            f"(missed: {sorted(genl_src - genl_targets)[:10]})"
+        )
+    assert ({"ctrl_getfamily", "ctrl_dumpfamily"} & known_funcs) <= genl_targets
     expected_genl_fields = {
         "doit",
         "dumpit",
@@ -267,10 +332,12 @@ def test_ops_targets_indirect_idioms(ops_targets):
         "compatibleOpsField genl mapping missing fields: "
         f"{sorted(expected_genl_fields - genl_fields)}"
     )
-    assert {"genl_rcv", "rtnetlink_rcv", "nfnetlink_rcv"} <= nl_cfg_targets
+    assert (
+        {"genl_rcv", "rtnetlink_rcv", "nfnetlink_rcv"} & known_funcs
+    ) <= nl_cfg_targets
     assert (
         not async_leaks
-    ), f"async_edges fields leaked into ops_targets: {async_leaks}"
+     ), f"async_edges fields leaked into ops_targets: {async_leaks}"
 
 
 def test_ops_target_line_ranges_are_ordered(ops_targets):

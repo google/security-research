@@ -659,73 +659,61 @@ class TestImportAllocs(BaseImporterTest):
         )
 
 
-def _make_sarif_location(
-    msg: str, uri: str, line: int, col: int, end_col: int
-) -> dict[str, Any]:
-    """Builds a minimal SARIF threadFlow location object."""
-    return {
-        "location": {
-            "message": {"text": msg},
-            "physicalLocation": {
-                "artifactLocation": {"uri": uri},
-                "region": {
-                    "startLine": line,
-                    "startColumn": col,
-                    "endLine": line,
-                    "endColumn": end_col,
-                },
-            },
-        }
-    }
-
-
 class TestImportAllCalls(BaseImporterTest):
     """Tests for `import_all_calls.py`."""
 
-    def test_import_all_calls_to_db(self):
-        """Verifies importing a SARIF v2.1.0 callgraph file into SQLite."""
-        sarif_path = os.path.join(self.tmp_dir, "test.sarif")
-        locs = [
-            _make_sarif_location(
-                "caller_fn", "file:///build/linux/net/socket.c", 100, 5, 15
-            ),
-            _make_sarif_location(
-                "call to callee_fn",
-                "file:///build/linux/net/socket.c",
-                105,
-                10,
-                20,
-            ),
-        ]
-        sarif_content = {
-            "runs": [{
-                "results": [{
-                    "ruleId": "callgraph-all",
-                    "message": {"text": "callgraph-all"},
-                    "codeFlows": [{"threadFlows": [{"locations": locs}]}],
-                }]
-            }]
-        }
-
-        with open(sarif_path, "w", encoding="utf-8") as sarif_file:
-            json.dump(sarif_content, sarif_file)
+    def test_import_all_calls_12col_to_db(self):
+        """Verifies importing a 12-column explicit all-calls CSV into SQLite."""
+        self.write_test_csv(
+            '"src_label","src_file","src_start_line","src_start_col",'
+            '"src_end_line","src_end_col","dst_label","dst_file",'
+            '"dst_start_line","dst_start_col","dst_end_line","dst_end_col"\n'
+            '"caller_fn","linux/net/socket.c",100,5,100,15,'
+            '"call to callee_fn","linux/net/socket.c",105,10,105,20\n'
+            '"call to callee_fn","linux/net/socket.c",105,10,105,20,'
+            '"callee_fn","linux/net/socket.c",200,1,200,10\n'
+        )
 
         edge_cnt = import_all_calls.import_all_calls_to_db(
-            sarif_path, self.db_path
+            self.csv_path, self.db_path
         )
-        self.assertEqual(edge_cnt, 1)
+        self.assertEqual(edge_cnt, 2)
 
         # Re-importing should replace existing tables without duplicating edges
-        import_all_calls.import_all_calls_to_db(sarif_path, self.db_path)
-        self.assertEqual(self.fetch_one("SELECT count(*) FROM edges")[0], 1)
+        import_all_calls.import_all_calls_to_db(self.csv_path, self.db_path)
+        self.assertEqual(self.fetch_one("SELECT count(*) FROM edges")[0], 2)
+        # 3 unique locations across the 2 connected edges
+        self.assertEqual(self.fetch_one("SELECT count(*) FROM locations")[0], 3)
 
         db_locs = self.fetch_all(
-            "SELECT uri, message FROM locations ORDER BY id ASC"
+            "SELECT uri, message, startLine, startColumn, endLine, endColumn "
+            "FROM locations ORDER BY id ASC"
         )
-        self.assertEqual(db_locs[0], ("net/socket.c", "caller_fn"))
-        self.assertEqual(db_locs[1], ("net/socket.c", "call to callee_fn"))
+        self.assertEqual(
+            db_locs[0], ("net/socket.c", "caller_fn", 100, 5, 100, 15)
+        )
+        self.assertEqual(
+            db_locs[1], ("net/socket.c", "call to callee_fn", 105, 10, 105, 20)
+        )
+        self.assertEqual(
+            db_locs[2], ("net/socket.c", "callee_fn", 200, 1, 200, 10)
+        )
         rule_row = self.fetch_one("SELECT rule_id FROM edges")
         self.assertEqual(rule_row[0], "callgraph-all")
+
+    def test_import_all_calls_4col_fallback(self):
+        """Verifies fallback support for 4-column entity-URL all-calls CSV."""
+        self.write_test_csv(
+            '"a","URL for a","b","URL for b"\n'
+            '"caller_fn","file:///build/linux/net/socket.c:100:5:100:15",'
+            '"call to callee_fn",'
+            '"file:///build/linux/net/socket.c:105:10:105:20"\n'
+        )
+        edge_cnt = import_all_calls.import_all_calls_to_db(
+            self.csv_path, self.db_path
+        )
+        self.assertEqual(edge_cnt, 1)
+        self.assertEqual(self.fetch_one("SELECT count(*) FROM locations")[0], 2)
 
 
 class TestImportAsyncEdges(BaseImporterTest):

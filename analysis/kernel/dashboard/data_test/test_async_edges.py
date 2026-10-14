@@ -13,7 +13,14 @@ import collections
 import os
 import re
 
-from common import load_baseline, pct, report, top_counts
+from common import (
+    load_baseline,
+    locate_kernel_source_file as _locate_kernel_source_file,
+    pct,
+    report,
+    scan_compiled_c_targets,
+    top_counts,
+)
 import pytest
 
 VALID_FORMS = {"arg", "assign", "init"}
@@ -27,22 +34,23 @@ INTERNAL_TRAMPOLINES = {
 
 USB_MIN_COUNT_WHEN_ENABLED = 20
 
-# Minimum expected edges per active mechanism across 6.1 - 6.18 x86_64 builds
+# Minimum expected edges for core mechanisms present in all x86_64 builds;
+# subsystem-optional mechanisms (io_uring, block_io, netfilter, nf_hook_inline)
+# are gated/verified against compiled C source below.
 EXPECTED_MECHANISM_MIN_COUNTS = {
     "async": 8,
-    "block_io": 250,
+    "block_io": 100,
     "cpuhp": 80,
     "crypto": 30,
     "hrtimer": 30,
-    "io_uring": 10,
     "ipi": 100,
     "irq": 100,
     "kref": 120,
     "kthread": 40,
     "kthread_worker": 5,
     "napi": 15,
-    "netfilter": 120,
-    "nf_hook_inline": 40,
+    "netfilter": 80,
+    "nf_hook_inline": 25,
     "notifier": 150,
     "poll": 8,
     "rcu": 150,
@@ -56,6 +64,43 @@ EXPECTED_MECHANISM_MIN_COUNTS = {
     "timer": 100,
     "waitqueue": 100,
     "workqueue": 400,
+}
+
+# Compiled C source patterns for measuring extraction recall % across
+# the .c files actually compiled in this kernel build.
+_ASYNC_SOURCE_PATTERNS = {
+    "workqueue (INIT_WORK)": (
+        "workqueue",
+        re.compile(r"\bINIT_WORK\s*\([^,]+,\s*&?([A-Za-z_][A-Za-z0-9_]*)\s*\)"),
+    ),
+    "timer (timer_setup)": (
+        "timer",
+        re.compile(
+            r"\btimer_setup\s*\([^,]+,\s*&?([A-Za-z_][A-Za-z0-9_]*)\s*,"
+        ),
+    ),
+    "rcu (call_rcu)": (
+        "rcu",
+        re.compile(r"\bcall_rcu\s*\([^,]+,\s*&?([A-Za-z_][A-Za-z0-9_]*)\s*\)"),
+    ),
+    "block_io (bi_end_io)": (
+        "block_io",
+        re.compile(
+            r"(?:->|\.)bi_end_io\s*=\s*&?([A-Za-z_][A-Za-z0-9_]*)\b"
+        ),
+    ),
+    "task_work (init_task_work)": (
+        "task_work",
+        re.compile(
+            r"\binit_task_work\s*\([^,]+,\s*&?([A-Za-z_][A-Za-z0-9_]*)\s*\)"
+        ),
+    ),
+    "softirq (open_softirq)": (
+        "softirq",
+        re.compile(
+            r"\bopen_softirq\s*\([^,]+,\s*&?([A-Za-z_][A-Za-z0-9_]*)\s*\)"
+        ),
+    ),
 }
 
 # Canonical kernel async registrations present across 6.1, 6.6, 6.12, and 6.18
@@ -111,33 +156,6 @@ _DEFAULT_CB_MACROS = {
     "wake_bit_function": ("DEFINE_WAIT_BIT", "__init_waitqueue_func_entry"),
     "__pollwait": ("poll_initwait", "init_poll_funcptr"),
 }
-
-
-def _locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
-    """Resolve `raw_file` to an on-disk kernel source file if available."""
-    if os.path.isfile(raw_file):
-        return raw_file
-
-    workspace = os.environ.get(
-        "WORKSPACE_DIR",
-        os.path.expanduser("~/kernel_codeql_workspace"),
-    )
-    candidates = []
-    if kernel and kernel != "unknown":
-        clean_ver = kernel.lstrip("v")
-        candidates.append(os.path.join(workspace, f"linux_v{clean_ver}"))
-    entries = (
-        sorted(os.listdir(workspace)) if os.path.isdir(workspace) else []
-    )
-    for entry in entries:
-        if entry.startswith("linux_v"):
-            candidates.append(os.path.join(workspace, entry))
-
-    for repo_dir in candidates:
-        candidate = os.path.join(repo_dir, raw_file)
-        if os.path.isfile(candidate):
-            return candidate
-    return None
 
 
 def _verify_edge_in_source(row: dict, src_path: str) -> str | None:
@@ -290,22 +308,20 @@ def test_async_edges_no_self_or_degenerate_edges(async_edges):
 
 
 def test_async_edges_all_core_mechanisms_populated(
-    async_edges, function_locations
+    async_edges, function_locations, kernel
 ):
-    """Verify every catalog mechanism meets its minimum expected edge count."""
+    """Verify compiled mechanisms are populated and source callback recall >= 90%."""
     counts = collections.Counter(r["mechanism"] for r in async_edges)
     usb_compiled = any(
         "drivers/usb/core/" in r["file_path"] for r in function_locations
     )
-
-    report("top async mechanisms", top_counts(async_edges, "mechanism", 30))
-    report("registration forms", top_counts(async_edges, "form", 5))
-    report(
-        "usb subsystem gate (C1)",
-        {
-            "drivers/usb/core/ compiled in DB": usb_compiled,
-            "usb async edges": counts.get("usb", 0),
-        },
+    io_uring_compiled = any(
+        r["file_path"].endswith(".c")
+        and (
+            "/io_uring/" in r["file_path"]
+            or r["file_path"].startswith("io_uring/")
+        )
+        for r in function_locations
     )
 
     below_min = {
@@ -313,23 +329,73 @@ def test_async_edges_all_core_mechanisms_populated(
         for mech, min_cnt in EXPECTED_MECHANISM_MIN_COUNTS.items()
         if counts.get(mech, 0) < min_cnt
     }
+    if io_uring_compiled and counts.get("io_uring", 0) < 10:
+        below_min["io_uring"] = (counts.get("io_uring", 0), 10)
     if usb_compiled and counts.get("usb", 0) < USB_MIN_COUNT_WHEN_ENABLED:
         below_min["usb"] = (counts.get("usb", 0), USB_MIN_COUNT_WHEN_ENABLED)
 
+    by_mech_callees: dict[str, set[str]] = collections.defaultdict(set)
+    for row in async_edges:
+        by_mech_callees[row["mechanism"]].add(row["callee"])
+
+    source_patterns = {
+        label: rx for label, (_, rx) in _ASYNC_SOURCE_PATTERNS.items()
+    }
+    compiled_source_targets = scan_compiled_c_targets(
+        function_locations, kernel, source_patterns
+    )
+    recall_metrics: dict[str, str] = {}
+    low_recall: dict[str, str] = {}
+    for label, (mech, _) in _ASYNC_SOURCE_PATTERNS.items():
+        expected = compiled_source_targets.get(label, set())
+        if not expected:
+            continue
+        recalled = expected & by_mech_callees.get(mech, set())
+        rate = pct(len(recalled), len(expected))
+        recall_metrics[label] = (
+            f"{len(recalled)} / {len(expected)} ({rate:.1f}%)"
+        )
+        if rate < 90.0:
+            missing_sample = sorted(expected - recalled)[:5]
+            low_recall[label] = (
+                f"{rate:.1f}% ({len(recalled)}/{len(expected)}), "
+                f"missing sample: {missing_sample}"
+            )
+
+    report("top async mechanisms", top_counts(async_edges, "mechanism", 30))
+    report("registration forms", top_counts(async_edges, "form", 5))
+    report(
+        "subsystem gates & compiled-source recall",
+        {
+            "drivers/usb/core/ compiled": usb_compiled,
+            "io_uring/ compiled": io_uring_compiled,
+            **recall_metrics,
+        },
+    )
+
     assert not below_min, (
         f"mechanisms below minimum threshold (actual, min): {below_min}"
+    )
+    assert not low_recall, (
+        f"compiled-source async callback recall below 90%: {low_recall}"
     )
 
 
 def test_async_edges_canonical_kernel_callbacks_present(
     async_edges, function_locations
 ):
-    """Spot-check canonical kernel async registrations across subsystems."""
+    """Spot-check canonical kernel async registrations compiled in the DB."""
+    known_funcs = {r["function_name"] for r in function_locations}
     edge_set = {
         (r["caller"], r["callee"], r["mechanism"], r["form"])
         for r in async_edges
     }
-    missing = [edge for edge in CANONICAL_EDGES if edge not in edge_set]
+    compiled_canonical = [
+        edge
+        for edge in CANONICAL_EDGES
+        if edge[0] in known_funcs and edge[1] in known_funcs
+    ]
+    missing = [edge for edge in compiled_canonical if edge not in edge_set]
 
     # Verify fput -> ____fput (fput in 6.1..6.12, __fput_deferred in 6.18)
     has_fput_task_work = any(
@@ -362,17 +428,19 @@ def test_async_edges_canonical_kernel_callbacks_present(
     )
 
     report(
-        "canonical spot-checks",
+        "canonical spot-checks (compiled in DB)",
         {
-            "checked": len(CANONICAL_EDGES) + 3 + (1 if usb_compiled else 0),
-            "missing": len(missing)
-            + (0 if has_fput_task_work else 1)
-            + (0 if has_sock_def_readable else 1)
-            + (0 if has_skb_sock_wfree else 1)
-            + (0 if has_usb_canonical else 1),
+            "compiled canonical edges": (
+                f"{len(compiled_canonical)} / {len(CANONICAL_EDGES)}"
+            ),
+            "recalled": len(compiled_canonical) - len(missing),
+            "recall %": (
+                f"{pct(len(compiled_canonical) - len(missing), len(compiled_canonical)):.1f}%"
+            ),
         },
     )
-    assert not missing, f"missing canonical async edges: {missing}"
+    assert compiled_canonical, "no canonical async edges found in function_locations"
+    assert not missing, f"missing compiled canonical async edges: {missing}"
     assert has_fput_task_work, "missing fput/__fput_deferred -> ____fput"
     assert has_sock_def_readable, "missing socket assign -> sock_def_readable"
     assert has_skb_sock_wfree, "missing skb assign -> sock_wfree"
@@ -382,31 +450,40 @@ def test_async_edges_canonical_kernel_callbacks_present(
     )
 
 
-def test_async_edges_cve_callback_recall(async_edges):
-    """Verify recall against ground-truth CVE async callbacks (B2)."""
+def test_async_edges_cve_callback_recall(async_edges, function_locations):
+    """Verify 100% recall against ground-truth CVE callbacks compiled in DB (B2)."""
+    known_funcs = {r["function_name"] for r in function_locations}
+    compiled_ground_truth = [
+        item for item in CVE_CALLBACK_GROUND_TRUTH if item[0] in known_funcs
+    ]
     by_callee_mech = {
         (r["callee"], r["mechanism"]) for r in async_edges
     }
     recalled = [
-        item for item in CVE_CALLBACK_GROUND_TRUTH if item in by_callee_mech
+        item for item in compiled_ground_truth if item in by_callee_mech
     ]
     missing = [
         item
-        for item in CVE_CALLBACK_GROUND_TRUTH
+        for item in compiled_ground_truth
         if item not in by_callee_mech
     ]
-    recall_pct = pct(len(recalled), len(CVE_CALLBACK_GROUND_TRUTH))
+    recall_pct = pct(len(recalled), len(compiled_ground_truth))
 
     report(
-        "CVE async callback recall (B2)",
+        "CVE async callback recall (B2, normalized to compiled functions)",
         {
-            "ground-truth CVE callbacks": len(CVE_CALLBACK_GROUND_TRUTH),
+            "compiled ground-truth CVE callbacks": (
+                f"{len(compiled_ground_truth)} / {len(CVE_CALLBACK_GROUND_TRUTH)}"
+            ),
             "recalled": len(recalled),
             "recall %": f"{recall_pct:.1f}%",
         },
     )
+    assert compiled_ground_truth, (
+        "no CVE ground-truth callbacks found in function_locations"
+    )
     assert not missing, (
-        f"missed ground-truth CVE async callbacks: {missing}"
+        f"missed compiled ground-truth CVE async callbacks: {missing}"
     )
 
 

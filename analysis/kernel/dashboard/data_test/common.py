@@ -167,6 +167,81 @@ def locate_kernel_source_file(raw_file: str, kernel: str) -> str | None:
     return None
 
 
+def scan_compiled_c_targets(
+    function_locations: list[dict],
+    kernel: str,
+    patterns: dict[str, str | tuple[str, str] | object],
+    path_filter: dict[str, str] | None = None,
+) -> dict[str, set[str]]:
+    """Scan on-disk compiled .c files for C callback/registration patterns.
+
+    Only scans `.c` files present in `function_locations` (i.e. actually
+    compiled by the active `.config`), and only retains captured identifiers
+    that exist in `function_locations`. A pattern value may be a regex string,
+    a compiled `re.Pattern`, or a `(block_regex, item_regex)` tuple (where
+    `block_regex` matches an enclosing C declaration with `re.DOTALL` and
+    `item_regex` extracts identifiers inside each matched block).
+    """
+    import re
+
+    known_funcs = {r["function_name"] for r in function_locations}
+    compiled_c_files = sorted(
+        {
+            r["file_path"]
+            for r in function_locations
+            if r.get("file_path", "").endswith(".c")
+        }
+    )
+    if not compiled_c_files:
+        return {}
+
+    probe = locate_kernel_source_file(compiled_c_files[0], kernel)
+    if not probe:
+        return {}
+
+    compiled_res: dict[str, object] = {}
+    for k, pat in patterns.items():
+        if isinstance(pat, tuple):
+            compiled_res[k] = (
+                re.compile(pat[0], re.DOTALL),
+                re.compile(pat[1]),
+            )
+        elif isinstance(pat, str):
+            compiled_res[k] = re.compile(pat)
+        else:
+            compiled_res[k] = pat
+
+    results: dict[str, set[str]] = {k: set() for k in patterns}
+
+    for raw_path in compiled_c_files:
+        src_path = locate_kernel_source_file(raw_path, kernel)
+        if not src_path:
+            continue
+        rel = canonical_path(raw_path)
+        try:
+            with open(src_path, encoding="utf-8", errors="ignore") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        for key, rx in compiled_res.items():
+            req_sub = (path_filter or {}).get(key)
+            if req_sub and not rel.startswith(req_sub):
+                continue
+            if isinstance(rx, tuple):
+                block_rx, item_rx = rx
+                for block_match in block_rx.finditer(text):
+                    for match in item_rx.finditer(block_match.group(0)):
+                        fn = match.group(1)
+                        if fn in known_funcs:
+                            results[key].add(fn)
+            else:
+                for match in rx.finditer(text):
+                    fn = match.group(1)
+                    if fn in known_funcs:
+                        results[key].add(fn)
+    return results
+
+
 # --------------------------------------------------------------------------- #
 # reporting: measurements must be visible even when checks pass
 # --------------------------------------------------------------------------- #

@@ -1,4 +1,4 @@
-"""Data-quality checks for `all-calls.ql` SARIF output."""
+"""Data-quality checks for `all-calls.ql` CSV and SQLite output."""
 from __future__ import annotations
 
 from common import load_baseline, report
@@ -9,10 +9,9 @@ def test_all_calls_edges_and_locations_populated(all_calls_stats, kernel):
     """Verify call edges and locations meet minimum volume thresholds."""
     edges = all_calls_stats["edges"]
     locations = all_calls_stats["locations"]
-    results = all_calls_stats["results"]
     report(
         f"all-calls graph [{kernel}] ({all_calls_stats['source']})",
-        {"results": results, "locations": locations, "edges": edges},
+        {"locations": locations, "edges": edges},
     )
     assert edges >= 300000, (
         f"only {edges:,} callgraph edges in all-calls (expected >= 300,000)"
