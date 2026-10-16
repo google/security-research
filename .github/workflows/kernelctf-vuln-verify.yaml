@@ -19,6 +19,9 @@ on:
         required: false
         default: true
 permissions: {}
+concurrency:
+  group: kernelctf-pr-${{ github.event.pull_request.number || inputs.prNumber || github.run_id }}
+  cancel-in-progress: true
 jobs:
   vuln-verify:
     permissions: {}
@@ -50,6 +53,11 @@ jobs:
           if [ $(echo "$POC_FOLDER" | grep -c .) -ne 1 ]; then
             echo "Exactly one PoC folder must be found in pocs/linux/kernelctf/, but found:"
             echo "${POC_FOLDER:-<none>}"
+            exit 1
+          fi
+
+          if [[ ! "$POC_FOLDER" =~ ^pocs/linux/kernelctf/CVE-[0-9]+-[0-9]+(_[a-z0-9]+)+$ ]]; then
+            echo "::error::determine_folder: invalid submission folder '$POC_FOLDER'"
             exit 1
           fi
 
@@ -129,7 +137,9 @@ jobs:
 
       - name: Run vuln-verify
         id: vuln_verify
-        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/${{ steps.determine_folder.outputs.folder }}"
+        env:
+          POC_FOLDER: ${{ steps.determine_folder.outputs.folder }}
+        run: ./kernelctf/vuln-verify/verify.py --verbose-build "pr/$POC_FOLDER"
 
       - name: Upload logs
         if: always() && steps.vuln_verify.conclusion != 'skipped'
