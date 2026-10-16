@@ -144,6 +144,12 @@ def check_hash(hash):
         fatal(f"Error: invalid commit hash '{hash}'")
     return hash
 
+def check_sub_path(exp_dir, rel_path):
+    p = os.path.join(exp_dir, rel_path)
+    if not os.path.realpath(p).startswith(os.path.realpath(exp_dir) + os.sep) or (os.path.islink(p) and not os.path.isfile(p)):
+        fatal(f"Error: submission path '{p}' resolves outside '{exp_dir}' or is an invalid symlink")
+    return p
+
 def get_stable_commit(commit_hash, kernel_ver):
     return check_hash(cache("stable_commits", f"{commit_hash}_{kernel_ver}", lambda:
                  sql_value_or_none(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"})))
@@ -162,7 +168,7 @@ builds = []
 all_success = True
 for i_exp, exp_dir in enumerate(args.exploit_paths):
     # WARNING: metadata is not trusted and needs to be sanitized
-    metadata = json.loads(readTextFile(f"{exp_dir}/metadata.json"))
+    metadata = json.loads(readTextFile(check_sub_path(exp_dir, "metadata.json")))
     for x in metadata["submission_ids"]:
         if not re.match(r"^exp\d+$", x):
             fatal(f"Error: invalid exp_id '{x}'")
@@ -279,7 +285,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             build_targets.extend([ups_name_before_patch, ups_name_after_patch])
 
         if args.verify:
-            exp_fn = f"{exp_dir}/exploit/{orig_target}/exploit"
+            exp_fn = check_sub_path(exp_dir, f"exploit/{orig_target}/exploit")
             shutil.copyfile(exp_fn, f"{IMAGE_RUNNER_DIR}/rootfs/exp")
 
             if not os.path.isfile(f"builds/{target}_bzImage"):

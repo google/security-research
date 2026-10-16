@@ -26,7 +26,7 @@ if args.submission_dir:
     print(f"[-] Using explicit submission directory: {submission_path}")
     subDirName = os.path.basename(submission_path)
     submissionFolder = submission_path if submission_path.endswith("/") else f"{submission_path}/"
-    prFiles = [f for f in glob.glob(f"{submissionFolder}**", recursive=True) if os.path.isfile(f)]
+    prFiles = [f for f in glob.glob(f"{submissionFolder}**", recursive=True) if os.path.isfile(f) or os.path.islink(f)]
 else:
     print(f"[-] Params: mergeInto = {args.mergeInto}")
     mergeBase = run(f"git merge-base HEAD {args.mergeInto}")[0]
@@ -38,6 +38,9 @@ else:
     submissionFolder = f"{POC_FOLDER}{subDirName}/"
 
 checkAtLeastOne(prFiles, "There are no files in the submission")
+realSubmissionFolder = os.path.realpath(submissionFolder) + os.sep
+prFiles = checkList(prFiles, lambda f: os.path.realpath(f).startswith(realSubmissionFolder) and (not os.path.islink(f) or os.path.isfile(f)),
+    "Symlinks pointing outside the submission folder or broken symlinks are not allowed")
 checkRegex(subDirName, r"^CVE-\d+-\d+(_lts|_cos|_mitigation|_hardened|_android\d+)+(_\d+)?$", f"The submission folder name is invalid (`{subDirName}`)")
 
 print(f"[-] Processing submission... Folder = {subDirName}")
