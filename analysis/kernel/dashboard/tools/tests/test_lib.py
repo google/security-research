@@ -581,3 +581,70 @@ class TestLibPrivilege(BaseToolsTestCase):
             acq_gates[msr_key][0]["gate_scope"], "open_acquisition"
         )
         self.assertNotIn(shared_key, acq_gates)
+
+    def test_open_helper_acquisition_gate_propagation(self):
+        """Verify 1-hop permission helper called by .open propagates gates."""
+        self.insert_rows(
+            function_locations=[
+                ("check_kmsg_perm", "kernel/kmsg.c", 10, 30),
+                ("kmsg_open", "kernel/kmsg.c", 40, 60),
+                ("kmsg_read", "kernel/kmsg.c", 70, 90),
+            ],
+            locations=[
+                (90, "call to check_kmsg_perm", "kernel/kmsg.c", 45),
+                (91, "check_kmsg_perm", "kernel/kmsg.c", 10),
+            ],
+            edges=[
+                (90, 91, "callgraph-all"),
+            ],
+            conditions=[
+                (
+                    "capable",
+                    "kernel/kmsg.c:15:7:15:13",
+                    "kernel/kmsg.c:15:2:16:16",
+                    "CAP_SYSLOG",
+                    "__guarded_span__:init_user_ns",
+                    "kernel/kmsg.c:15:1:29:1",
+                ),
+            ],
+            ops_targets=[
+                (
+                    "kernel/kmsg.c:100:1:110:1",
+                    "file_operations",
+                    "open",
+                    "kmsg_open",
+                    "kernel/kmsg.c",
+                    40,
+                    60,
+                    "fs/unpriv.c",
+                    24,
+                    10,
+                    30,
+                ),
+                (
+                    "kernel/kmsg.c:100:1:110:1",
+                    "file_operations",
+                    "read",
+                    "kmsg_read",
+                    "kernel/kmsg.c",
+                    70,
+                    90,
+                    "fs/unpriv.c",
+                    25,
+                    10,
+                    30,
+                ),
+            ],
+        )
+        _, func_gates, _ = privilege.load_condition_gates(self.conn)
+        ops_acq = privilege.load_ops_acquisition_gates(self.conn, func_gates)
+        cb_key = ("kmsg_read", "kernel/kmsg.c", "file_operations->read")
+        self.assertIn(cb_key, ops_acq)
+        self.assertIn(
+            "kmsg_open->check_kmsg_perm (file_operations.open)",
+            ops_acq[cb_key][0]["call"],
+        )
+        self.assertEqual(
+            privilege.format_capability("capable", "34"),
+            "capable(CAP_SYSLOG)",
+        )

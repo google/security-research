@@ -23,10 +23,12 @@ from tools.lib.callgraph import (
     get_reachable_entries,
     get_reachable_syscalls,
     is_entry_root,
+    is_node_visited,
     is_syscall_root,
     iter_pruned_callers,
     load_entry_roots,
     load_target_reachable_set,
+    mark_node_visited,
     open_databases,
     select_eval_roots,
 )
@@ -72,6 +74,17 @@ __all__ = [
 ]
 
 
+def _matched_root_kind(
+    curr_fn: str,
+    target_syscall: Optional[str],
+    entry_roots: Dict[str, str],
+) -> Optional[str]:
+    """Return 'syscall' or entry_kind if curr_fn is a valid search root."""
+    if is_syscall_root(curr_fn, target_syscall):
+        return "syscall"
+    return is_entry_root(curr_fn, target_syscall, entry_roots)
+
+
 def find_shortest_path(
     conn: sqlite3.Connection,
     target_fn: str,
@@ -80,32 +93,34 @@ def find_shortest_path(
     **options: Any,
 ) -> Optional[List[Dict[str, Any]]]:
     """Perform a backward BFS from target_fn to target_syscall or any root."""
-    target_syscall: Optional[str] = options.get("target_syscall")
-    reachable_set = load_target_reachable_set(conn, target_syscall)
+    reachable_set = load_target_reachable_set(
+        conn, options.get("target_syscall")
+    )
     entry_roots = load_entry_roots(conn)
+    clean_tgt = clean_file_path(target_file)
     queue = deque([(
         target_fn,
-        clean_file_path(target_file),
+        clean_tgt,
         [
             make_path_step(
                 conn,
                 options.get("syzk_conn"),
                 target_fn,
-                clean_file_path(target_file),
+                clean_tgt,
                 target_line,
             )
         ],
     )])
-    visited: Set[str] = {target_fn}
+    visited: Set[Any] = set()
+    mark_node_visited(visited, target_fn, clean_tgt)
 
     while queue:
         curr_fn, curr_file, path = queue.popleft()
-        if is_syscall_root(curr_fn, target_syscall):
-            path[0]["entry_kind"] = "syscall"
-            return path
-        entry_kind = is_entry_root(curr_fn, target_syscall, entry_roots)
-        if entry_kind:
-            path[0]["entry_kind"] = entry_kind
+        root_kind = _matched_root_kind(
+            curr_fn, options.get("target_syscall"), entry_roots
+        )
+        if root_kind:
+            path[0]["entry_kind"] = root_kind
             return path
         if len(path) > options.get("max_depth", 25):
             continue
@@ -117,8 +132,8 @@ def find_shortest_path(
             exclude=visited,
             target_file=curr_file,
         ):
-            if caller[0] not in visited:
-                visited.add(caller[0])
+            if not is_node_visited(visited, caller[0], caller[1]):
+                mark_node_visited(visited, caller[0], caller[1])
                 queue.append((
                     caller[0],
                     clean_file_path(caller[1]),

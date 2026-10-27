@@ -8,7 +8,9 @@
 
 import cpp
 import async_edges
+import kernel_common
 
+pragma[inline]
 string locationString(Locatable l) {
   result = l.getFile().toString() + ":" +
     l.getLocation().getStartLine().toString() + ":" +
@@ -249,6 +251,8 @@ where
   // 3. Body and identifier validity
   target.getBlock() = targetBody and
   caller.getBlock() = callerBody and
+  not nonRuntimeKernelFile(targetBody.getFile()) and
+  not nonRuntimeKernelFile(callerBody.getFile()) and
   regField.getName() != "" and
   target.getName() != "" and
   parentName = opsContainerName(regField) and
@@ -260,9 +264,9 @@ select
   regField.getName(),
   target.getName(),
   targetBody.getFile().toString() as target_file,
-  targetBody.getLocation().getStartLine() as target_start,
+  blockStartLine(target, targetBody) as target_start,
   targetBody.getLocation().getEndLine() as target_end,
   ec.getFile().toString() as exprcall_file,
   ec.getLocation().getStartLine() as exprcall_line,
-  callerBody.getLocation().getStartLine() as exprcall_parent_start,
+  blockStartLine(caller, callerBody) as exprcall_parent_start,
   callerBody.getLocation().getEndLine() as exprcall_parent_end

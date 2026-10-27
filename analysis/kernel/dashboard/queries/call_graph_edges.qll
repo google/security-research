@@ -4,6 +4,7 @@
  */
 
 import cpp
+import kernel_common
 import semmle.code.cpp.pointsto.CallGraph
 import semmle.code.cpp.ir.dataflow.ResolveCall
 import semmle.code.cpp.dataflow.new.TaintTracking
@@ -76,22 +77,39 @@ predicate exprCallEdge(ExprCall a, Function b) {
 predicate notInteresting(Function fun) {
   fun.getName().matches("__compiletime_assert_%") or
   fun.getName().matches("__builtin_%") or
-  not exists(fun.getBlock()) or
-  fun.getBlock().isEmpty()
+  not exists(BlockStmt b |
+    b = fun.getBlock() and
+    not b.isEmpty() and
+    not nonRuntimeKernelFile(b.getLocation().getFile())
+  )
 }
 
+cached
 predicate edges(ControlFlowNode a, ControlFlowNode b) {
-  exprCallEdge(a, b) and not notInteresting(b)
+  exprCallEdge(a, b) and
+  not nonRuntimeKernelFile(a.getLocation().getFile()) and
+  not notInteresting(b)
   or
-  a = b.(ExprCall).getEnclosingFunction() and not notInteresting(a)
+  a = b.(ExprCall).getEnclosingFunction() and
+  not nonRuntimeKernelFile(b.getLocation().getFile()) and
+  not notInteresting(a)
   or
-  a = b.(FunctionCall).getEnclosingFunction() and not notInteresting(a)
+  a = b.(FunctionCall).getEnclosingFunction() and
+  not nonRuntimeKernelFile(b.getLocation().getFile()) and
+  not notInteresting(a)
   or
-  a.(FunctionCall).getTarget() = b and not notInteresting(b)
+  a.(FunctionCall).getTarget() = b and
+  not nonRuntimeKernelFile(a.getLocation().getFile()) and
+  not notInteresting(b)
   or
-  a.(ExprTargetCallEdge).(Function) = b.(Call).getEnclosingFunction()
+  a.(ExprTargetCallEdge).(Function) = b.(Call).getEnclosingFunction() and
+  not nonRuntimeKernelFile(b.getLocation().getFile())
   or
-  a.(ExprSourceCallEdge).getAnEdgeTarget() = b.(ExprTargetCallEdge)
+  a.(ExprSourceCallEdge).getAnEdgeTarget() = b.(ExprTargetCallEdge) and
+  not nonRuntimeKernelFile(a.getLocation().getFile())
   or
-  b = resolveCall(a) and not notInteresting(b)
+  b = resolveCall(a) and
+  not nonRuntimeKernelFile(a.getLocation().getFile()) and
+  not notInteresting(b)
 }
+

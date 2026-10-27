@@ -432,6 +432,87 @@ class TestFindPaths(BaseToolsTestCase):
         self.assertEqual(callers[0][3], 2507)
         self.assertEqual(callers[0][4], "direct")
 
+    def test_colliding_static_function_names_in_path(self):
+        """Verify two distinct static functions sharing a name do not prune."""
+        cur = self.conn.cursor()
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("do_helper", "fs/layer1.c", 10, 30),
+                ("do_helper", "fs/layer2.c", 10, 30),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO syscall_node VALUES (?, ?, ?, ?)",
+            [
+                ("__do_sys_foo", "do_helper", "fs/read.c:10", "fs/layer1.c:10"),
+                ("__do_sys_foo", "do_helper", "fs/read.c:10", "fs/layer2.c:10"),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO locations (id, message, uri, startLine) VALUES"
+            " (?, ?, ?, ?)",
+            [
+                (40, "call to do_helper", "fs/read.c", 25),
+                (41, "do_helper", "fs/layer1.c", 10),
+                (42, "call to do_helper", "fs/layer1.c", 20),
+                (43, "do_helper", "fs/layer2.c", 10),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO edges (source_location_id, target_location_id,"
+            " rule_id) VALUES (?, ?, ?)",
+            [
+                (1, 40, "callgraph-all"),
+                (40, 41, "callgraph-all"),
+                (41, 42, "callgraph-all"),
+                (42, 43, "callgraph-all"),
+            ],
+        )
+        self.conn.commit()
+
+        _, paths = find_paths.find_paths_to_line(
+            self.db_path,
+            "fs/layer2.c",
+            15,
+            target_syscall="__do_sys_foo",
+        )
+        self.assertIn("__do_sys_foo", paths)
+        p = paths["__do_sys_foo"]
+        self.assertEqual(len(p), 3)
+        self.assertEqual(p[1]["file"], "fs/layer1.c")
+        self.assertEqual(p[2]["file"], "fs/layer2.c")
+
+    def test_overlapping_forward_prototype_span_resolution(self):
+        """Ensure tightest enclosing function wins when spans overlap."""
+        self.insert_rows(
+            function_locations=[
+                ("__ia32_sys_copy_file_range", "fs/read_write.c", 260, 1546),
+                ("vfs_read", "fs/read_write.c", 450, 479),
+                ("msr_read", "arch/x86/kernel/msr.c", 60, 95),
+            ],
+            ops_targets=[
+                (
+                    "arch/x86/kernel/msr.c:230:1:238:2",
+                    "file_operations",
+                    "read",
+                    "msr_read",
+                    "arch/x86/kernel/msr.c",
+                    60,
+                    95,
+                    "fs/read_write.c",
+                    468,
+                    450,
+                    479,
+                ),
+            ],
+        )
+        callers = find_paths.get_callers(
+            self.conn, "msr_read", target_file="arch/x86/kernel/msr.c"
+        )
+        self.assertEqual(len(callers), 1)
+        self.assertEqual(callers[0][0], "vfs_read")
+
 
 if __name__ == "__main__":
     unittest.main()

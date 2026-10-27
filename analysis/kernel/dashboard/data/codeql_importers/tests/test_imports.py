@@ -2,7 +2,6 @@
 """Unit tests for CodeQL CSV and SARIF SQLite database importers."""
 
 from collections.abc import Callable
-import json
 import os
 import shutil
 import sqlite3
@@ -25,6 +24,7 @@ from data.codeql_importers import (
     import_macro_invocations,
     import_macros,
     import_ops_targets,
+    import_structs,
     import_syscall_node,
 )
 from data.codeql_importers.lib.utils import detect_prefix, trim_filename
@@ -858,6 +858,49 @@ class TestImportEntryNode(BaseImporterTest):
 
         row = self.fetch_one("SELECT count(*) FROM entry_node")
         self.assertEqual(row[0], 1)
+
+
+class TestImportStructs(BaseImporterTest):
+    """Tests for `import_structs.py`."""
+
+    def test_import_structs_locations_and_fields(self):
+        """Verifies importing struct_locations and struct_fields from CSV."""
+        self.write_test_csv(
+            "struct_name,file_path,start_line,end_line,byte_size,member_count,"
+            "is_anonymous,is_typedef,has_flex_member,field_name,field_path,"
+            "field_type,byte_offset,bit_offset,bit_size,is_funcptr,is_flex,"
+            "array_len\n"
+            '"msg_msg","/work/linux/include/linux/msg.h",9,15,48,6,0,0,0,'
+            '"m_list","m_list","struct list_head",0,-1,-1,0,0,-1\n'
+            '"msg_msg","/work/linux/include/linux/msg.h",9,15,48,6,0,0,0,'
+            '"m_type","m_type","long",16,-1,-1,0,0,-1\n'
+            '"bad_row","only_two_cols"\n'
+        )
+
+        count = import_structs.import_structs_to_db(self.csv_path, self.db_path)
+        self.assertEqual(count, 2)
+
+        loc_rows = self.fetch_all(
+            "SELECT struct_name, file_path, start_line, end_line, byte_size, "
+            "member_count FROM struct_locations"
+        )
+        self.assertEqual(
+            loc_rows,
+            [("msg_msg", "include/linux/msg.h", 9, 15, 48, 6)],
+        )
+
+        field_rows = self.fetch_all(
+            "SELECT field_name, byte_offset, bit_offset, array_len "
+            "FROM struct_fields ORDER BY byte_offset ASC"
+        )
+        self.assertEqual(
+            field_rows,
+            [("m_list", 0, None, None), ("m_type", 16, None, None)],
+        )
+
+    def test_cli_missing_csv(self):
+        """Verifies missing CSV handling for `import_structs`."""
+        self.assert_missing_csv_exits("import_structs.py", import_structs.main)
 
 
 if __name__ == "__main__":

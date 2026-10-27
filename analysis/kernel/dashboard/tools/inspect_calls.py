@@ -15,28 +15,40 @@ Answers the fundamental developer questions during bug triage and navigation:
 """
 
 import argparse
-from collections import defaultdict
 import json
 import sqlite3
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Tuple
 
 from tools.lib.callgraph import (
     clean_file_path,
     ensure_indexes,
     get_enclosing_function,
     get_function_by_name,
-    is_syscall_root,
-    open_databases,
-    query_direct_edge_rows,
+    get_functions_by_name,
+)
+from tools.lib.inspector import (
+    build_callee_tree,
+    build_caller_tree,
+    check_is_syscall_root,
+    get_callees_for_function,
+    get_callers_for_function,
+    inspect_function_calls,
 )
 from tools.lib.metadata import (
     add_common_cli_args,
     handle_common_cli_setup,
     is_line_covered_by_syzkaller,
+    verify_db_and_indexes,
+)
+from tools.lib.ops import (
+    format_ops_text,
+    inspect_function_ops,
+    inspect_function_ops_with_conn,
+    inspect_ops_slot,
+    inspect_ops_slot_with_conn,
 )
 from tools.lib.privilege import (
-    GateList,
     get_call_site_gates,
     load_condition_gates,
 )
@@ -46,6 +58,7 @@ __all__ = [
     "ensure_indexes",
     "get_enclosing_function",
     "get_function_by_name",
+    "get_functions_by_name",
     "is_line_covered_by_syzkaller",
     "check_is_syscall_root",
     "load_condition_gates",
@@ -55,479 +68,15 @@ __all__ = [
     "get_callees_for_function",
     "build_callee_tree",
     "inspect_function_calls",
+    "inspect_ops_slot",
+    "inspect_ops_slot_with_conn",
+    "inspect_function_ops",
+    "inspect_function_ops_with_conn",
+    "format_ops_text",
     "format_summary",
     "format_list",
     "main",
 ]
-
-
-def check_is_syscall_root(fn_name: str) -> bool:
-    """Check whether fn_name is a syscall entry point."""
-    return is_syscall_root(fn_name, None)
-
-
-def _site_annotations(
-    caller_fn: str,
-    clean_file: str,
-    site_line: Optional[int],
-    options: Dict[str, Any],
-) -> Tuple[GateList, bool]:
-    """Compute capability gates and Syzkaller coverage for a call site."""
-    call_gates = options.get("call_gates")
-    func_gates = options.get("func_gates")
-    syzk_conn = options.get("syzk_conn")
-
-    gates: GateList = []
-    if call_gates is not None and func_gates is not None:
-        gates = get_call_site_gates(
-            call_gates,
-            func_gates,
-            clean_file,
-            site_line,
-            caller_fn=caller_fn,
-        )
-    syzk_covered = bool(
-        syzk_conn
-        and site_line
-        and is_line_covered_by_syzkaller(syzk_conn, clean_file, site_line)
-    )
-    return gates, syzk_covered
-
-
-def _query_direct_callers(
-    cur: sqlite3.Cursor,
-    function_name: str,
-    seen: Set[Tuple[str, str, int, str]],
-    options: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    """Query direct callers from CodeQL edges and locations tables."""
-    rows = query_direct_edge_rows(
-        cur, function_name, options.get("target_file")
-    )
-    results: List[Dict[str, Any]] = []
-    for row in rows:
-        if row[0].startswith("call to "):
-            continue
-        clean_file = clean_file_path(row[1])
-        key = (row[0], clean_file, row[5], "direct")
-        if key in seen:
-            continue
-        seen.add(key)
-        gates, syzk_covered = _site_annotations(
-            row[0], clean_file, row[5], options
-        )
-        results.append({
-            "caller": row[0],
-            "file": clean_file,
-            "line": row[2],
-            "call_site_line": row[5],
-            "call_type": "direct",
-            "dispatch": None,
-            "is_syscall": check_is_syscall_root(row[0]),
-            "gates": gates,
-            "syzk_covered": syzk_covered,
-        })
-    return results
-
-
-def _resolve_indirect_caller_loc(
-    cur: sqlite3.Cursor, expr_file: str, expr_line: int
-) -> Tuple[str, str, int]:
-    """Resolve enclosing function for an indirect call expression site."""
-    clean_expr = clean_file_path(expr_file)
-    cur.execute(
-        "SELECT function_name, file_path, start_line"
-        " FROM function_locations"
-        " WHERE (file_path = ? OR file_path LIKE ?)"
-        " AND ? BETWEEN start_line AND end_line LIMIT 1",
-        (clean_expr, f"%/{clean_expr}", expr_line),
-    )
-    fn_row = cur.fetchone()
-    if fn_row:
-        return fn_row[0], clean_file_path(fn_row[1]), fn_row[2]
-    return "unknown", clean_expr, expr_line
-
-
-def _query_indirect_callers(
-    cur: sqlite3.Cursor,
-    function_name: str,
-    seen: Set[Tuple[str, str, int, str]],
-    options: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    """Query indirect function-pointer callers from ops_targets table."""
-    target_file = options.get("target_file")
-    clean_tgt = clean_file_path(target_file) if target_file else None
-    cur.execute(
-        "SELECT DISTINCT o.parent, o.field, o.target_file, o.exprcall_file,"
-        " o.exprcall_line FROM ops_targets o WHERE o.target = ?",
-        (function_name,),
-    )
-    results: List[Dict[str, Any]] = []
-    for row in cur.fetchall():
-        if clean_tgt and row[2] and clean_file_path(row[2]) != clean_tgt:
-            continue
-        caller_fn, caller_file, caller_line = _resolve_indirect_caller_loc(
-            cur, row[3], row[4]
-        )
-        dispatch = f"{row[0]}->{row[1]}"
-        key = (caller_fn, caller_file, row[4], dispatch)
-        if key in seen:
-            continue
-        seen.add(key)
-        gates, syzk_covered = _site_annotations(
-            caller_fn, caller_file, row[4], options
-        )
-        results.append({
-            "caller": caller_fn,
-            "file": caller_file,
-            "line": caller_line,
-            "call_site_line": row[4],
-            "call_type": "indirect",
-            "dispatch": dispatch,
-            "is_syscall": check_is_syscall_root(caller_fn),
-            "gates": gates,
-            "syzk_covered": syzk_covered,
-        })
-    return results
-
-
-def get_callers_for_function(
-    conn: sqlite3.Connection,
-    function_name: str,
-    **options: Any,
-) -> List[Dict[str, Any]]:
-    """Find direct callers and indirect ops dispatchers targeting function."""
-    cur = conn.cursor()
-    seen: Set[Tuple[str, str, int, str]] = set()
-    results = _query_direct_callers(cur, function_name, seen, options)
-    results.extend(_query_indirect_callers(cur, function_name, seen, options))
-    results.sort(
-        key=lambda x: (
-            x["call_type"],
-            x["caller"],
-            x.get("call_site_line") or 0,
-        )
-    )
-    return results
-
-
-def build_caller_tree(
-    conn: sqlite3.Connection,
-    target_fn: str,
-    **options: Any,
-) -> List[Dict[str, Any]]:
-    """Recursively traverse callers up to max_depth hops."""
-    max_depth: int = options.get("max_depth", 1)
-    current_depth: int = options.get("current_depth", 1)
-    visited: Set[str] = (
-        set(options["visited"]) if options.get("visited") else set()
-    )
-    if target_fn in visited or current_depth > max_depth:
-        return []
-
-    visited.add(target_fn)
-    sub_opts = {
-        k: v
-        for k, v in options.items()
-        if k in ("call_gates", "func_gates", "syzk_conn")
-    }
-    callers = get_callers_for_function(
-        conn,
-        target_fn,
-        target_file=options.get("target_file"),
-        **sub_opts,
-    )
-
-    for c in callers:
-        c["depth"] = current_depth
-        if current_depth < max_depth:
-            c["callers"] = build_caller_tree(
-                conn,
-                c["caller"],
-                target_file=c.get("file"),
-                max_depth=max_depth,
-                current_depth=current_depth + 1,
-                visited=set(visited),
-                **sub_opts,
-            )
-        else:
-            c["callers"] = []
-
-    return callers
-
-
-def _query_direct_callees(
-    cur: sqlite3.Cursor,
-    function_name: str,
-    clean_file: str,
-    span: Tuple[int, int],
-    options: Dict[str, Any],
-) -> Dict[int, List[Dict[str, Any]]]:
-    """Query direct outgoing calls made inside function_name's line span."""
-    cur.execute(
-        "SELECT DISTINCT s.startLine AS call_site_line,"
-        " t.message AS callee_name, t.uri AS callee_file,"
-        " t.startLine AS callee_line"
-        " FROM locations s"
-        " JOIN edges e ON e.source_location_id = s.id"
-        " JOIN locations t ON e.target_location_id = t.id"
-        " WHERE (s.uri = ? OR s.uri = ?)"
-        " AND s.startLine BETWEEN ? AND ?"
-        " AND s.message LIKE 'call to %'"
-        " ORDER BY s.startLine, callee_name",
-        (clean_file, f"linux/{clean_file}", span[0], span[1]),
-    )
-    calls_by_line: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
-    seen_direct: Set[Tuple[int, str, str]] = set()
-    for cs_line, callee_fn, callee_f, callee_l in cur.fetchall():
-        clean_callee_f = clean_file_path(callee_f) if callee_f else "unknown"
-        key = (cs_line, callee_fn, clean_callee_f)
-        if key in seen_direct:
-            continue
-        seen_direct.add(key)
-        gates, syzk_covered = _site_annotations(
-            function_name, clean_file, cs_line, options
-        )
-        calls_by_line[cs_line].append({
-            "call_site_line": cs_line,
-            "call_type": "direct",
-            "callee": callee_fn,
-            "file": clean_callee_f,
-            "line": callee_l,
-            "dispatch": None,
-            "candidates": [],
-            "gates": gates,
-            "syzk_covered": syzk_covered,
-        })
-    return calls_by_line
-
-
-def _dedup_candidates(
-    candidates: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Deduplicate indirect dispatch candidates while preserving order."""
-    uniq: List[Dict[str, Any]] = []
-    seen_tgt: Set[Tuple[str, str, int]] = set()
-    for cand in candidates:
-        tgt_k = (cand["target"], cand["file"], cand["line"])
-        if tgt_k not in seen_tgt:
-            seen_tgt.add(tgt_k)
-            uniq.append(cand)
-    return uniq
-
-
-def _query_indirect_callees(
-    cur: sqlite3.Cursor,
-    function_name: str,
-    clean_file: str,
-    span: Tuple[int, int],
-    options: Dict[str, Any],
-) -> Dict[int, List[Dict[str, Any]]]:
-    """Query indirect function-pointer dispatch sites inside function_name."""
-    cur.execute(
-        "SELECT exprcall_line, parent, field, target, target_file, target_start"
-        " FROM ops_targets"
-        " WHERE (exprcall_file = ? OR exprcall_file = ?)"
-        " AND exprcall_line BETWEEN ? AND ?"
-        " ORDER BY exprcall_line, target",
-        (clean_file, f"linux/{clean_file}", span[0], span[1]),
-    )
-    grouped: Dict[Tuple[int, str, str], List[Dict[str, Any]]] = defaultdict(
-        list
-    )
-    for row in cur.fetchall():
-        grouped[(row[0], row[1], row[2])].append({
-            "target": row[3],
-            "file": clean_file_path(row[4]) if row[4] else "unknown",
-            "line": row[5],
-        })
-
-    by_line: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
-    for (expr_l, parent, field), candidates in grouped.items():
-        gates, syzk_covered = _site_annotations(
-            function_name, clean_file, expr_l, options
-        )
-        by_line[expr_l].append({
-            "call_site_line": expr_l,
-            "call_type": "indirect",
-            "callee": None,
-            "file": None,
-            "line": None,
-            "dispatch": f"{parent}->{field}",
-            "candidates": _dedup_candidates(candidates),
-            "gates": gates,
-            "syzk_covered": syzk_covered,
-        })
-    return by_line
-
-
-def get_callees_for_function(
-    conn: sqlite3.Connection,
-    function_name: str,
-    file_path: str,
-    start_line: int,
-    end_line: int,
-    **options: Any,
-) -> List[Dict[str, Any]]:
-    """Find direct calls and indirect dispatch sites inside function_name."""
-    cur = conn.cursor()
-    clean_file = clean_file_path(file_path)
-    span = (start_line, end_line)
-    calls_by_line = _query_direct_callees(
-        cur, function_name, clean_file, span, options
-    )
-    indirect_by_line = _query_indirect_callees(
-        cur, function_name, clean_file, span, options
-    )
-    for line, items in indirect_by_line.items():
-        calls_by_line[line].extend(items)
-
-    ordered_callees: List[Dict[str, Any]] = []
-    for line in sorted(calls_by_line.keys()):
-        ordered_callees.extend(calls_by_line[line])
-    return ordered_callees
-
-
-def build_callee_tree(
-    conn: sqlite3.Connection,
-    function_name: str,
-    file_path: str,
-    start_line: int,
-    end_line: int,
-    **options: Any,
-) -> List[Dict[str, Any]]:
-    """Recursively traverse callees up to max_depth hops."""
-    max_depth: int = options.get("max_depth", 1)
-    current_depth: int = options.get("current_depth", 1)
-    visited: Set[str] = (
-        set(options["visited"]) if options.get("visited") else set()
-    )
-    if function_name in visited or current_depth > max_depth:
-        return []
-
-    visited.add(function_name)
-    sub_opts = {
-        k: v
-        for k, v in options.items()
-        if k in ("call_gates", "func_gates", "syzk_conn")
-    }
-    callees = get_callees_for_function(
-        conn, function_name, file_path, start_line, end_line, **sub_opts
-    )
-
-    for c in callees:
-        c["depth"] = current_depth
-        c["callees"] = []
-        if current_depth < max_depth and c["call_type"] == "direct":
-            target_fn = c.get("callee")
-            if target_fn and target_fn not in visited:
-                fn_info = get_function_by_name(
-                    conn,
-                    target_fn,
-                    c.get("file") if c.get("file") != "unknown" else file_path,
-                )
-                if fn_info:
-                    c["callees"] = build_callee_tree(
-                        conn,
-                        fn_info[0],
-                        fn_info[1],
-                        fn_info[2],
-                        fn_info[3],
-                        max_depth=max_depth,
-                        current_depth=current_depth + 1,
-                        visited=set(visited),
-                        **sub_opts,
-                    )
-
-    return callees
-
-
-def _resolve_inspect_target(
-    conn: sqlite3.Connection,
-    function_name: Optional[str],
-    file_path: Optional[str],
-    line_number: Optional[int],
-) -> Optional[Dict[str, Any]]:
-    """Resolve function_name or file_path:line_number to target_info dict."""
-    if file_path and line_number is not None:
-        fn_row = get_enclosing_function(conn, file_path, line_number)
-        if fn_row:
-            return {
-                "function": fn_row[0],
-                "file": clean_file_path(fn_row[1]),
-                "start_line": fn_row[2],
-                "end_line": fn_row[3],
-                "query_line": line_number,
-            }
-    elif function_name:
-        fn_row = get_function_by_name(conn, function_name, file_path)
-        if fn_row:
-            return {
-                "function": fn_row[0],
-                "file": clean_file_path(fn_row[1]),
-                "start_line": fn_row[2],
-                "end_line": fn_row[3],
-                "query_line": fn_row[2],
-            }
-    return None
-
-
-def inspect_function_calls(
-    db_path: str,
-    function_name: Optional[str] = None,
-    file_path: Optional[str] = None,
-    line_number: Optional[int] = None,
-    **options: Any,
-) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Main programmatic interface for function caller and callee inspection."""
-    verbose = options.get("verbose", False)
-    conn, syzk_conn = open_databases(
-        db_path,
-        syzkaller_db=options.get("syzkaller_db"),
-        verbose=verbose,
-    )
-    target_info = _resolve_inspect_target(
-        conn, function_name, file_path, line_number
-    )
-    if not target_info:
-        conn.close()
-        if syzk_conn:
-            syzk_conn.close()
-        target_repr = function_name or f"{file_path}:{line_number}"
-        raise ValueError(
-            f"Target function '{target_repr}' not found in database."
-        )
-
-    call_gates, func_gates, _ = load_condition_gates(conn, verbose=verbose)
-    tree_opts = {
-        "max_depth": options.get("depth", 1),
-        "call_gates": call_gates,
-        "func_gates": func_gates,
-        "syzk_conn": syzk_conn,
-        "target_file": target_info["file"],
-    }
-    callers = (
-        build_caller_tree(conn, target_info["function"], **tree_opts)
-        if options.get("show_callers", True)
-        else []
-    )
-    callees = (
-        build_callee_tree(
-            conn,
-            target_info["function"],
-            target_info["file"],
-            target_info["start_line"],
-            target_info["end_line"],
-            **tree_opts,
-        )
-        if options.get("show_callees", True)
-        else []
-    )
-
-    conn.close()
-    if syzk_conn:
-        syzk_conn.close()
-    return target_info, callers, callees
 
 
 def _item_prefix_and_tags(
@@ -604,16 +153,21 @@ def _format_indirect_callee(
 def _format_callee_item(
     c: Dict[str, Any], out: List[str], **fmt_opts: Any
 ) -> None:
-    """Format single callee site (direct function or indirect dispatch site)."""
-    if c["call_type"] != "direct":
+    """Format single callee site (direct, async, or indirect dispatch site)."""
+    if c["call_type"] == "indirect":
         _format_indirect_callee(c, out, fmt_opts)
         return
 
     _indent, prefix, tags = _item_prefix_and_tags(c, fmt_opts)
     cs_line = c.get("call_site_line", "?")
+    async_str = (
+        f" [async via {c['dispatch']}]"
+        if c["call_type"] == "async" and c.get("dispatch")
+        else ""
+    )
     out.append(
         f"{prefix}[Line {cs_line}] {c['callee']}"
-        f" ({c['file']}:{c['line']}){tags}"
+        f" ({c['file']}:{c['line']}){async_str}{tags}"
     )
     sub_callees = c.get("callees", [])
     indent_level = fmt_opts.get("indent_level", 1)
@@ -634,12 +188,14 @@ def _format_callers_section(
     """Append incoming callers section to summary report lines."""
     direct_callers = [c for c in callers if c.get("call_type") == "direct"]
     indirect_callers = [c for c in callers if c.get("call_type") == "indirect"]
+    async_callers = [c for c in callers if c.get("call_type") == "async"]
+    async_hdr = f" | Async: {len(async_callers)}" if async_callers else ""
     out.extend([
         "-" * 72,
         (
             f"INCOMING CALLERS (Total: {len(callers)} |"
             f" Direct: {len(direct_callers)} |"
-            f" Indirect: {len(indirect_callers)}):"
+            f" Indirect: {len(indirect_callers)}{async_hdr}):"
         ),
         "-" * 72,
     ])
@@ -674,6 +230,19 @@ def _format_callers_section(
                 **fmt_opts,
             )
 
+    if async_callers:
+        if direct_callers or indirect_callers:
+            out.append("")
+        out.append("Async Dispatchers (via async_edges):")
+        for idx, c in enumerate(async_callers):
+            _format_caller_item(
+                c,
+                out,
+                indent_level=1,
+                is_last=idx == len(async_callers) - 1,
+                **fmt_opts,
+            )
+
 
 def _format_callees_section(
     callees: List[Dict[str, Any]], out: List[str], **fmt_opts: Any
@@ -681,12 +250,14 @@ def _format_callees_section(
     """Append outgoing callees section to summary report lines."""
     direct_callees = [c for c in callees if c.get("call_type") == "direct"]
     indirect_callees = [c for c in callees if c.get("call_type") == "indirect"]
+    async_callees = [c for c in callees if c.get("call_type") == "async"]
+    async_hdr = f" | Async: {len(async_callees)}" if async_callees else ""
     out.extend([
         "-" * 72,
         (
             f"OUTGOING CALLEES (Total Call Sites: {len(callees)} |"
             f" Direct: {len(direct_callees)} |"
-            f" Indirect Sites: {len(indirect_callees)}):"
+            f" Indirect Sites: {len(indirect_callees)}{async_hdr}):"
         ),
         "-" * 72,
     ])
@@ -702,6 +273,35 @@ def _format_callees_section(
             is_last=idx == len(callees) - 1,
             **fmt_opts,
         )
+
+
+def _format_ops_registrations_section(
+    registrations: List[Dict[str, Any]], out: List[str]
+) -> None:
+    """Append ops table registrations, acquisition gates, and siblings."""
+    if not registrations:
+        return
+    out.extend([
+        "-" * 72,
+        f"OPS TABLE REGISTRATIONS & SIBLINGS (Total: {len(registrations)}):",
+        "-" * 72,
+    ])
+    for reg in registrations:
+        out.append(
+            f"  * {reg['struct']}.{reg['field']}"
+            f" [Definition: {reg['definition']}]"
+        )
+        acq = reg.get("acquisition_gates", [])
+        if acq:
+            g_str = ", ".join(
+                f"{g['cap_str']}" + (f" via {g['via']}" if g.get("via") else "")
+                for g in acq
+            )
+            out.append(f"    Acquisition Gate(s): {g_str}")
+        sibs = reg.get("siblings", [])
+        if sibs:
+            sib_str = ", ".join(f".{s['field']}={s['target']}" for s in sibs)
+            out.append(f"    Sibling Callbacks  : {sib_str}")
 
 
 def format_summary(
@@ -724,6 +324,9 @@ def format_summary(
     }
     if options.get("show_callers", True):
         _format_callers_section(callers, out, **fmt_opts)
+        _format_ops_registrations_section(
+            target_info.get("ops_registrations", []), out
+        )
     if options.get("show_callees", True):
         _format_callees_section(callees, out, **fmt_opts)
 
@@ -771,6 +374,15 @@ def _emit_flat_callees(
             )
             if c.get("callees"):
                 _emit_flat_callees(c["callees"], callee_fn, has_multihop, out)
+        elif c["call_type"] == "async":
+            callee_fn = c["callee"]
+            disp = f" via {c['dispatch']}" if c.get("dispatch") else ""
+            out.append(
+                f"CALLEE {depth_prefix}[async   ] {caller_name}"
+                f" (line {cs}) -> {callee_fn} ({c['file']}:{c['line']}){disp}"
+            )
+            if c.get("callees"):
+                _emit_flat_callees(c["callees"], callee_fn, has_multihop, out)
         else:
             disp = c.get("dispatch", "")
             for cand in c.get("candidates", []):
@@ -802,16 +414,29 @@ def format_list(
     return "\n".join(out)
 
 
-def main() -> None:
-    """CLI entry point for inspect_calls."""
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build CLI argument parser for inspect_calls."""
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect 1-hop and multi-hop function callers and callees in the"
-            " Linux kernel, resolving both direct edges and indirect"
-            " function-pointer dispatch tables (ops_targets)."
+            "Inspect 1-hop and multi-hop function callers, callees, indirect"
+            " ops_targets dispatch tables, and async_edges registrations."
         )
     )
     add_common_cli_args(parser, include_reachability_flags=False)
+    parser.add_argument(
+        "--struct",
+        "-s",
+        help="Operations struct name to inspect (e.g. file_operations)",
+    )
+    parser.add_argument(
+        "--field",
+        help="Operations struct field/slot name (e.g. read, unlocked_ioctl)",
+    )
+    parser.add_argument(
+        "--no-gates",
+        action="store_true",
+        help="Skip .open / .proc_open acquisition gate resolution",
+    )
     parser.add_argument(
         "--callers",
         action="store_true",
@@ -850,12 +475,46 @@ def main() -> None:
     )
     parser.add_argument(
         "--format",
-        choices=["summary", "tree", "list", "json"],
+        choices=["summary", "tree", "list", "text", "json"],
         default="summary",
         help="Output format: summary, tree, list, json (default: summary)",
     )
+    return parser
 
+
+def _run_struct_mode(args: argparse.Namespace) -> None:
+    """Execute forward ops-struct slot inspection mode."""
+    if not verify_db_and_indexes(args):
+        return
+    try:
+        payload = inspect_ops_slot(
+            args.db,
+            args.struct,
+            field_name=args.field,
+            file_path=args.file,
+            syzkaller_db=args.syzkaller_db,
+            include_gates=not args.no_gates,
+            limit=0 if args.all else args.limit,
+            verbose=args.verbose,
+        )
+    except (FileNotFoundError, ValueError, sqlite3.Error, OSError) as exc:
+        sys.exit(f"Error: {exc}")
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        print(format_ops_text(payload))
+
+
+def main() -> None:
+    """CLI entry point for inspect_calls."""
+    parser = _build_arg_parser()
     args = parser.parse_args()
+    if args.struct:
+        _run_struct_mode(args)
+        return
+    if args.field:
+        sys.exit("Error: --field requires --struct <ops_struct_name>.")
+
     if (
         handle_common_cli_setup(args, parser, resolve_function_to_line=False)
         is None
@@ -865,8 +524,8 @@ def main() -> None:
     if not args.function and not (args.file and args.line is not None):
         parser.print_help()
         sys.exit(
-            "\nError: Please specify target with --function <name> or"
-            " (--file <path> --line <number>)."
+            "\nError: Please specify target with --function <name>,"
+            " (--file <path> --line <number>), or --struct <ops_struct>."
         )
 
     show_callers = args.callers
@@ -885,12 +544,13 @@ def main() -> None:
             depth=args.depth,
             show_callers=show_callers,
             show_callees=show_callees,
+            allow_ambiguous=getattr(args, "allow_ambiguous", False),
             verbose=args.verbose,
         )
     except (FileNotFoundError, ValueError, sqlite3.Error, OSError) as e:
         sys.exit(f"Error: {e}")
 
-    if args.format in ("summary", "tree"):
+    if args.format in ("summary", "tree", "text"):
         print(
             format_summary(
                 target_info,

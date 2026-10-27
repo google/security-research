@@ -13,7 +13,7 @@ SQLite `function_locations`              Linux Kernel Git Repo (--repo_dir)
   │                                                     │     ├── Unshallow if --is-shallow-repository
   │                                                     │     └── git commit-graph write --changed-paths
   ▼                                                     ▼
-filter_tracked_locations() ◄─────── git -C <repo> ls-files (Tracked files set)
+filter_tracked_locations() ◄─────── git -C <repo> ls-files + _is_non_runtime_path()
   │
   ▼
 run_parallel_git_log()
@@ -23,7 +23,7 @@ run_parallel_git_log()
 parse_git_log_records() ◄────────── Slice source lines file_lines[start_line - 1 : end_line]
   │
   ▼
-SQLite `git_log` Table
+SQLite `git_log` Table (start_line, end_line, file_path, author_date, commit, data, function_name)
 ```
 
 ---
@@ -36,17 +36,17 @@ Running `git log -L <start>,<end>:<file>` across 50,000+ kernel functions on a r
 2. Enables `core.commitGraph = true` and `commitGraph.readChangedPaths = true`.
 3. Runs `git commit-graph write --reachable --changed-paths` so Git can skip commits that did not touch `<file>` in $O(1)$ time via changed-path Bloom filters.
 
-### Step 2: Tracked File Filtering & Commit Mismatch Guard (`filter_tracked_locations`)
-CodeQL databases include functions compiled from build-time generated files (such as `arch/x86/lib/inat-tables.c` or `lib/oid_registry_data.c`) that are not tracked in Git, and a user might accidentally point `--repo_dir` at a different commit than `--codeql_db`:
+### Step 2: Runtime Scope & Tracked File Filtering (`filter_tracked_locations`)
+CodeQL databases can include functions from build-time generated files (such as `arch/x86/lib/inat-tables.c` or `lib/oid_registry_data.c`) or non-runtime pre-boot/host paths (`arch/*/boot/*`, `drivers/firmware/efi/libstub/*`, `*/vdso/*`, `*/purgatory/*`, `scripts/*`, `tools/*`, `samples/*`, `usr/*`, `Documentation/*`):
 1. Runs `git -C <repo_folder> ls-files` to build an in-memory `tracked_files` set.
-2. Filters `function_locations` to functions whose `file_path` is tracked in Git.
+2. Filters `function_locations` to runtime kernel functions (`not _is_non_runtime_path(file_path)`) whose `file_path` is tracked in Git.
 3. Computes `match_percentage = matched_count / total_count * 100`:
    - If `matched_count < total_count` and `--force` is not set, prompts interactively on a TTY or aborts automatically if `match_percentage < 95.0%`.
 
 ### Step 3: Parallel `git log -L` Execution (`run_parallel_git_log`)
-1. Writes every tracked function span into a temporary input file (`tmp2`), one line per function in `<start_line>,<end_line>:<file_path>` format:
+1. Deduplicates `(start_line, end_line, file_path)` spans across `function_locations` (while retaining all `function_name` mappings per span) and writes each span into a temporary input file (`tmp2`) in `<start_line>,<end_line>:<file_path>` format:
    ```text
-   18,24:arch/x86/boot/compressed/error.c
+   450,479:fs/read_write.c
    266,268:include/linux/compiler.h
    ```
 2. Invokes GNU `parallel` across `--no_cpu` worker processes:
@@ -56,7 +56,7 @@ CodeQL databases include functions compiled from build-time generated files (suc
    ```
    Here `{}` is replaced by `<start_line>,<end_line>:<file_path>` in both `--format={},%at,%H` and `-L {}`, so each worker emits a single CSV-like line containing the input coordinates followed by the latest commit's Unix author timestamp (`%at`) and 40-char SHA (`%H`):
    ```text
-   18,24:arch/x86/boot/compressed/error.c,1680000000,11223344556677889900aabbccddeeff11223344
+   450,479:fs/read_write.c,1680000000,11223344556677889900aabbccddeeff11223344
    ```
 
 ### Step 4: Output Parsing & Function Source Extraction (`parse_git_log_records`)
@@ -67,7 +67,7 @@ CodeQL databases include functions compiled from build-time generated files (suc
    - `author_date = int(chunks[3])`
    - `commit = chunks[4]`
 2. Reads `<repo_folder>/<file_path>` once into an in-memory `file_cache[file_path]` list of lines so files containing dozens of functions are only read from disk once.
-3. Slices `function_code = "".join(file_lines[start_line - 1 : end_line])` and bulk-inserts `(start_line, end_line, file_path, author_date, commit, function_code)` into `git_log`.
+3. Slices `function_code = "".join(file_lines[start_line - 1 : end_line])` and bulk-inserts `(start_line, end_line, file_path, author_date, commit, function_code, function_name)` into `git_log` (emitting a row for each `function_name` associated with that span in `function_locations`).
 
 ---
 
@@ -81,6 +81,7 @@ CodeQL databases include functions compiled from build-time generated files (suc
 | `author_date` | `UNSIGNED BIG INT` | Unix epoch timestamp (`%at`) of the last commit modifying this function. |
 | `commit` | `VARCHAR(40)` | 40-character Git SHA (`%H`) of the last commit modifying this function. |
 | `data` | `TEXT` | Raw C source code of the function (`lines[start_line-1 : end_line]`). |
+| `function_name` | `TEXT` | Function name from `function_locations` (part of `PRIMARY KEY`, indexed by `(function_name, file_path)` and `(file_path, start_line, end_line)`). |
 
 ```bash
 # Populate git_log in the unified database:

@@ -34,9 +34,10 @@ Supports three invocation modes:
 from __future__ import annotations
 
 from collections import defaultdict
-import json
+import csv
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 
@@ -72,16 +73,20 @@ _OPTIONS = [
     ("--entry-node", "5-column entry_node CSV"),
     ("--entry-node-pairs", "3- or 4-column entry-node-pairs.csv"),
     ("--function-locations", "functions.ql / function_locations CSV"),
+    ("--structs", "structs.ql / struct_locations + struct_fields CSV"),
     ("--ops-targets", "ops_edges.ql / ops_targets CSV"),
     ("--async-edges", "async-edges.ql / async_edges CSV"),
     ("--configs", "kernel-configs-needed.ql / configs CSV"),
     ("--baseline", "baselines/<kernel>.json recorded from a validated run"),
 ]
 
-# Maps all 15 CodeQL query stems (and table aliases) to their test module
+# Maps all 16 CodeQL query stems (and table aliases) to their test module
 QUERY_TO_TEST_MODULE = {
     "functions": "test_functions.py",
     "function_locations": "test_functions.py",
+    "structs": "test_structs.py",
+    "struct_locations": "test_structs.py",
+    "struct_fields": "test_structs.py",
     "kernel-configs-needed": "test_kernel_configs_needed.py",
     "configs": "test_kernel_configs_needed.py",
     "ops_edges": "test_ops_edges.py",
@@ -188,7 +193,16 @@ ALLOCATIONS_COLS_10 = [
     "flags", "alloc_size", "sizeof_expr", "is_flexible", "target_name",
 ]
 ALLOCATIONS_COLS_9 = ALLOCATIONS_COLS_10[:9]
-FIELD_ACCESS_COLS = ["type", "field", "parent", "location"]
+FIELD_ACCESS_COLS_7 = [
+    "type", "field", "parent", "location", "function_name", "file_path", "line",
+]
+FIELD_ACCESS_COLS = FIELD_ACCESS_COLS_7[:4]
+STRUCTS_COLS_18 = [
+    "struct_name", "file_path", "start_line", "end_line", "byte_size",
+    "member_count", "is_anonymous", "is_typedef", "has_flex_member",
+    "field_name", "field_path", "field_type", "byte_offset", "bit_offset",
+    "bit_size", "is_funcptr", "is_flex", "array_len",
+]
 MACRO_LOCATION_COLS = ["macro_name", "file_path", "start_line", "end_line"]
 MACRO_INVOCATION_COLS = [
     "macroinvocation_name", "file_path", "start_line", "end_line",
@@ -214,12 +228,16 @@ OPS_TARGETS_COLS = [
     "exprcall_parent_end",
 ]
 CONFIGS_COLS = ["config", "path", "ifdef", "endif", "else_"]
-ASYNC_EDGES_CSV_COLS = [
+ASYNC_EDGES_CSV_COLS_8 = [
     "caller", "callee", "mechanism", "form", "file", "line",
+    "caller_file", "callee_file",
 ]
-ASYNC_EDGES_DB_COLS = [
+ASYNC_EDGES_CSV_COLS = ASYNC_EDGES_CSV_COLS_8[:6]
+ASYNC_EDGES_DB_COLS_9 = [
     "caller", "callee", "mechanism", "context", "form", "file", "line",
+    "caller_file", "callee_file",
 ]
+ASYNC_EDGES_DB_COLS = ASYNC_EDGES_DB_COLS_9[:7]
 
 
 def _resolve_file(
@@ -280,8 +298,6 @@ def _has_sqlite_table(db_path: str | Path | None, table_name: str) -> bool:
 
 def _parse_all_calls_csv(path: Path) -> dict:
     """Parse an `all-calls.ql` 12-column (or 4-column) CSV into summary stats."""
-    import csv
-
     unique_locs: set[tuple[str, ...]] = set()
     sample_uris: list[str] = []
     sample_messages: list[str] = []
@@ -418,7 +434,6 @@ def kernel(pytestconfig):
     explicit = pytestconfig.getoption("--kernel")
     if explicit:
         return explicit
-    import re
     for opt in ("--sqlite-db", "--btf-db", "--db", "--results-dir"):
         val = pytestconfig.getoption(opt)
         if val:
@@ -553,9 +568,24 @@ def field_access(pytestconfig, sqlite_db):
         "field_access output",
     )
     if path:
-        return load_rows(path, FIELD_ACCESS_COLS)
+        rows_7 = load_rows(path, FIELD_ACCESS_COLS_7)
+        return rows_7 if rows_7 else load_rows(path, FIELD_ACCESS_COLS)
 
     if _has_sqlite_table(sqlite_db, "field_access"):
+        conn = sqlite3.connect(str(sqlite_db))
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(field_access)")
+        db_cols = {r[1] for r in cur.fetchall()}
+        conn.close()
+        if {"function_name", "file_path", "line"}.issubset(db_cols):
+            return _query_sqlite_table(
+                sqlite_db,
+                (
+                    "SELECT type, field, parent, location, function_name, "
+                    "file_path, line FROM field_access"
+                ),
+                FIELD_ACCESS_COLS_7,
+            )
         return _query_sqlite_table(
             sqlite_db,
             "SELECT type, field, parent, location FROM field_access",
@@ -1021,6 +1051,45 @@ def configs(pytestconfig, sqlite_db):
 
 
 @pytest.fixture(scope="session")
+def structs(pytestconfig, sqlite_db):
+    """Load `structs` (`structs.ql` / `struct_locations` + `struct_fields`) rows."""
+    path = _resolve_file(
+        pytestconfig,
+        "--structs",
+        ["structs.csv"],
+        "structs output",
+    )
+    if path:
+        return load_rows(path, STRUCTS_COLS_18)
+
+    if _has_sqlite_table(sqlite_db, "struct_locations") and _has_sqlite_table(
+        sqlite_db, "struct_fields"
+    ):
+        return _query_sqlite_table(
+            sqlite_db,
+            """
+            SELECT sl.struct_name, sl.file_path, sl.start_line, sl.end_line,
+                   sl.byte_size, sl.member_count, sl.is_anonymous,
+                   sl.is_typedef, sl.has_flex_member,
+                   sf.field_name, sf.field_path, sf.field_type, sf.byte_offset,
+                   COALESCE(sf.bit_offset, -1), COALESCE(sf.bit_size, -1),
+                   sf.is_funcptr, sf.is_flex, COALESCE(sf.array_len, -1)
+            FROM struct_fields sf
+            JOIN struct_locations sl
+              ON sl.struct_name = sf.struct_name
+             AND sl.file_path = sf.file_path
+             AND sl.start_line = sf.start_line
+            """,
+            STRUCTS_COLS_18,
+        )
+
+    return pytest.skip(
+        "structs not supplied (pass --structs, --results-dir with structs.csv, "
+        "or --sqlite-db)"
+    )
+
+
+@pytest.fixture(scope="session")
 def async_edges(pytestconfig, sqlite_db):
     """Load `async_edges` (`async-edges.ql`) rows from CSV or SQLite DB."""
     path = _resolve_file(
@@ -1030,9 +1099,25 @@ def async_edges(pytestconfig, sqlite_db):
         "async_edges output",
     )
     if path:
-        return load_rows(path, ASYNC_EDGES_CSV_COLS)
+        rows_8 = load_rows(path, ASYNC_EDGES_CSV_COLS_8)
+        return rows_8 if rows_8 else load_rows(path, ASYNC_EDGES_CSV_COLS)
 
     if _has_sqlite_table(sqlite_db, "async_edges"):
+        conn = sqlite3.connect(str(sqlite_db))
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(async_edges)")
+        db_cols = {r[1] for r in cur.fetchall()}
+        conn.close()
+        if {"caller_file", "callee_file"}.issubset(db_cols):
+            return _query_sqlite_table(
+                sqlite_db,
+                """
+                SELECT caller, callee, mechanism, context, form, file, line,
+                       caller_file, callee_file
+                FROM async_edges
+                """,
+                ASYNC_EDGES_DB_COLS_9,
+            )
         return _query_sqlite_table(
             sqlite_db,
             """

@@ -34,23 +34,48 @@ def test_field_access_types_complete(field_access):
 
 
 def test_field_access_fields_and_locations_valid(field_access):
-    """Verify field, parent struct, and location columns are non-empty."""
+    """Verify field, parent struct, location, and structured context columns."""
     blank_field = sum(1 for r in field_access if not r["field"])
     blank_parent = sum(1 for r in field_access if not r["parent"])
+    unnamed_parent = sum(
+        1 for r in field_access if r["parent"].startswith("(")
+    )
     blank_loc = sum(
         1 for r in field_access if not r["location"] or ":" not in r["location"]
     )
-    report(
-        "field_access completeness",
-        {
-            "blank field": blank_field,
-            "blank parent": blank_parent,
-            "invalid location": blank_loc,
-        },
-    )
+    metrics = {
+        "blank field": blank_field,
+        "blank parent": blank_parent,
+        "unnamed parent": (
+            f"{unnamed_parent} ({pct(unnamed_parent, len(field_access)):.2f}%)"
+        ),
+        "invalid location": blank_loc,
+    }
+    if field_access and "function_name" in field_access[0]:
+        structured_complete = sum(
+            1
+            for r in field_access
+            if r.get("function_name")
+            and r.get("file_path")
+            and str(r.get("line", "")).isdigit()
+            and int(r["line"]) > 0
+        )
+        metrics["structured context complete"] = (
+            f"{structured_complete} / {len(field_access)} "
+            f"({pct(structured_complete, len(field_access)):.1f}%)"
+        )
+        assert pct(structured_complete, len(field_access)) >= 90.0, (
+            "fewer than 90% of field_access rows have structured "
+            "(function_name, file_path, line) populated"
+        )
+    report("field_access completeness", metrics)
     assert blank_loc == 0
     assert pct(blank_field, len(field_access)) < 1.0
     assert pct(blank_parent, len(field_access)) < 1.0
+    assert pct(unnamed_parent, len(field_access)) < 1.0, (
+        f"too many unlinked anonymous struct parents: {unnamed_parent} "
+        f"({pct(unnamed_parent, len(field_access)):.2f}%)"
+    )
 
 
 def test_field_access_distribution(field_access, baseline_path):

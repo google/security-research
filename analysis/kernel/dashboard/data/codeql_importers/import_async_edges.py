@@ -51,6 +51,26 @@ def _trim_caller(caller: str, prefix: str) -> str:
     return caller
 
 
+def _parse_async_edge_row(
+    row: tuple[str, ...] | list[str], prefix: str
+) -> tuple[object, ...]:
+    """Parses an 8-column (or 6-column) async-edges CSV row."""
+    reg_file = trim_filename(row[4], prefix)
+    caller_file = trim_filename(row[6], prefix) if len(row) >= 8 else reg_file
+    callee_file = trim_filename(row[7], prefix) if len(row) >= 8 else ""
+    return (
+        _trim_caller(row[0], prefix),
+        row[1],
+        row[2],
+        MECHANISM_CONTEXT.get(row[2], "unknown"),
+        row[3],
+        reg_file,
+        int(row[5]),
+        caller_file,
+        callee_file,
+    )
+
+
 _ASYNC_EDGES_SPEC = CsvTableSpec(
     table_name="async_edges",
     create_sql="""
@@ -61,26 +81,21 @@ _ASYNC_EDGES_SPEC = CsvTableSpec(
         context TEXT,
         form TEXT,
         file TEXT,
-        line INTEGER
+        line INTEGER,
+        caller_file TEXT,
+        callee_file TEXT
     )
     """,
     insert_sql="""
     INSERT INTO async_edges (
-        caller, callee, mechanism, context, form, file, line
+        caller, callee, mechanism, context, form, file, line,
+        caller_file, callee_file
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
     min_cols=6,
-    path_cols=(4,),
-    row_parser=lambda row, prefix: (
-        _trim_caller(row[0], prefix),
-        row[1],
-        row[2],
-        MECHANISM_CONTEXT.get(row[2], "unknown"),
-        row[3],
-        trim_filename(row[4], prefix),
-        int(row[5]),
-    ),
+    path_cols=(4, 6, 7),
+    row_parser=_parse_async_edge_row,
     indexes=(
         (
             "CREATE INDEX IF NOT EXISTS idx_async_edges_callee "

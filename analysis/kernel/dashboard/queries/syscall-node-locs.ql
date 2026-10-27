@@ -8,17 +8,22 @@
  */
 
 import cpp
+import kernel_common
 
-from Function f, Location l
+from Function f, BlockStmt block, File fFile, int sLine, int eLine
 where
-  exists(f.getBlock()) and
   not f.getName().matches("__compiletime_assert_%") and
   not f.getName().matches("__builtin_%") and
-  l = f.getLocation()
+  f.getBlock() = block and
+  fFile = block.getLocation().getFile() and
+  not nonRuntimeKernelFile(fFile) and
+  sLine = blockStartLine(f, block) and
+  eLine = block.getLocation().getEndLine()
 select
   f.getName() as name,
-  l.getFile().getRelativePath() as file,
-  l.getStartLine() as startLine,
-  l.getStartColumn() as startCol,
-  l.getEndLine() as endLine,
-  l.getEndColumn() as endCol
+  fFile.getRelativePath() as file,
+  sLine as startLine,
+  f.getLocation().getStartColumn() as startCol,
+  eLine as endLine,
+  block.getLocation().getEndColumn() as endCol
+

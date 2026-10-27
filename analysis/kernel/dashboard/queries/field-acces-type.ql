@@ -1,32 +1,45 @@
 import cpp
+import struct_utils
 
 abstract class InterestingFieldAccesses extends FieldAccess {
-    InterestingFieldAccesses() {
-        any()
-    }
+  InterestingFieldAccesses() { any() }
 
-    string accessType() { result = ""}
+  string accessType() { result = "" }
 }
 
 class FieldExec extends InterestingFieldAccesses {
-    FieldExec() { exists(ExprCall ec | ec.getExpr() = this)}
+  FieldExec() { exists(ExprCall ec | ec.getExpr() = this) }
 
-    override string accessType() {result = "exec"}
+  override string accessType() { result = "exec" }
 }
 
-
 class FieldWrite extends InterestingFieldAccesses {
-    FieldWrite() { this.isModified()}
+  FieldWrite() { this.isModified() }
 
-    override string accessType() {result = "write"}
+  override string accessType() { result = "write" }
 }
 
 class FieldRead extends InterestingFieldAccesses {
-    FieldRead() { this.isRValue() }
+  FieldRead() { this.isRValue() }
 
-    override string accessType() {result = "read"}
+  override string accessType() { result = "read" }
 }
 
+string enclosingFunctionName(InterestingFieldAccesses ifa) {
+  if exists(ifa.getEnclosingFunction())
+  then result = ifa.getEnclosingFunction().getName()
+  else result = ""
+}
 
-from InterestingFieldAccesses ifa
-select ifa.accessType(), ifa.getTarget(), ifa.getTarget().getDeclaringType(), ifa.getLocation()
+from InterestingFieldAccesses ifa, Location loc
+where
+  loc = ifa.getLocation() and
+  not nonRuntimeKernelFile(loc.getFile())
+select
+  ifa.accessType() as type,
+  ifa.getTarget().getName() as field,
+  canonicalFieldAccessParent(ifa) as parent,
+  loc.toString() as location,
+  enclosingFunctionName(ifa) as function_name,
+  loc.getFile().getRelativePath() as file_path,
+  loc.getStartLine() as line

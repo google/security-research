@@ -4,9 +4,9 @@ This directory contains the **five data ingestion pipelines** and shared library
 
 1. **`lib/`** — Shared SQLite connection/batch helpers (`db.py`) and path/CLI/Makefile validation utilities (`validation.py`).
 2. **`btf_data/`** — Extracts ground-truth struct and field layout information from `vmlinux` BTF debug info (`types` table).
-3. **`codeql_importers/`** — Imports decoded `.csv` and `.sarif` outputs from the 15 core CodeQL queries into relational SQLite tables, backed by `data/codeql_importers/lib/` (`utils.py`, `reachability_node.py`).
+3. **`codeql_importers/`** — Imports decoded `.csv` and `.sarif` outputs from the 16 core CodeQL queries into 18 relational SQLite tables, backed by `data/codeql_importers/lib/` (`utils.py`, `reachability_node.py`).
 4. **`kconfig/`** — Extracts file-level `Makefile`/`Kbuild` `CONFIG_*` guards (`configs` table) and `Kconfig*` symbol definitions + `.config` build values (`kconfig_symbols` table).
-5. **`git_log/`** — Extracts per-function source code and latest Git commit metadata (`git_log` table) from the Linux kernel repository.
+5. **`git_log/`** — Extracts per-function source code and latest Git commit metadata (`git_log` table, keyed by `(start_line, end_line, file_path, function_name)`) from the Linux kernel repository.
 6. **`syzkaller_coverage/`** — Parses Syzkaller/Syzbot dynamic code coverage reports (HTML, JSON, JSONL, or `.gz`) into SQLite coverage and reproducer tables.
 
 ```text
@@ -25,7 +25,7 @@ Syzkaller Coverage Exports ───► data/syzkaller_coverage/ ──┘
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`data/lib/`** | [`lib/README.md`](lib/README.md) | `db.py`, `validation.py` | Shared across all `data/` pipelines | — | `data/lib/tests/` |
 | **`data/btf_data/`** | [`btf_data/README.md`](btf_data/README.md) | `extract_btf.py` | `vmlinux` ELF64 binary (with `.BTF` or DWARF) | `types` | `data/btf_data/tests/` |
-| **`data/codeql_importers/`** | [`codeql_importers/README.md`](codeql_importers/README.md) | `import_*.py` (14 importers), `lib/utils.py`, `lib/reachability_node.py` | Decoded CodeQL `.csv` (13) and `.sarif` (2) files | `function_locations`, `configs`, `ops_targets`, `allocs`, `codeql_allocations`, `codeql_structs`, `field_access`, `macro_locations`, `macroinvocation_locations`, `syscall_node`, `entry_node`, `conditions`, `conditions_reachable`, `locations`, `edges`, `async_edges` | `data/codeql_importers/tests/` |
+| **`data/codeql_importers/`** | [`codeql_importers/README.md`](codeql_importers/README.md) | `import_*.py` (15 importers), `lib/utils.py`, `lib/reachability_node.py` | Decoded CodeQL `.csv` (14) and `.sarif` (2) files | `function_locations`, `struct_locations`, `struct_fields`, `configs`, `ops_targets`, `allocs`, `codeql_allocations`, `codeql_structs`, `field_access`, `macro_locations`, `macroinvocation_locations`, `syscall_node`, `entry_node`, `conditions`, `conditions_reachable`, `locations`, `edges`, `async_edges` | `data/codeql_importers/tests/` |
 | **`data/kconfig/`** | [`kconfig/README.md`](kconfig/README.md) | `kconfig_dump.py` | Linux kernel `Makefile`/`Kbuild`, `Kconfig*`, `.config` | `configs`, `kconfig_symbols` | `data/kconfig/tests/` |
 | **`data/git_log/`** | [`git_log/README.md`](git_log/README.md) | `git_log_dump.py` | Linux Git repository + `function_locations` table | `git_log` | `data/git_log/tests/` |
 | **`data/syzkaller_coverage/`** | [`syzkaller_coverage/README.md`](syzkaller_coverage/README.md) | `syzkaller_coverage.py` | Syzkaller coverage HTML / JSON / JSONL / `.gz` or URL | `file_path`, `syzk_cov`, `syzk_prog`, `syzk_sys`, `syscalls` | `data/syzkaller_coverage/tests/` |
@@ -71,25 +71,27 @@ Each importer script reads the decoded `.csv` or `.sarif` file produced by its c
 
 | Importer Script | Input File(s) | Target SQLite Table(s) | Description |
 | :--- | :--- | :--- | :--- |
-| **`import_functions.py`** | `functions.csv` | `function_locations` | Function names, relative file paths, and `[start_line, end_line]` spans. |
+| **`import_functions.py`** | `functions.csv` | `function_locations` | Function names, relative file paths, and `[start_line, end_line]` signature-to-closing-brace spans. |
+| **`import_structs.py`** | `structs.csv` | `struct_locations`, `struct_fields` | Struct definition spans/byte sizes (`struct_locations`) and flattened field layouts with anonymous struct/union paths, offsets, bitwidths, and function-pointer flags (`struct_fields`). |
 | **`import_configs.py`** | `kernel-configs-needed.csv` | `configs` | `#ifdef CONFIG_*` preprocessor branches (`config`, `path`, `ifdef`, `endif`, `else_`). |
 | **`import_ops_targets.py`** | `ops_edges.csv` | `ops_targets` | Indirect function-pointer call sites (`exprcall_*`) mapped to ops table targets (`parent`, `field`, `target`, `wrapper_context`, `capability`). |
 | **`import_allocs.py`** | `allocs.csv` | `allocs` | 17-column range-analyzed heap allocations (`sizeMin`, `sizeMax`, `flagsMin`, `flagsMax`, `isFlexible`, etc.). |
 | **`import_allocations.py`** | `allocations.csv` | `codeql_allocations`, `codeql_structs` | Struct-typed heap allocation sites and referenced struct definitions. |
-| **`import_field_access.py`** | `field-acces-type.csv` | `field_access` | Struct field accesses classified as `read`, `write`, or `exec`. |
+| **`import_field_access.py`** | `field-acces-type.csv` | `field_access` | Struct field accesses classified as `read`, `write`, or `exec`, including `enclosing_function`. |
 | **`import_macros.py`** | `macro-locations.csv` | `macro_locations` | Macro definition locations (`macro_name`, `file_path`, `start_line`, `end_line`). |
 | **`import_macro_invocations.py`** | `macro-invocations.csv` | `macroinvocation_locations` | Macro invocation sites (`macroinvocation_name`, `file_path`, `start_line`, `end_line`). |
 | **`import_syscall_node.py`** | `--pairs syscall-node-pairs.csv` `--locs syscall-node-locs.csv` | `syscall_node` | Joins transitive `__do_sys_*` reachability pairs with function locations via `lib/reachability_node.py`. |
-| **`import_entry_node.py`** | `--pairs entry-node-pairs.csv` `--locs syscall-node-locs.csv` | `entry_node` | Joins non-syscall kernel entry points (`netlink`, `sysctl`, `sysfs`, `debugfs`, `proc_ops`, `io_uring`, `uring_cmd`, `kthread`) with function locations via `lib/reachability_node.py`. |
-| **`import_conditions.py`** | `condition-graph-direct.csv` | `conditions` | Intra-procedural capability/condition checks dominating call sites. |
+| **`import_entry_node.py`** | `--pairs entry-node-pairs.csv` `--locs syscall-node-locs.csv` | `entry_node` | Joins non-syscall kernel entry points (`netlink`, `sysctl`, `sysfs`, `debugfs`, `proc_ops`, `io_uring`, `uring_cmd`, `kthread`, `net_rx`, `bpf_entry`, etc.) with function locations via `lib/reachability_node.py`. |
+| **`import_conditions.py`** | `condition-graph-direct.csv` | `conditions` | Intra-procedural capability/condition checks dominating call sites and guarded line spans. |
 | **`import_conditions_reachable.py`** | `condition-graph-all.csv` | `conditions_reachable` | Inter-procedural functions transitively reachable from guarded calls. |
 | **`import_all_calls.py`** | `all-calls.sarif` | `locations`, `edges` | Full kernel call-graph nodes and directed edges parsed from SARIF threadFlows. |
-| **`import_async_edges.py`** | `async-edges.sarif` | `async_edges` | Deferred execution registration sites (`workqueue`, `timer`, `rcu`, `tasklet`, `irq`, `kthread`, `notifier`) linked to handler functions. |
+| **`import_async_edges.py`** | `async-edges.sarif` | `async_edges` | Deferred execution registration sites (`workqueue`, `timer`, `rcu`, `tasklet`, `irq`, `kthread`, `notifier`) linked to handler functions (`caller_file`, `callee_file`). |
 
 ### Usage
 ```bash
 # Single-CSV/SARIF importers (<input_file> <db_file>):
 python3 -m data.codeql_importers.import_functions /path/to/results_dir/functions.csv /path/to/kernel_dashboard.db
+python3 -m data.codeql_importers.import_structs /path/to/results_dir/structs.csv /path/to/kernel_dashboard.db
 python3 -m data.codeql_importers.import_ops_targets /path/to/results_dir/ops_edges.csv /path/to/kernel_dashboard.db
 python3 -m data.codeql_importers.import_all_calls /path/to/results_dir/all-calls.sarif /path/to/kernel_dashboard.db
 python3 -m data.codeql_importers.import_async_edges /path/to/results_dir/async-edges.sarif /path/to/kernel_dashboard.db
@@ -125,8 +127,8 @@ python3 -m data.kconfig.kconfig_dump \
 ### How It Works
 `git_log_dump.py` enriches the `function_locations` table with Git history and function source code from the Linux kernel repository:
 1. Reads all `(function_name, file_path, start_line, end_line)` spans from `function_locations` in `--codeql_db`.
-2. Verifies that the files exist in the target Git repository (`git ls-files`) and automatically unshallows (`git fetch --unshallow`) or builds a commit-graph if needed.
-3. Uses GNU `parallel` across `--no_cpu` workers to run `git log -n 1 -L <start>,<end>:<file>` and extract the latest commit hash, author timestamp, and source lines into the `git_log` table (`start_line`, `end_line`, `file_path`, `author_date`, `commit`, `data`).
+2. Filters out non-runtime paths (`arch/*/boot/*`, `*/vdso/*`, etc.), verifies that tracked files exist in the target Git repository (`git ls-files`), and automatically unshallows (`git fetch --unshallow`) or builds a commit-graph if needed.
+3. Uses GNU `parallel` across `--no_cpu` workers to run `git log -n 1 -L <start>,<end>:<file>` and extract the latest commit hash, author timestamp, source lines, and `function_name` into the `git_log` table (`start_line`, `end_line`, `file_path`, `author_date`, `commit`, `data`, `function_name`).
 
 ### Usage
 ```bash

@@ -1,6 +1,6 @@
 # CodeQL Output Importers (`data/codeql_importers/`)
 
-This package converts the decoded `.csv` and `.sarif` outputs from the 15 core CodeQL queries in `queries/` into indexed relational SQLite tables in `kernel_dashboard.db`.
+This package converts the decoded `.csv` and `.sarif` outputs from the 16 core CodeQL queries in `queries/` into 18 indexed relational SQLite tables in `kernel_dashboard.db`.
 
 ---
 
@@ -11,9 +11,9 @@ data/codeql_importers/
 ├── lib/
 │   ├── utils.py               # Path normalization, smart CSV reader, CsvTableSpec & batch importer
 │   └── reachability_node.py   # Shared pair + location join engine for syscall_node & entry_node
-├── import_*.py                # 14 table importer entry points
+├── import_*.py                # 15 table importer entry points (including import_structs.py)
 └── tests/
-    └── test_imports.py        # Unit test suite covering all 14 importers and lib helpers
+    └── test_imports.py        # Unit test suite covering all 15 importers and lib helpers
 ```
 
 ---
@@ -35,10 +35,10 @@ Single-CSV importers (`import_configs.py`, `import_ops_targets.py`, `import_cond
 3. **Fault-Tolerant Row Parsing**: Calls `spec.row_parser(row, prefix)` on rows meeting `spec.min_cols`, catching `(ValueError, TypeError)` with a warning log so a single malformed row never aborts an import.
 4. **Atomic Idempotent Write (`execute_bulk_insert`)**: Drops or clears the target table (`drop_table` / `clear_sql`), creates the schema, bulk-inserts all parsed tuples, and builds all lookup `indexes` in one transaction.
 
-### 2.3 Compound Location String Unpacking
-CodeQL problem/table queries frequently encode source locations as colon-separated strings `file:startLine:startCol:endLine:endCol`. Three importers unpack these into relational columns:
+### 2.3 Struct Definitions, Flattened Fields & Compound Location Unpacking
+- **`import_structs.py` (`structs.csv` $\rightarrow$ `struct_locations`, `struct_fields`)**: Reads the 12-column `structs.ql` output, deduplicates struct headers `(struct_name, file_path, start_line, end_line, byte_size)` into `struct_locations`, and bulk-inserts flattened member layouts `(struct_name, file_path, struct_start_line, field_name, field_path, field_type, byte_offset, bit_offset, bit_width, field_line, is_function_ptr)` into `struct_fields`.
 - **`import_allocations.py` (`parse_location`)**: Splits `file:///.../mm/slub.c:120:5:120:30` from the right (`rsplit(":", 4)`) into `("mm/slub.c", 120)` and deduplicates referenced struct definitions into `codeql_structs`.
-- **`import_field_access.py` (`_parse_field_access_row`)**: Splits `location` (`rsplit(":", 4)`) to extract `(trimmed_file, start_line)` for each `read`/`write`/`exec` field access.
+- **`import_field_access.py` (`_parse_field_access_row`)**: Splits `location` (`rsplit(":", 4)`) to extract `(trimmed_file, start_line)` and stores the optional 5th column `enclosing_function` for each `read`/`write`/`exec` field access.
 - **`import_conditions.py` (`_parse_condition_row`)**: Extracts `file:line` from `check_location`, `if_location`, and `guarded_call_location` via `rsplit(":", 4)` so `tools/check_privilege.py` can match capability checks to exact call lines.
 
 ### 2.4 Two-Tier Reachability Location Join (`lib/reachability_node.py`)
@@ -55,7 +55,7 @@ CodeQL problem/table queries frequently encode source locations as colon-separat
   - Connects consecutive steps `(step[i], step[i+1])` within each `threadFlow` as a directed edge `(source_location_id, target_location_id)` in `edges`.
 - **`import_async_edges.py` (`async-edges.sarif` $\rightarrow$ `async_edges`)**:
   - Reads the 2-step `threadFlow` from registration site (`step[0]`) to async handler (`step[1]`).
-  - Unpacks the SARIF result message `"<mechanism>:<reg_Primitive>|<queue_key>"` (e.g., `"workqueue:INIT_WORK|struct tls_offload_context_tx.tx_work"`) together with the `step[0]` enclosing function and `step[1]` handler function into the 10-column `async_edges` table.
+  - Unpacks the SARIF result message `"<mechanism>:<reg_Primitive>|<queue_key>"` (e.g., `"workqueue:INIT_WORK|struct tls_offload_context_tx.tx_work"`) together with the `step[0]` enclosing function (`caller`, `caller_file`) and `step[1]` handler function (`callee`, `callee_file`) into the 12-column `async_edges` table.
 
 ---
 

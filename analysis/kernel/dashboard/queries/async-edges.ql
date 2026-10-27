@@ -17,9 +17,19 @@
 
 import cpp
 import async_edges
+import kernel_common
+
+pragma[inline]
+string functionFile(Function f) {
+  if exists(f.getBlock())
+  then result = f.getBlock().getLocation().getFile().toString()
+  else result = f.getLocation().getFile().toString()
+}
 
 /** Form A: function pointer passed as an argument to a known async registrar. */
-predicate formArg(string caller, Function cb, string mechanism, string file, int line) {
+predicate formArg(
+  string caller, string callerFile, Function cb, string mechanism, string file, int line
+) {
   exists(FunctionCall fc, Expr arg, string name |
     asyncRegistrarArg(name, mechanism) and
     fc.getTarget().getName() = name and
@@ -29,14 +39,21 @@ predicate formArg(string caller, Function cb, string mechanism, string file, int
     line = fc.getLocation().getStartLine() and
     (
       if exists(fc.getEnclosingFunction())
-      then caller = fc.getEnclosingFunction().getName()
-      else caller = "<file-scope:" + file + ">"
+      then (
+        caller = fc.getEnclosingFunction().getName() and
+        callerFile = functionFile(fc.getEnclosingFunction())
+      ) else (
+        caller = "<file-scope:" + file + ">" and
+        callerFile = file
+      )
     )
   )
 }
 
 /** Form B: function pointer assigned into a known callback struct field. */
-predicate formAssign(string caller, Function cb, string mechanism, string file, int line) {
+predicate formAssign(
+  string caller, string callerFile, Function cb, string mechanism, string file, int line
+) {
   exists(AssignExpr ae, FieldAccess fa, string s, string f, string rawMech |
     asyncCallbackField(s, f, rawMech) and
     fa = ae.getLValue() and
@@ -53,8 +70,13 @@ predicate formAssign(string caller, Function cb, string mechanism, string file, 
     ) and
     (
       if exists(ae.getEnclosingFunction())
-      then caller = ae.getEnclosingFunction().getName()
-      else caller = "<file-scope:" + file + ">"
+      then (
+        caller = ae.getEnclosingFunction().getName() and
+        callerFile = functionFile(ae.getEnclosingFunction())
+      ) else (
+        caller = "<file-scope:" + file + ">" and
+        callerFile = file
+      )
     )
   )
 }
@@ -68,7 +90,9 @@ predicate formAssign(string caller, Function cb, string mechanism, string file, 
  * variable to a registration or scheduling call (Recommendation D2). If no
  * such call exists in the translation unit, `<file-scope:...>` is emitted.
  */
-predicate formInit(string caller, Function cb, string mechanism, string file, int line) {
+predicate formInit(
+  string caller, string callerFile, Function cb, string mechanism, string file, int line
+) {
   exists(ClassAggregateLiteral cal, Field fld, Expr fe, string s, string f |
     asyncCallbackField(s, f, mechanism) and
     fld.getName() = f and
@@ -79,28 +103,42 @@ predicate formInit(string caller, Function cb, string mechanism, string file, in
     line = cal.getLocation().getStartLine() and
     (
       if exists(cal.getEnclosingFunction())
-      then caller = cal.getEnclosingFunction().getName()
-      else
+      then (
+        caller = cal.getEnclosingFunction().getName() and
+        callerFile = functionFile(cal.getEnclosingFunction())
+      ) else
         if exists(Function regFn | staticInitRegistrarCaller(cal, regFn))
         then
           exists(Function regFn |
             staticInitRegistrarCaller(cal, regFn) and
-            caller = regFn.getName()
+            caller = regFn.getName() and
+            callerFile = functionFile(regFn)
           )
-        else caller = "<file-scope:" + file + ">"
+        else (
+          caller = "<file-scope:" + file + ">" and
+          callerFile = file
+        )
     )
   )
 }
 
-from string caller, Function cb, string mechanism, string form, string file, int line
+from
+  string caller,
+  string callerFile,
+  Function cb,
+  string mechanism,
+  string form,
+  string file,
+  int line
 where
   (
-    formArg(caller, cb, mechanism, file, line) and form = "arg"
+    formArg(caller, callerFile, cb, mechanism, file, line) and form = "arg"
     or
-    formAssign(caller, cb, mechanism, file, line) and form = "assign"
+    formAssign(caller, callerFile, cb, mechanism, file, line) and form = "assign"
     or
-    formInit(caller, cb, mechanism, file, line) and form = "init"
+    formInit(caller, callerFile, cb, mechanism, file, line) and form = "init"
   ) and
+  not nonRuntimeKernelFile(cb.getLocation().getFile()) and
   caller != cb.getName()
 select
   caller,
@@ -108,4 +146,6 @@ select
   mechanism,
   form,
   file,
-  line
+  line,
+  callerFile as caller_file,
+  functionFile(cb) as callee_file

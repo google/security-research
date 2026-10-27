@@ -147,6 +147,30 @@ def create_entry_node_schema(cur: sqlite3.Cursor) -> None:
     """)
 
 
+def create_git_log_schema(cur: sqlite3.Cursor) -> None:
+    """Create git_log table for unit tests."""
+    cur.execute("""
+        CREATE TABLE git_log (
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            author_date INTEGER NOT NULL,
+            `commit` TEXT NOT NULL,
+            data TEXT NOT NULL,
+            function_name TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
+
+def create_all_extended_schemas(cur: sqlite3.Cursor) -> None:
+    """Create entry_node, async_edges, kconfig, syzkaller, and git_log."""
+    create_entry_node_schema(cur)
+    create_async_edges_schema(cur)
+    create_kconfig_schema(cur)
+    create_syzkaller_schema(cur)
+    create_git_log_schema(cur)
+
+
 _TABLE_INSERT_SQL = {
     "function_locations": "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
     "syscall_node": "INSERT INTO syscall_node VALUES (?, ?, ?, ?)",
@@ -194,3 +218,12 @@ class BaseToolsTestCase(unittest.TestCase):
         self.conn.close()
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
         super().tearDown()
+
+
+class ExtendedToolsTestCase(BaseToolsTestCase):
+    """Base test case with entry_node, async_edges, kconfig, syzk, & git_log."""
+
+    def setUp(self) -> None:
+        """Initialize base and extended schemas."""
+        super().setUp()
+        create_all_extended_schemas(self.conn.cursor())

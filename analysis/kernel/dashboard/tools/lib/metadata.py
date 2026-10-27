@@ -11,11 +11,14 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from tools.lib.callgraph import (
     CallerRow,
     clean_file_path,
+    column_exists,
     ensure_indexes,
     get_enclosing_function,
     get_function_by_name,
+    get_functions_by_name,
     get_reachable_entries,
     get_reachable_syscalls,
+    table_exists,
 )
 
 CONFIG_TOKEN_RE = re.compile(r"\b(CONFIG_[A-Za-z0-9_]+)\b")
@@ -112,6 +115,31 @@ def is_line_covered_by_syzkaller(
     return cur.fetchone() is not None
 
 
+def is_span_covered_by_syzkaller(
+    syzk_conn: Optional[sqlite3.Connection],
+    file_path: str,
+    fn_span: Tuple[int, int],
+) -> bool:
+    """Quick boolean check if any line in fn_span was executed in Syzkaller."""
+    if not syzk_conn:
+        return False
+    clean_path = clean_file_path(file_path)
+    cur = syzk_conn.cursor()
+    cur.execute(
+        "SELECT file_id FROM file_path WHERE file_path = ? OR file_path LIKE ?",
+        (clean_path, f"%/{clean_path}"),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    cur.execute(
+        "SELECT 1 FROM syzk_cov"
+        " WHERE file_id = ? AND code_line_no BETWEEN ? AND ? LIMIT 1",
+        (row[0], fn_span[0], fn_span[1]),
+    )
+    return cur.fetchone() is not None
+
+
 def _invert_config_expr(config: str) -> str:
     """Invert a CONFIG_* expression for the #else branch of a guard."""
     if config.startswith("!") and " " not in config:
@@ -176,6 +204,180 @@ def get_kconfig_metadata(
     except sqlite3.Error:
         return {}
     return {row[0]: dict(zip(_KCONFIG_KEYS, row[1:])) for row in rows}
+
+
+_DB_VERSION_RE = re.compile(
+    r"(?:kernel_dashboard-|run_)v?([0-9]+\.[0-9]+[^\s/]*?)(?:\.db|/|$)"
+)
+
+
+def infer_repo_dir(
+    db_path: Optional[str], repo_dir: Optional[str] = None
+) -> Optional[str]:
+    """Resolve kernel source checkout dir from --repo-dir or WORKSPACE_DIR."""
+    if repo_dir:
+        return repo_dir if os.path.isdir(repo_dir) else None
+    if not db_path:
+        return None
+    m = _DB_VERSION_RE.search(db_path)
+    if not m:
+        return None
+    ver = m.group(1)
+    repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..")
+    )
+    ws_candidates = [
+        os.environ.get("WORKSPACE_DIR", ""),
+        os.path.expanduser("~/kernel_codeql_workspace"),
+        os.path.join(repo_root, "kernel_codeql_workspace"),
+    ]
+    for ws in ws_candidates:
+        if not ws:
+            continue
+        candidate = os.path.join(ws, f"linux_v{ver}")
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def resolve_syzk_conn(
+    conn: sqlite3.Connection,
+    syzk_conn: Optional[sqlite3.Connection] = None,
+) -> Optional[sqlite3.Connection]:
+    """Return explicit syzk_conn or conn if syzk_cov table is embedded."""
+    if syzk_conn is not None:
+        return syzk_conn
+    cur = conn.cursor()
+    if table_exists(cur, "syzk_cov") and table_exists(cur, "file_path"):
+        return conn
+    return None
+
+
+def get_file_kconfig_guards(
+    conn: sqlite3.Connection,
+    file_path: str,
+    line_number: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Return enriched Kconfig guard records for a file and optional line."""
+    clean_p = clean_file_path(file_path)
+    exprs = get_line_configs(conn, clean_p, line_number or 1)
+    if not exprs:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT DISTINCT config FROM configs"
+                " WHERE (path = ? OR path LIKE ?) AND ifdef <= 1"
+                " ORDER BY config ASC",
+                (clean_p, f"%/{clean_p}"),
+            )
+            exprs = [r[0] for r in cur.fetchall() if r[0]]
+        except sqlite3.Error:
+            exprs = []
+
+    kmeta = get_kconfig_metadata(conn, exprs)
+    guards: List[Dict[str, Any]] = []
+    seen_tokens: Set[str] = set()
+    for expr in exprs:
+        tokens = CONFIG_TOKEN_RE.findall(expr)
+        if not tokens:
+            guards.append({"config": expr, "build_val": None})
+            continue
+        for tok in tokens:
+            if tok in seen_tokens:
+                continue
+            seen_tokens.add(tok)
+            info = kmeta.get(tok, {})
+            guards.append({
+                "config": tok,
+                "expr": expr,
+                "build_val": info.get("build_val"),
+                "type": info.get("type"),
+                "depends_on": info.get("depends_on"),
+                "kconfig_file": info.get("kconfig_file"),
+            })
+    return guards
+
+
+def _query_git_log_row(
+    cur: sqlite3.Cursor,
+    function_name: str,
+    clean_p: str,
+    span: Tuple[int, int],
+    include_data: bool,
+) -> Optional[Tuple[Any, ...]]:
+    """Query git_log by (function_name, file_path) or span fallback."""
+    cols = (
+        "start_line, end_line, author_date, `commit`, data"
+        if include_data
+        else "start_line, end_line, author_date, `commit`"
+    )
+    if column_exists(cur, "git_log", "function_name") and function_name:
+        cur.execute(
+            f"SELECT {cols} FROM git_log"
+            " WHERE function_name = ? AND (file_path = ? OR file_path LIKE ?)"
+            " ORDER BY CASE WHEN start_line = ? THEN 0 ELSE 1 END LIMIT 1",
+            (function_name, clean_p, f"%/{clean_p}", span[0]),
+        )
+        row = cur.fetchone()
+        if row:
+            return row
+
+    cur.execute(
+        f"SELECT {cols} FROM git_log"
+        " WHERE (file_path = ? OR file_path LIKE ?)"
+        " AND start_line = ? AND end_line = ? LIMIT 1",
+        (clean_p, f"%/{clean_p}", span[0], span[1]),
+    )
+    return cur.fetchone()
+
+
+def get_git_log_metadata(
+    conn: sqlite3.Connection,
+    function_name: str,
+    file_path: str,
+    span: Tuple[int, int],
+    include_data: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Return git_log commit, author_date, and optional body for a function."""
+    cur = conn.cursor()
+    if not table_exists(cur, "git_log"):
+        return None
+    clean_p = clean_file_path(file_path)
+    try:
+        row = _query_git_log_row(
+            cur, function_name, clean_p, span, include_data
+        )
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    meta: Dict[str, Any] = {
+        "start_line": int(row[0]),
+        "end_line": int(row[1]),
+        "author_date": int(row[2]) if row[2] is not None else None,
+        "commit": row[3],
+    }
+    if include_data:
+        meta["data"] = row[4]
+    return meta
+
+
+def format_ambiguous_symbol_error(
+    function_name: str, candidates: List[Tuple[str, str, int, int]]
+) -> str:
+    """Format an actionable AMBIGUOUS_SYMBOL error listing all candidates."""
+    lines = [
+        (
+            f"Error: AMBIGUOUS_SYMBOL: Function '{function_name}' has"
+            f" {len(candidates)} definitions across files:"
+        ),
+    ]
+    for fn, fpath, s_line, e_line in candidates:
+        lines.append(f"  - {fn} in {fpath}:{s_line}-{e_line}")
+    lines.append(
+        "Please disambiguate with --file <path> (or pass --allow-ambiguous)."
+    )
+    return "\n".join(lines)
 
 
 def build_target_info(
@@ -306,6 +508,11 @@ def add_common_cli_args(
     parser.add_argument(
         "--function", "-fn", help="Direct function name to analyze"
     )
+    parser.add_argument(
+        "--allow-ambiguous",
+        action="store_true",
+        help="Pick first candidate if --function matches multiple files",
+    )
     if include_reachability_flags:
         parser.add_argument(
             "--syscall",
@@ -346,36 +553,92 @@ def add_common_cli_args(
     )
 
 
+def add_standard_tool_cli_args(
+    parser: argparse.ArgumentParser,
+    *,
+    include_syzkaller: bool = True,
+    include_repo_dir: bool = False,
+) -> None:
+    """Register common --db, --syzkaller-db, --repo-dir, --format, and flags."""
+    parser.add_argument(
+        "--db", required=True, help="Path to CodeQL SQLite database"
+    )
+    if include_syzkaller:
+        parser.add_argument(
+            "--syzkaller-db",
+            default=None,
+            help="Path to Syzkaller coverage SQLite database (optional)",
+        )
+    if include_repo_dir:
+        parser.add_argument(
+            "--repo-dir",
+            default=None,
+            help=(
+                "Optional kernel source tree path (auto-detected from"
+                " WORKSPACE_DIR)"
+            ),
+        )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    parser.add_argument(
+        "--ensure-indexes",
+        action="store_true",
+        help="Ensure fast SQLite indexes exist on the database and exit",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Print debug information"
+    )
+
+
+def verify_db_and_indexes(args: argparse.Namespace) -> bool:
+    """Validate --db/--syzkaller-db and return True if --ensure-indexes ran."""
+    if not os.path.isfile(args.db):
+        sys.exit(f"Error: Database file not found: {args.db}")
+    syzk_db = getattr(args, "syzkaller_db", None)
+    if syzk_db and not os.path.isfile(syzk_db):
+        sys.exit(f"Error: Syzkaller database file not found: {syzk_db}")
+    if getattr(args, "ensure_indexes", False):
+        conn = sqlite3.connect(args.db)
+        ensure_indexes(conn, verbose=True)
+        conn.close()
+        print("Indexes verified successfully.")
+        return True
+    return False
+
+
 def handle_common_cli_setup(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
     resolve_function_to_line: bool = True,
 ) -> Optional[bool]:
     """Validate DB files, handle --ensure-indexes, and resolve --function."""
-    if not os.path.isfile(args.db):
-        sys.exit(f"Error: Database file not found: {args.db}")
-    if args.syzkaller_db and not os.path.isfile(args.syzkaller_db):
-        sys.exit(
-            f"Error: Syzkaller database file not found: {args.syzkaller_db}"
-        )
-
-    if args.ensure_indexes:
-        conn = sqlite3.connect(args.db)
-        ensure_indexes(conn, verbose=True)
-        conn.close()
-        print("Indexes verified successfully.")
+    if verify_db_and_indexes(args):
         return None
 
     is_function_entry = False
     if resolve_function_to_line and args.function and args.line is None:
         conn = sqlite3.connect(args.db)
-        fn_row = get_function_by_name(conn, args.function, args.file)
+        candidates = get_functions_by_name(conn, args.function, args.file)
+        if not candidates and args.file:
+            fn_fallback = get_function_by_name(conn, args.function, args.file)
+            candidates = [fn_fallback] if fn_fallback else []
         conn.close()
-        if not fn_row:
+        if not candidates:
             sys.exit(
                 f"Error: Function '{args.function}' not found in"
                 " function_locations table."
             )
+        if (
+            len(candidates) > 1
+            and not args.file
+            and not getattr(args, "allow_ambiguous", False)
+        ):
+            sys.exit(format_ambiguous_symbol_error(args.function, candidates))
+        fn_row = candidates[0]
         args.file = fn_row[1]
         args.line = fn_row[2]
         is_function_entry = True

@@ -10,6 +10,7 @@ from tools.lib.callgraph import (
     SpanFuncList,
     clean_file_path,
     load_functions_for_files,
+    query_span_outgoing_calls,
     table_exists,
 )
 
@@ -37,16 +38,64 @@ COST_PHYSICAL = 500_000
 COST_CAPABLE = 1_000_000
 
 
+LINUX_UAPI_CAPABILITIES: Dict[str, str] = {
+    "0": "CAP_CHOWN",
+    "1": "CAP_DAC_OVERRIDE",
+    "2": "CAP_DAC_READ_SEARCH",
+    "3": "CAP_FOWNER",
+    "4": "CAP_FSETID",
+    "5": "CAP_KILL",
+    "6": "CAP_SETGID",
+    "7": "CAP_SETUID",
+    "8": "CAP_SETPCAP",
+    "9": "CAP_LINUX_IMMUTABLE",
+    "10": "CAP_NET_BIND_SERVICE",
+    "11": "CAP_NET_BROADCAST",
+    "12": "CAP_NET_ADMIN",
+    "13": "CAP_NET_RAW",
+    "14": "CAP_IPC_LOCK",
+    "15": "CAP_IPC_OWNER",
+    "16": "CAP_SYS_MODULE",
+    "17": "CAP_SYS_RAWIO",
+    "18": "CAP_SYS_CHROOT",
+    "19": "CAP_SYS_PTRACE",
+    "20": "CAP_SYS_PACCT",
+    "21": "CAP_SYS_ADMIN",
+    "22": "CAP_SYS_BOOT",
+    "23": "CAP_SYS_NICE",
+    "24": "CAP_SYS_RESOURCE",
+    "25": "CAP_SYS_TIME",
+    "26": "CAP_SYS_TTY_CONFIG",
+    "27": "CAP_MKNOD",
+    "28": "CAP_LEASE",
+    "29": "CAP_AUDIT_WRITE",
+    "30": "CAP_AUDIT_CONTROL",
+    "31": "CAP_SETFCAP",
+    "32": "CAP_MAC_OVERRIDE",
+    "33": "CAP_MAC_ADMIN",
+    "34": "CAP_SYSLOG",
+    "35": "CAP_WAKE_ALARM",
+    "36": "CAP_BLOCK_SUSPEND",
+    "37": "CAP_AUDIT_READ",
+    "38": "CAP_PERFMON",
+    "39": "CAP_BPF",
+    "40": "CAP_CHECKPOINT_RESTORE",
+}
+
+
 def format_capability(
     c_type: str, arg: str, cap_map: Optional[Dict[str, str]] = None
 ) -> str:
     """Format capability check name, e.g. capable(CAP_SYS_ADMIN)."""
-    if cap_map and str(arg) in cap_map:
-        cap_name = cap_map[str(arg)]
-    elif str(arg).isdigit():
-        cap_name = f"CAP_{arg}"
+    s_arg = str(arg)
+    if cap_map and s_arg in cap_map:
+        cap_name = cap_map[s_arg]
+    elif s_arg in LINUX_UAPI_CAPABILITIES:
+        cap_name = LINUX_UAPI_CAPABILITIES[s_arg]
+    elif s_arg.isdigit():
+        cap_name = f"CAP_{s_arg}"
     else:
-        cap_name = str(arg)
+        cap_name = s_arg
     return f"{c_type}({cap_name})"
 
 
@@ -117,33 +166,37 @@ def _load_cap_macro_invocations(
 
 
 def load_capability_map(conn: sqlite3.Connection) -> Dict[str, str]:
-    """Extract capability number-to-name mapping directly from the database."""
+    """Extract capability number-to-name mapping from DB and UAPI constants."""
+    result = dict(LINUX_UAPI_CAPABILITIES)
     cur = conn.cursor()
     if not table_exists(cur, "macroinvocation_locations"):
-        return {}
+        return result
 
     try:
-        macro_invs = _load_cap_macro_invocations(cur)
         cur.execute(
-            "SELECT argument, definition FROM conditions"
+            "SELECT DISTINCT argument, definition FROM conditions"
             " WHERE type IN ('capable', 'ns_capable')"
             " AND argument NOT IN ('cap', 'cap_setid')"
         )
-        counts: Dict[str, Dict[str, int]] = {}
-        for arg, def_loc in cur.fetchall():
-            m = LOCATION_RE.match(def_loc) if str(arg).isdigit() else None
+        unmapped = [
+            (str(arg), def_loc)
+            for arg, def_loc in cur.fetchall()
+            if str(arg).isdigit() and str(arg) not in result
+        ]
+        if not unmapped:
+            return result
+        macro_invs = _load_cap_macro_invocations(cur)
+        for arg, def_loc in unmapped:
+            m = LOCATION_RE.match(def_loc) if def_loc else None
             if m:
-                key = (clean_file_path(m.group(1)), int(m.group(2)))
-                for name in macro_invs.get(key, []):
-                    counts.setdefault(arg, {}).setdefault(name, 0)
-                    counts[arg][name] += 1
-
-        return {
-            arg: max(name_counts.items(), key=lambda x: x[1])[0]
-            for arg, name_counts in counts.items()
-        }
+                names = macro_invs.get(
+                    (clean_file_path(m.group(1)), int(m.group(2))), []
+                )
+                if names:
+                    result[arg] = names[0]
+        return result
     except sqlite3.Error:
-        return {}
+        return result
 
 
 def _extract_ns_scope(call_name: Optional[str]) -> Optional[str]:
@@ -347,17 +400,23 @@ def _get_open_function_gates(
     func_gates: FuncGateMap,
     open_fn: str,
     open_file: str,
-    parent: str,
-    field: str,
+    slot: Tuple[str, str],
+    allow_partial_helper: bool = False,
 ) -> GateList:
     """Return full-function capability gates on an .open/.proc_open callback."""
+    parent, field = slot
     gates: GateList = []
     for fg in func_gates.get(open_fn, []):
         if fg.get("func_file") and open_file and fg["func_file"] != open_file:
             continue
         span = fg.get("fn_span")
         max_ctrl = fg.get("max_controlled_line")
-        if span and max_ctrl is not None and max_ctrl < span[1] - 2:
+        if (
+            not allow_partial_helper
+            and span
+            and max_ctrl is not None
+            and max_ctrl < span[1] - 2
+        ):
             continue
         gates.append(
             dict(
@@ -367,6 +426,91 @@ def _get_open_function_gates(
             )
         )
     return deduplicate_gates(gates)
+
+
+def _query_open_callees(
+    cur: sqlite3.Cursor,
+    open_fn: str,
+    open_file: str,
+    span: Tuple[Optional[int], Optional[int]],
+) -> List[Tuple[str, str]]:
+    """Query direct 1-hop callees invoked by an .open/.proc_open callback."""
+    rows: List[Tuple[str, str]] = []
+    if open_file and span[0] is not None and span[1] is not None:
+        rows = [
+            (r[1], r[2])
+            for r in query_span_outgoing_calls(
+                cur, open_file, (int(span[0]), int(span[1]))
+            )
+        ]
+    if not rows and open_file:
+        cur.execute(
+            "SELECT DISTINCT t.message, t.uri"
+            " FROM locations s"
+            " JOIN edges e ON e.source_location_id = s.id"
+            " JOIN locations t ON e.target_location_id = t.id"
+            " WHERE s.message = ? AND (s.uri = ? OR s.uri = ?)",
+            (open_fn, open_file, f"linux/{open_file}"),
+        )
+        rows = cur.fetchall()
+
+    callees: List[Tuple[str, str]] = []
+    for raw_msg, uri in rows:
+        if not raw_msg:
+            continue
+        callee = raw_msg[8:] if raw_msg.startswith("call to ") else raw_msg
+        c_file = clean_file_path(uri) if uri else ""
+        callees.append((callee, c_file))
+    return callees
+
+
+def _get_open_helper_gates(
+    cur: sqlite3.Cursor,
+    func_gates: FuncGateMap,
+    open_target: Tuple[str, str, Optional[int], Optional[int]],
+    slot: Tuple[str, str],
+) -> GateList:
+    """Resolve 1-hop helper capability gates called from .open/.proc_open."""
+    gates: GateList = []
+    for callee_fn, callee_file in _query_open_callees(
+        cur, open_target[0], open_target[1], (open_target[2], open_target[3])
+    ):
+        if callee_fn not in func_gates:
+            continue
+        is_perm_helper = any(
+            tok in callee_fn.lower()
+            for tok in ("perm", "cap", "auth", "check", "access", "priv")
+        )
+        for hg in _get_open_function_gates(
+            func_gates,
+            callee_fn,
+            callee_file,
+            slot,
+            allow_partial_helper=is_perm_helper,
+        ):
+            gates.append(
+                dict(
+                    hg,
+                    gate_scope="open_acquisition",
+                    call=f"{open_target[0]}->{callee_fn} ({slot[0]}.{slot[1]})",
+                )
+            )
+    return deduplicate_gates(gates)
+
+
+def _resolve_instance_open_gates(
+    cur: sqlite3.Cursor,
+    func_gates: FuncGateMap,
+    open_target: Tuple[str, str, Optional[int], Optional[int]],
+    slot: Tuple[str, str],
+) -> GateList:
+    """Resolve direct or 1-hop helper gates for an .open/.proc_open slot."""
+    direct = _get_open_function_gates(
+        func_gates, open_target[0], open_target[1], slot
+    )
+    if direct:
+        return direct
+    return _get_open_helper_gates(cur, func_gates, open_target, slot)
 
 
 def load_ops_acquisition_gates(
@@ -381,23 +525,30 @@ def load_ops_acquisition_gates(
 
     placeholders = ", ".join("?" for _ in _ACQUISITION_OPS_PARENTS)
     cur.execute(
-        "SELECT DISTINCT definition, parent, field, target, target_file"
+        "SELECT DISTINCT definition, parent, field, target, target_file,"
+        " target_start, target_end"
         f" FROM ops_targets WHERE parent IN ({placeholders})",
         _ACQUISITION_OPS_PARENTS,
     )
     inst_open_gates: Dict[Tuple[str, str], GateList] = {}
     sibling_insts: Dict[Tuple[str, str, str], Set[Tuple[str, str]]] = {}
 
-    for def_loc, parent, field, target, tfile in cur.fetchall():
-        clean_def = _clean_loc_str(def_loc)
+    for row in cur.fetchall():
+        clean_def = _clean_loc_str(row[0])
         if not clean_def or clean_def == "unknown":
             continue
-        clean_tfile = clean_file_path(tfile or "")
+        parent, field, target = row[1], row[2], row[3]
+        clean_tfile = clean_file_path(row[4] or "")
         inst_key = (parent, clean_def)
         if field in _ACQUISITION_FIELDS:
-            inst_open_gates[inst_key] = _get_open_function_gates(
-                func_gates, target, clean_tfile, parent, field
+            gates = _resolve_instance_open_gates(
+                cur,
+                func_gates,
+                (target, clean_tfile, row[5], row[6]),
+                (parent, field),
             )
+            if gates:
+                inst_open_gates[inst_key] = gates
         else:
             cb_key = (target, clean_tfile, f"{parent}->{field}")
             sibling_insts.setdefault(cb_key, set()).add(inst_key)

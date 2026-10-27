@@ -47,6 +47,17 @@ _ABS_LINUX_ROOT_RE = re.compile(r"^(?:file://)?/+(?:.*?/)?linux(?:[_-][^/]*)?/")
 _REL_LINUX_ROOT_RE = re.compile(r"^linux(?:[_-][^/]*)?/")
 
 
+_NON_RUNTIME_PREFIXES = (
+    "scripts/",
+    "tools/",
+    "samples/",
+    "usr/",
+    "Documentation/",
+    "drivers/firmware/efi/libstub/",
+)
+_NON_RUNTIME_RE = re.compile(r"^(?:arch/[^/]+/boot/|.*/vdso/|.*/purgatory/)")
+
+
 def clean_file_path(path: str) -> str:
     """Normalize file path by stripping URI, leading slash, and linux* root."""
     p = _ABS_LINUX_ROOT_RE.sub("", path)
@@ -55,6 +66,25 @@ def clean_file_path(path: str) -> str:
     if p.startswith("file://"):
         p = p[7:]
     return p.lstrip("/")
+
+
+def is_non_runtime_path(file_path: Optional[str]) -> bool:
+    """Check whether file_path belongs to a non-runtime boot or host binary."""
+    if not file_path:
+        return False
+    clean_p = clean_file_path(file_path)
+    if clean_p.startswith(_NON_RUNTIME_PREFIXES):
+        return True
+    return bool(_NON_RUNTIME_RE.match(clean_p))
+
+
+def file_matches_filter(file_path: str, file_filter: Optional[str]) -> bool:
+    """Return True if normalized file_path matches file_filter or suffix."""
+    if not file_filter:
+        return True
+    clean_p = clean_file_path(file_path)
+    clean_f = clean_file_path(file_filter)
+    return clean_p == clean_f or clean_p.endswith(f"/{clean_f}")
 
 
 def table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:
@@ -66,12 +96,36 @@ def table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:
     return cur.fetchone() is not None
 
 
+def column_exists(
+    cur: sqlite3.Cursor, table_name: str, column_name: str
+) -> bool:
+    """Check whether column_name exists on table_name in SQLite."""
+    if not table_exists(cur, table_name):
+        return False
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return any(row[1] == column_name for row in cur.fetchall())
+
+
+def _norm_idx_spec(sql_or_spec: str) -> str:
+    """Normalize an index ON table(cols) specification for comparison."""
+    s = re.sub(r"\s+", "", sql_or_spec.lower())
+    m = re.search(r"on([a-z0-9_]+\([a-z0-9_,]+\))", s)
+    return m.group(1) if m else s
+
+
 def ensure_indexes(conn: sqlite3.Connection, verbose: bool = False) -> None:
     """Create essential SQLite indexes for fast callgraph traversal."""
     cur = conn.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='index'")
-    existing = {r[0] for r in cur.fetchall()}
-    missing = [(name, sql) for name, sql in INDEXES if name not in existing]
+    cur.execute("SELECT name, sql FROM sqlite_master WHERE type='index'")
+    rows = cur.fetchall()
+    existing_names = {r[0] for r in rows if r[0]}
+    existing_specs = {_norm_idx_spec(r[1]) for r in rows if r[1]}
+    missing = [
+        (name, sql)
+        for (name, spec), (_, sql) in zip(_INDEX_SPECS, INDEXES)
+        if name not in existing_names
+        and _norm_idx_spec(spec) not in existing_specs
+    ]
     if not missing:
         return
 
@@ -128,7 +182,50 @@ def get_enclosing_function(
         (clean_path, f"%/{clean_path}", line_number),
     )
     rows = cur.fetchall()
-    return rows[0] if rows else None
+    if rows:
+        r = rows[0]
+        return (r[0], clean_file_path(r[1]), r[2], r[3])
+
+    cur.execute(
+        "SELECT function_name, file_path, start_line, end_line"
+        " FROM function_locations"
+        " WHERE (file_path = ? OR file_path LIKE ?)"
+        " AND ? BETWEEN (start_line - 4) AND start_line"
+        " ORDER BY (start_line - ?) ASC, (end_line - start_line) ASC",
+        (clean_path, f"%/{clean_path}", line_number, line_number),
+    )
+    row = cur.fetchone()
+    return (row[0], clean_file_path(row[1]), row[2], row[3]) if row else None
+
+
+def get_functions_by_name(
+    conn: sqlite3.Connection,
+    function_name: str,
+    file_path: Optional[str] = None,
+    include_non_runtime: bool = False,
+) -> List[Tuple[str, str, int, int]]:
+    """Return all (function_name, file_path, start_line, end_line) matches."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT DISTINCT function_name, file_path, start_line, end_line"
+        " FROM function_locations WHERE function_name = ?"
+        " ORDER BY file_path ASC, start_line ASC",
+        (function_name,),
+    )
+    matches: List[Tuple[str, str, int, int]] = []
+    seen: Set[Tuple[str, str, int, int]] = set()
+    for fn, fpath, s_line, e_line in cur.fetchall():
+        clean_f = clean_file_path(fpath)
+        if not include_non_runtime and not file_path:
+            if is_non_runtime_path(clean_f):
+                continue
+        if file_path and not file_matches_filter(clean_f, file_path):
+            continue
+        item = (fn, clean_f, s_line, e_line)
+        if item not in seen:
+            seen.add(item)
+            matches.append(item)
+    return matches
 
 
 def get_function_by_name(
@@ -137,24 +234,14 @@ def get_function_by_name(
     file_path: Optional[str] = None,
 ) -> Optional[Tuple[str, str, int, int]]:
     """Look up canonical file and line span for a function name."""
-    cur = conn.cursor()
+    exact_matches = get_functions_by_name(conn, function_name, file_path)
+    if exact_matches:
+        return exact_matches[0]
     if file_path:
-        clean_path = clean_file_path(file_path)
-        cur.execute(
-            "SELECT function_name, file_path, start_line, end_line"
-            " FROM function_locations WHERE function_name = ?"
-            " ORDER BY CASE WHEN file_path = ? OR file_path LIKE ?"
-            " THEN 0 ELSE 1 END LIMIT 1",
-            (function_name, clean_path, f"%/{clean_path}"),
-        )
-    else:
-        cur.execute(
-            "SELECT function_name, file_path, start_line, end_line"
-            " FROM function_locations WHERE function_name = ? LIMIT 1",
-            (function_name,),
-        )
-    row = cur.fetchone()
-    return (row[0], clean_file_path(row[1]), row[2], row[3]) if row else None
+        fallback = get_functions_by_name(conn, function_name, None)
+        if fallback:
+            return fallback[0]
+    return None
 
 
 def other_defining_files(
@@ -212,7 +299,7 @@ def _record_caller_site(
     results.append(entry)
 
 
-def _resolve_edge_caller(
+def resolve_edge_caller(
     cur: sqlite3.Cursor,
     function_name: str,
     edge_row: Tuple[str, str, int, str, int],
@@ -225,10 +312,12 @@ def _resolve_edge_caller(
         return src_msg, src_file, src_line, dst_line
     if src_msg == f"call to {function_name}":
         return None
+    clean_src = clean_file_path(src_file)
     cur.execute(
         "SELECT function_name, file_path, start_line FROM function_locations"
-        " WHERE file_path = ? AND ? BETWEEN start_line AND end_line LIMIT 1",
-        (src_file, src_line),
+        " WHERE file_path = ? AND ? BETWEEN start_line AND end_line"
+        " ORDER BY (end_line - start_line) ASC, start_line DESC LIMIT 1",
+        (clean_src, src_line),
     )
     fn_row = cur.fetchone()
     if fn_row and (src_msg.startswith("call to ") or src_msg != fn_row[0]):
@@ -236,6 +325,9 @@ def _resolve_edge_caller(
     if not src_msg.startswith("call to "):
         return src_msg, src_file, src_line, dst_line
     return None
+
+
+_resolve_edge_caller = resolve_edge_caller
 
 
 def _callee_files_by_site(
@@ -349,7 +441,7 @@ def _add_indirect_callers(
             "SELECT function_name, file_path, start_line"
             " FROM function_locations"
             " WHERE file_path = ? AND ? BETWEEN start_line AND end_line"
-            " LIMIT 1",
+            " ORDER BY (end_line - start_line) ASC, start_line DESC LIMIT 1",
             (row[3], row[4]),
         )
         fn_row = cur.fetchone()
@@ -369,6 +461,111 @@ def _add_indirect_callers(
             )
 
 
+def _query_async_caller_rows(
+    cur: sqlite3.Cursor, function_name: str
+) -> List[Tuple[str, str, str, str, int, str, str, str]]:
+    """Query async_edges rows for callee with optional file columns."""
+    has_files = column_exists(cur, "async_edges", "callee_file")
+    try:
+        if has_files:
+            cur.execute(
+                "SELECT DISTINCT caller, mechanism, form, file, line, context,"
+                " caller_file, callee_file FROM async_edges WHERE callee = ?",
+                (function_name,),
+            )
+            return [
+                (r[0], r[1], r[2], r[3], r[4], r[5], r[6] or "", r[7] or "")
+                for r in cur.fetchall()
+            ]
+        cur.execute(
+            "SELECT DISTINCT caller, mechanism, form, file, line, context"
+            " FROM async_edges WHERE callee = ?",
+            (function_name,),
+        )
+        return [
+            (r[0], r[1], r[2], r[3], r[4], r[5], "", "") for r in cur.fetchall()
+        ]
+    except sqlite3.Error:
+        return []
+
+
+def find_preferred_function_location(
+    cur: sqlite3.Cursor, fn_name: str, preferred_file: str
+) -> Optional[Tuple[str, int]]:
+    """Lookup (file_path, start_line) for fn_name preferring preferred_file."""
+    cur.execute(
+        "SELECT file_path, start_line FROM function_locations"
+        " WHERE function_name = ?"
+        " ORDER BY CASE WHEN file_path = ? OR file_path LIKE ?"
+        " THEN 0 ELSE 1 END LIMIT 1",
+        (fn_name, preferred_file, f"%/{preferred_file}"),
+    )
+    row = cur.fetchone()
+    return (clean_file_path(row[0]), int(row[1])) if row else None
+
+
+def query_span_outgoing_calls(
+    cur: sqlite3.Cursor, clean_file: str, span: Tuple[int, int]
+) -> List[Tuple[int, str, str, int]]:
+    """Return (call_line, callee_name, callee_uri, callee_line) in span."""
+    cur.execute(
+        "SELECT DISTINCT s.startLine, t.message, t.uri, t.startLine"
+        " FROM locations s JOIN edges e ON e.source_location_id = s.id"
+        " JOIN locations t ON e.target_location_id = t.id"
+        " WHERE (s.uri = ? OR s.uri = ?) AND s.startLine BETWEEN ? AND ?"
+        " AND s.message LIKE 'call to %' ORDER BY s.startLine, t.message",
+        (clean_file, f"linux/{clean_file}", span[0], span[1]),
+    )
+    return list(cur.fetchall())
+
+
+def _resolve_async_caller_row(
+    cur: sqlite3.Cursor,
+    row: Tuple[str, str, str, str, int, str, str, str],
+    clean_tgt: Optional[str],
+    other_files: Set[str],
+) -> Optional[Tuple[str, str, int, int, str]]:
+    """Resolve and filter a single raw async_edges caller row."""
+    caller, mech, form, reg_f, reg_l, ctx, caller_f, callee_f = row
+    if caller.startswith("<file-scope:"):
+        return None
+    if clean_tgt and callee_f and clean_file_path(callee_f) != clean_tgt:
+        return None
+    if not callee_f and other_files and reg_f:
+        if clean_file_path(reg_f) in other_files:
+            return None
+    pref_file = clean_file_path(caller_f or reg_f)
+    fn_row = find_preferred_function_location(cur, caller, pref_file)
+    res_f = fn_row[0] if fn_row else pref_file
+    if is_non_runtime_path(res_f) and not (
+        clean_tgt and is_non_runtime_path(clean_tgt)
+    ):
+        return None
+    return (
+        caller,
+        res_f,
+        fn_row[1] if fn_row else reg_l,
+        reg_l,
+        f"{mech}/{form} ({ctx})",
+    )
+
+
+def query_async_callers(
+    cur: sqlite3.Cursor,
+    function_name: str,
+    target_file: Optional[str] = None,
+) -> List[Tuple[str, str, int, int, str]]:
+    """Return resolved (caller, file, fn_line, reg_line, dispatch) rows."""
+    clean_tgt = clean_file_path(target_file) if target_file else None
+    other_files = other_defining_files(cur, function_name, clean_tgt)
+    resolved_rows: List[Tuple[str, str, int, int, str]] = []
+    for row in _query_async_caller_rows(cur, function_name):
+        res = _resolve_async_caller_row(cur, row, clean_tgt, other_files)
+        if res:
+            resolved_rows.append(res)
+    return resolved_rows
+
+
 def _add_async_callers(
     cur: sqlite3.Cursor,
     function_name: str,
@@ -377,42 +574,14 @@ def _add_async_callers(
     target_file: Optional[str] = None,
 ) -> None:
     """Populate asynchronous handler callers from async_edges."""
-    clean_tgt = clean_file_path(target_file) if target_file else None
-    other_files = other_defining_files(cur, function_name, clean_tgt)
-    try:
-        cur.execute(
-            "SELECT DISTINCT caller, mechanism, form, file, line, context"
-            " FROM async_edges WHERE callee = ?",
-            (function_name,),
-        )
-        async_rows = cur.fetchall()
-    except sqlite3.Error:
-        return
-
-    for row in async_rows:
-        if row[0].startswith("<file-scope:"):
-            continue
-        if other_files and row[3] and clean_file_path(row[3]) in other_files:
-            continue
-        cur.execute(
-            "SELECT file_path, start_line FROM function_locations"
-            " WHERE function_name = ?"
-            " ORDER BY CASE WHEN file_path = ? THEN 0 ELSE 1 END LIMIT 1",
-            (row[0], row[3]),
-        )
-        fn_row = cur.fetchone()
+    for caller, res_f, fn_l, reg_l, disp in query_async_callers(
+        cur, function_name, target_file
+    ):
         _record_caller_site(
             results,
             seen_sites,
-            (row[0], row[4]),
-            (
-                row[0],
-                fn_row[0] if fn_row else row[3],
-                fn_row[1] if fn_row else row[4],
-                row[4],
-                "async",
-                f"{row[1]}/{row[2]} ({row[5]})",
-            ),
+            (caller, reg_l),
+            (caller, res_f, fn_l, reg_l, "async", disp),
         )
 
 
@@ -428,25 +597,82 @@ def get_callers(
     _add_direct_callers(cur, function_name, results, seen_sites, target_file)
     _add_indirect_callers(cur, function_name, results, seen_sites, target_file)
     _add_async_callers(cur, function_name, results, seen_sites, target_file)
-    return results
+    if target_file and is_non_runtime_path(target_file):
+        return results
+    return [r for r in results if not is_non_runtime_path(r[1])]
+
+
+def is_node_visited(
+    visited: Set[Any], fn_name: str, file_path: Optional[str] = None
+) -> bool:
+    """Check whether (fn_name, file_path) or bare fn_name is in visited."""
+    if fn_name in visited:
+        return True
+    clean_f = (
+        clean_file_path(file_path)
+        if file_path and file_path != "unknown"
+        else ""
+    )
+    if clean_f:
+        return (fn_name, clean_f) in visited
+    return (fn_name, "") in visited
+
+
+def mark_node_visited(
+    visited: Set[Any], fn_name: str, file_path: Optional[str] = None
+) -> None:
+    """Record (fn_name, file_path) in visited set."""
+    clean_f = (
+        clean_file_path(file_path)
+        if file_path and file_path != "unknown"
+        else ""
+    )
+    if clean_f:
+        visited.add((fn_name, clean_f))
+    else:
+        visited.add(fn_name)
+        visited.add((fn_name, ""))
+
+
+def _is_caller_excluded(caller: CallerRow, exclude: Optional[Set[Any]]) -> bool:
+    """Check if caller is in exclude set by bare name or (name, file) pair."""
+    if not exclude:
+        return False
+    return is_node_visited(exclude, caller[0], caller[1])
+
+
+def is_in_reachable_set(
+    reachable_set: Optional[Set[Any]],
+    fn_name: str,
+    fn_file: Optional[str] = None,
+) -> bool:
+    """Check if (fn_name, fn_file) is present in reachable_set."""
+    if reachable_set is None:
+        return False
+    clean_f = clean_file_path(fn_file) if fn_file else ""
+    if clean_f and ("__HAS_FILE_PAIRS__", fn_name) in reachable_set:
+        return (fn_name, clean_f) in reachable_set
+    return fn_name in reachable_set
 
 
 def iter_pruned_callers(
     conn: sqlite3.Connection,
     curr_fn: str,
-    reachable_set: Optional[Set[str]],
+    reachable_set: Optional[Set[Any]],
     allow_prune: bool = True,
     **options: Any,
 ) -> List[CallerRow]:
     """Return callers of curr_fn, pruning unreachable direct branches."""
-    exclude: Optional[Set[str]] = options.get("exclude")
-    callers = get_callers(conn, curr_fn, target_file=options.get("target_file"))
+    exclude: Optional[Set[Any]] = options.get("exclude")
+    target_file: Optional[str] = options.get("target_file")
+    callers = get_callers(conn, curr_fn, target_file=target_file)
     can_prune = (
         allow_prune
         and reachable_set is not None
-        and curr_fn in reachable_set
+        and is_in_reachable_set(reachable_set, curr_fn, target_file)
         and any(
-            c[0] in reachable_set and (not exclude or c[0] not in exclude)
+            is_in_reachable_set(reachable_set, c[0], c[1])
+            and not _is_caller_excluded(c, exclude)
             for c in callers
         )
     )
@@ -455,7 +681,8 @@ def iter_pruned_callers(
     return [
         c
         for c in callers
-        if c[0] in reachable_set or c[4] in ("indirect", "async")
+        if is_in_reachable_set(reachable_set, c[0], c[1])
+        or c[4] in ("indirect", "async")
     ]
 
 
@@ -481,7 +708,17 @@ def load_entry_roots(conn: sqlite3.Connection) -> Dict[str, str]:
     """Load non-syscall entry roots (entry -> entry_kind) from entry_node."""
     cur = conn.cursor()
     try:
-        cur.execute("SELECT DISTINCT entry, entry_kind FROM entry_node")
+        cur.execute(
+            "WITH RECURSIVE distinct_entries(entry, entry_kind) AS ( SELECT"
+            " (SELECT MIN(entry) FROM entry_node), (SELECT entry_kind FROM"
+            " entry_node WHERE entry = (SELECT MIN(entry) FROM entry_node)"
+            " LIMIT 1) UNION ALL SELECT (SELECT entry FROM entry_node WHERE"
+            " entry > distinct_entries.entry ORDER BY entry ASC LIMIT 1),"
+            " (SELECT entry_kind FROM entry_node WHERE entry >"
+            " distinct_entries.entry ORDER BY entry ASC LIMIT 1) FROM"
+            " distinct_entries WHERE distinct_entries.entry IS NOT NULL) SELECT"
+            " entry, entry_kind FROM distinct_entries WHERE entry IS NOT NULL"
+        )
         return {r[0]: r[1] for r in cur.fetchall()}
     except sqlite3.Error:
         return {}
@@ -501,25 +738,46 @@ def is_entry_root(
     return kind
 
 
+def _add_node_loc_to_reachable(
+    reachable_set: Set[Any], fn_name: str, loc_str: Optional[str]
+) -> None:
+    """Add function name and optional (function, file) pair to reachable_set."""
+    loc_file = (
+        clean_file_path(str(loc_str).split(":", maxsplit=1)[0])
+        if loc_str
+        else ""
+    )
+    if loc_file and is_non_runtime_path(loc_file):
+        return
+    reachable_set.add(fn_name)
+    if loc_file:
+        reachable_set.add(("__HAS_FILE_PAIRS__", fn_name))
+        reachable_set.add((fn_name, loc_file))
+
+
 def load_target_reachable_set(
     conn: sqlite3.Connection, target_syscall: Optional[str]
-) -> Optional[Set[str]]:
+) -> Optional[Set[Any]]:
     """Build direct reachability set for target_syscall or non-syscall entry."""
     if not target_syscall:
         return None
     cur = conn.cursor()
     cur.execute(
-        "SELECT DISTINCT function FROM syscall_node WHERE syscall = ?",
+        "SELECT DISTINCT function, function_location"
+        " FROM syscall_node WHERE syscall = ?",
         (target_syscall,),
     )
-    reachable_set = {r[0] for r in cur.fetchall()}
+    reachable_set: Set[Any] = set()
+    for fn, loc in cur.fetchall():
+        _add_node_loc_to_reachable(reachable_set, fn, loc)
     try:
         cur.execute(
-            "SELECT DISTINCT function FROM entry_node"
+            "SELECT DISTINCT function, function_location FROM entry_node"
             " WHERE entry = ? OR entry_kind = ?",
             (target_syscall, target_syscall),
         )
-        reachable_set.update(r[0] for r in cur.fetchall())
+        for fn, loc in cur.fetchall():
+            _add_node_loc_to_reachable(reachable_set, fn, loc)
     except sqlite3.Error:
         pass
     reachable_set.add(target_syscall)
@@ -537,14 +795,22 @@ def _filter_node_rows_by_file(
     loc_idx: int,
 ) -> List[Tuple[Any, ...]]:
     """Filter syscall_node/entry_node rows when fn collides across files."""
-    if not fn_file or not rows:
+    if not rows:
         return rows
-    clean_f = clean_file_path(fn_file)
-    if not other_defining_files(cur, fn, clean_f):
-        return rows
-    return [
+    runtime_rows = [
         r
         for r in rows
+        if not r[loc_idx]
+        or not is_non_runtime_path(str(r[loc_idx]).split(":", maxsplit=1)[0])
+    ]
+    if not fn_file or not runtime_rows:
+        return runtime_rows
+    clean_f = clean_file_path(fn_file)
+    if not other_defining_files(cur, fn, clean_f):
+        return runtime_rows
+    return [
+        r
+        for r in runtime_rows
         if not r[loc_idx]
         or clean_file_path(str(r[loc_idx]).split(":", maxsplit=1)[0]) == clean_f
     ]
@@ -560,23 +826,17 @@ def _expand_backward_callers(
     """Expand unvisited callers and return next BFS queue items."""
     next_items: List[Tuple[str, Optional[str], int, int]] = []
     for caller in callers:
-        caller_fn = caller[0]
-        caller_file = clean_file_path(caller[1]) if caller[1] else ""
-        state_key = (caller_fn, caller_file)
-        if caller_fn.startswith("<file-scope:") or state_key in visited:
+        c_fn, c_file = caller[0], clean_file_path(caller[1] or "")
+        if c_fn.startswith("<file-scope:") or (c_fn, c_file) in visited:
             continue
-        visited.add(state_key)
-        hits = lookup_fn(caller_fn, caller_file or None)
+        visited.add((c_fn, c_file))
+        hits = lookup_fn(c_fn, c_file or None)
         if hits:
             collected.update(hits)
         elif caller[4] in ("indirect", "async"):
-            next_items.append(
-                (caller_fn, caller_file or None, 0, depths[1] + 1)
-            )
+            next_items.append((c_fn, c_file or None, 0, depths[1] + 1))
         else:
-            next_items.append(
-                (caller_fn, caller_file or None, depths[0] + 1, depths[1])
-            )
+            next_items.append((c_fn, c_file or None, depths[0] + 1, depths[1]))
     return next_items
 
 
@@ -599,12 +859,12 @@ def _collect_backward_roots(
     visited: Set[Tuple[str, str]] = {(function_name, init_file or "")}
 
     while queue:
-        curr_fn, curr_file, direct_depth, bridge_depth = queue.popleft()
+        curr_fn, curr_file, d_depth, b_depth = queue.popleft()
         if options.get("check_syscall_root") and is_syscall_root(curr_fn, None):
             collected.add(curr_fn)
             continue
         callers = get_callers(conn, curr_fn, target_file=curr_file)
-        if bridge_depth >= limits[0] or direct_depth >= limits[1]:
+        if b_depth >= limits[0] or d_depth >= limits[1]:
             if truncated_out is not None and any(
                 not c[0].startswith("<file-scope:")
                 and (c[0], clean_file_path(c[1])) not in visited
@@ -614,11 +874,7 @@ def _collect_backward_roots(
             continue
         queue.extend(
             _expand_backward_callers(
-                callers,
-                visited,
-                lookup_fn,
-                collected,
-                (direct_depth, bridge_depth),
+                callers, visited, lookup_fn, collected, (d_depth, b_depth)
             )
         )
     return collected

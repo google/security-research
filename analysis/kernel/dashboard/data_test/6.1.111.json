@@ -21,11 +21,15 @@
     "rows": 2561,
     "flexible_rows": 417
   },
+  "structs": {
+    "struct_locations": 16629,
+    "struct_fields": 114650
+  },
   "field_access": {
-    "rows": 1493089,
-    "exec_rows": 7985,
-    "read_rows": 1342151,
-    "write_rows": 142953
+    "rows": 780404,
+    "exec_rows": 8032,
+    "read_rows": 640032,
+    "write_rows": 132340
   },
   "macro_locations": {
     "rows": 102604
@@ -58,8 +62,7 @@
     "distinct_functions": 29345
   },
   "all_calls": {
-    "edges": 1829002,
-    "locations": 3555034,
-    "results": 622514
+    "edges": 1324697,
+    "locations": 846076
   }
 }

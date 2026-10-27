@@ -35,8 +35,13 @@ def setup_git_log_schema(con: sqlite3.Connection) -> None:
                 author_date UNSIGNED BIG INT NOT NULL,
                 `commit` VARCHAR(40) NOT NULL,
                 data TEXT NOT NULL,
+                function_name TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (file_path, start_line, end_line)
             );""")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_git_log_fn_file "
+        "ON git_log(function_name, file_path);"
+    )
     logging.info("Git Log table created in DB.")
 
 
@@ -159,10 +164,22 @@ def run_parallel_git_log(
     return log_data
 
 
-def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
+def parse_git_log_records(
+    repo_folder: str,
+    log_data: list[str],
+    function_locations: list | None = None,
+) -> list:
     """Parses raw git log output lines into database row tuples."""
     data = []
     file_cache = {}
+    fn_by_loc = (
+        {
+            (str(loc[1]), int(loc[2]), int(loc[3])): str(loc[0])
+            for loc in function_locations
+        }
+        if function_locations
+        else {}
+    )
 
     for log_entry in log_data:
         chunks = log_entry.replace(":", ",").split(",")
@@ -188,6 +205,7 @@ def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
 
         file_lines = file_cache[file_path]
         function_code = "".join(file_lines[start_line - 1 : end_line])
+        function_name = fn_by_loc.get((file_path, start_line, end_line), "")
 
         data.append((
             start_line,
@@ -196,6 +214,7 @@ def parse_git_log_records(repo_folder: str, log_data: list[str]) -> list:
             author_date,
             commit,
             function_code,
+            function_name,
         ))
 
     logging.info("Git data processing for repository is complete")
@@ -224,10 +243,10 @@ def create_log_table(
         repo_folder, function_locations, force
     )
     log_data = run_parallel_git_log(repo_folder, valid_locations, no_cpu)
-    records = parse_git_log_records(repo_folder, log_data)
+    records = parse_git_log_records(repo_folder, log_data, valid_locations)
 
     con.executemany(
-        """INSERT OR IGNORE INTO git_log VALUES(?, ?, ?, ?, ?, ?)""",
+        """INSERT OR IGNORE INTO git_log VALUES(?, ?, ?, ?, ?, ?, ?)""",
         records,
     )
     return len(records)

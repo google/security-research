@@ -583,6 +583,205 @@ class TestInspectCallsFormatting(InspectCallsTestBase):
                 self.db_path, function_name="nonexistent_fn"
             )
 
+    def test_async_callers_and_callees(self):
+        """Verify async_edges callers and callees are discovered."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "CREATE TABLE async_edges ("
+            "caller TEXT, callee TEXT, mechanism TEXT, form TEXT,"
+            " file TEXT, line INTEGER, context TEXT,"
+            " caller_file TEXT, callee_file TEXT)"
+        )
+        cur.execute(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            ("wq_handler", "fs/sample.c", 80, 100),
+        )
+        cur.execute(
+            "INSERT INTO async_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "vfs_dispatcher",
+                "wq_handler",
+                "workqueue",
+                "assign",
+                "fs/sample.c",
+                60,
+                "kthread",
+                "fs/sample.c",
+                "fs/sample.c",
+            ),
+        )
+        self.conn.commit()
+
+        _, callers, _ = inspect_calls.inspect_function_calls(
+            self.db_path, function_name="wq_handler", show_callees=False
+        )
+        async_c = [c for c in callers if c["call_type"] == "async"]
+        self.assertEqual(len(async_c), 1)
+        self.assertEqual(async_c[0]["caller"], "vfs_dispatcher")
+        self.assertEqual(async_c[0]["call_site_line"], 60)
+        self.assertEqual(async_c[0]["dispatch"], "workqueue/assign (kthread)")
+
+        t_info, _, callees = inspect_calls.inspect_function_calls(
+            self.db_path, function_name="vfs_dispatcher", show_callers=False
+        )
+        async_callees = [c for c in callees if c["call_type"] == "async"]
+        self.assertEqual(len(async_callees), 1)
+        self.assertEqual(async_callees[0]["callee"], "wq_handler")
+        self.assertEqual(async_callees[0]["call_site_line"], 60)
+
+        summary = inspect_calls.format_summary(t_info, callers, callees)
+        self.assertIn("Async Dispatchers (via async_edges):", summary)
+        self.assertIn("[async via workqueue/assign (kthread)]", summary)
+        flat = inspect_calls.format_list(t_info, callers, callees)
+        self.assertIn("CALLEE [async   ]", flat)
+
+    def test_ambiguous_symbol_disambiguation(self):
+        """Verify colliding functions require --file unless allow_ambiguous."""
+        cur = self.conn.cursor()
+        cur.executemany(
+            "INSERT INTO function_locations VALUES (?, ?, ?, ?)",
+            [
+                ("seq_show", "fs/proc/nommu.c", 30, 60),
+                ("seq_show", "fs/proc/task_mmu.c", 100, 150),
+            ],
+        )
+        self.conn.commit()
+
+        with self.assertRaises(ValueError) as ctx:
+            inspect_calls.inspect_function_calls(
+                self.db_path, function_name="seq_show"
+            )
+        self.assertIn("AMBIGUOUS_SYMBOL", str(ctx.exception))
+
+        t_info, _, _ = inspect_calls.inspect_function_calls(
+            self.db_path,
+            function_name="seq_show",
+            file_path="fs/proc/task_mmu.c",
+        )
+        self.assertEqual(t_info["file"], "fs/proc/task_mmu.c")
+
+        with self.assertRaises(ValueError):
+            inspect_calls.inspect_function_calls(
+                self.db_path,
+                function_name="seq_show",
+                file_path="fs/proc/uncompiled.c",
+            )
+
+
+class TestInspectCallsOpsIntegration(BaseToolsTestCase):
+    """Tests for unified ops_targets registrations, siblings, & slot modes."""
+
+    def setUp(self) -> None:
+        """Set up sample ops_targets, function_locations, and conditions."""
+        super().setUp()
+        self.insert_rows(
+            function_locations=[
+                ("vfs_read", "fs/read_write.c", 450, 490),
+                ("msr_open", "arch/x86/kernel/msr.c", 200, 225),
+                ("msr_read", "arch/x86/kernel/msr.c", 50, 90),
+                ("msr_write", "arch/x86/kernel/msr.c", 95, 135),
+            ],
+            ops_targets=[
+                (
+                    "arch/x86/kernel/msr.c:227:1:235:1",
+                    "file_operations",
+                    "open",
+                    "msr_open",
+                    "arch/x86/kernel/msr.c",
+                    200,
+                    225,
+                    "fs/open.c",
+                    800,
+                    790,
+                    820,
+                ),
+                (
+                    "arch/x86/kernel/msr.c:227:1:235:1",
+                    "file_operations",
+                    "read",
+                    "msr_read",
+                    "arch/x86/kernel/msr.c",
+                    50,
+                    90,
+                    "fs/read_write.c",
+                    460,
+                    450,
+                    490,
+                ),
+                (
+                    "arch/x86/kernel/msr.c:227:1:235:1",
+                    "file_operations",
+                    "write",
+                    "msr_write",
+                    "arch/x86/kernel/msr.c",
+                    95,
+                    135,
+                    "fs/read_write.c",
+                    580,
+                    570,
+                    610,
+                ),
+            ],
+            conditions=[
+                (
+                    "capable",
+                    "arch/x86/kernel/msr.c:205:7:205:13",
+                    "arch/x86/kernel/msr.c:205:2:206:16",
+                    "CAP_SYS_RAWIO",
+                    "__guarded_span__:init_user_ns",
+                    "arch/x86/kernel/msr.c:205:1:224:1",
+                ),
+            ],
+        )
+
+    def test_unified_indirect_caller_gates_and_ops_siblings(self) -> None:
+        """Verify inspect_function_calls attaches .open gates & ops siblings."""
+        t_info, callers, callees = inspect_calls.inspect_function_calls(
+            self.db_path, function_name="msr_read"
+        )
+        self.assertEqual(len(callers), 1)
+        self.assertEqual(callers[0]["caller"], "vfs_read")
+        self.assertTrue(
+            any("CAP_SYS_RAWIO" in g["cap_str"] for g in callers[0]["gates"])
+        )
+        regs = t_info.get("ops_registrations", [])
+        self.assertEqual(len(regs), 1)
+        sib_fields = {s["field"]: s["target"] for s in regs[0]["siblings"]}
+        self.assertEqual(sib_fields["open"], "msr_open")
+        self.assertEqual(sib_fields["write"], "msr_write")
+
+        summary = inspect_calls.format_summary(t_info, callers, callees)
+        self.assertIn("OPS TABLE REGISTRATIONS & SIBLINGS", summary)
+        self.assertIn("Acquisition Gate(s): capable(CAP_SYS_RAWIO)", summary)
+        self.assertIn(".open=msr_open", summary)
+
+    def test_forward_slot_inspection_and_cli(self) -> None:
+        """Verify --struct/--field forward slot inspection via inspect_calls."""
+        res = inspect_calls.inspect_ops_slot(
+            self.db_path, "file_operations", field_name="read"
+        )
+        self.assertEqual(res["slot_count"], 1)
+        slot = res["slots"][0]
+        self.assertEqual(slot["callbacks"][0]["target"], "msr_read")
+        self.assertIn(
+            "CAP_SYS_RAWIO",
+            slot["callbacks"][0]["acquisition_gates"][0]["cap_str"],
+        )
+
+        with patch(
+            "sys.argv",
+            [
+                "inspect_calls.py",
+                "--db",
+                self.db_path,
+                "--struct",
+                "file_operations",
+                "--field",
+                "read",
+            ],
+        ):
+            inspect_calls.main()
+
 
 if __name__ == "__main__":
     unittest.main()

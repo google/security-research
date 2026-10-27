@@ -3,7 +3,7 @@
 
 import argparse
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 import csv
 from dataclasses import dataclass
 import logging
@@ -82,7 +82,7 @@ def detect_prefix(paths: Sequence[str]) -> str:
 
 
 def detect_csv_prefix(
-    rows: Sequence[Sequence[str]],
+    rows: Iterable[Sequence[str]],
     path_cols: Sequence[int],
     min_cols: int,
     limit: int = 1000,
@@ -147,6 +147,30 @@ def parse_float_int(value: str) -> Optional[int]:
         return None
 
 
+def iter_csv_rows(
+    csv_filename: str,
+    *,
+    skip_header: bool = True,
+    header_tokens: Sequence[str] = (),
+) -> Iterator[list[str]]:
+    """Streams data rows from a CSV file, optionally skipping its header."""
+    with open(csv_filename, "r", encoding="utf-8", errors="ignore") as csv_file:
+        reader = csv.reader(csv_file, delimiter=",", quotechar='"')
+        try:
+            first_row = next(reader)
+        except StopIteration:
+            return
+
+        if header_tokens:
+            first_token = first_row[0].strip().lower() if first_row else ""
+            if first_token not in header_tokens:
+                yield first_row
+        elif not skip_header:
+            yield first_row
+
+        yield from reader
+
+
 def read_csv_rows(
     csv_filename: str,
     *,
@@ -154,23 +178,13 @@ def read_csv_rows(
     header_tokens: Sequence[str] = (),
 ) -> list[list[str]]:
     """Reads all data rows from a CSV file, optionally skipping its header."""
-    rows: list[list[str]] = []
-    with open(csv_filename, "r", encoding="utf-8", errors="ignore") as csv_file:
-        reader = csv.reader(csv_file, delimiter=",", quotechar='"')
-        try:
-            first_row = next(reader)
-        except StopIteration:
-            return []
-
-        if header_tokens:
-            first_token = first_row[0].strip().lower() if first_row else ""
-            if first_token not in header_tokens:
-                rows.append(first_row)
-        elif not skip_header:
-            rows.append(first_row)
-
-        rows.extend(reader)
-    return rows
+    return list(
+        iter_csv_rows(
+            csv_filename,
+            skip_header=skip_header,
+            header_tokens=header_tokens,
+        )
+    )
 
 
 def execute_bulk_insert(
@@ -198,21 +212,25 @@ def import_csv_table(
     clear_sql: Optional[str] = None,
 ) -> int:
     """Imports a CodeQL CSV file into SQLite according to `spec`."""
-    rows = read_csv_rows(csv_filename)
-    prefix = detect_csv_prefix(rows, spec.path_cols, spec.min_cols)
+    prefix = detect_csv_prefix(
+        iter_csv_rows(csv_filename), spec.path_cols, spec.min_cols
+    )
+    row_count = 0
 
-    data: list[tuple[object, ...]] = []
-    for row in rows:
-        if len(row) < spec.min_cols:
-            logging.warning("Skipping invalid row: %s", row)
-            continue
-        try:
-            parsed = spec.row_parser(row, prefix)
-        except (ValueError, TypeError):
-            logging.warning("Skipping row with invalid values: %s", row)
-            continue
-        if parsed is not None:
-            data.append(parsed)
+    def _iter_parsed() -> Iterator[tuple[object, ...]]:
+        nonlocal row_count
+        for row in iter_csv_rows(csv_filename):
+            if len(row) < spec.min_cols:
+                logging.warning("Skipping invalid row: %s", row)
+                continue
+            try:
+                parsed = spec.row_parser(row, prefix)
+            except (ValueError, TypeError):
+                logging.warning("Skipping row with invalid values: %s", row)
+                continue
+            if parsed is not None:
+                row_count += 1
+                yield parsed
 
     with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()
@@ -221,17 +239,17 @@ def import_csv_table(
         cursor.execute(spec.create_sql)
         if clear_sql is not None:
             cursor.execute(clear_sql)
-        cursor.executemany(spec.insert_sql, data)
+        cursor.executemany(spec.insert_sql, _iter_parsed())
         for index_sql in spec.indexes:
             cursor.execute(index_sql)
 
     logging.info(
         "Successfully imported %d rows into '%s' (table '%s').",
-        len(data),
+        row_count,
         db_name,
         spec.table_name,
     )
-    return len(data)
+    return row_count
 
 
 def run_importer_cli(
