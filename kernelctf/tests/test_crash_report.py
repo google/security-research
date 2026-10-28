@@ -61,30 +61,22 @@ class TestExtractCrashReport(unittest.TestCase):
                 "CPU: 1 UID: 1000 PID: 146 Comm: exp Not tainted 7.3.0-rc1+ #3 PREEMPTLAZY",
                 "RIP: 0010:huge_pte_alloc+0x39c/0x4c0",
             ]),
-            ("Call Trace", [
+            ("Crash site", [
                 " <TASK>",
                 " move_hugetlb_page_tables+0x410/0x1340",
                 " entry_SYSCALL_64_after_hwframe+0x76/0x7e",
             ]),
         ])
 
-    def test_kasan_report_with_allocation_and_free_stacks(self):
+    def test_kasan_report_with_allocation_and_free_sites(self):
         self.assertEqual(extract_crash_report(KASAN_LOG), [
             (None, [
                 "BUG: KASAN: slab-use-after-free in unix_stream_read_generic+0x271a/0x2960",
                 "Read of size 8 at addr ffff88814d354788 by task exp/150",
             ]),
-            ("Call Trace", [" <TASK>", " unix_stream_read_generic+0x271a/0x2960", "RIP: 0033:0x4483f7"]),
-            ("Allocated by task 150", [" kasan_save_stack+0x30/0x50", " __alloc_skb+0xf3/0x390"]),
-            ("Freed by task 28", [" kasan_save_stack+0x30/0x50", " __unix_gc+0xb47/0x11b0"]),
-            (None, [
-                "The buggy address belongs to the object at ffff88814d354780",
-                " which belongs to the cache skbuff_head_cache of size 224",
-            ]),
-            ("Memory state around the buggy address", [
-                " ffff88814d354700: fb fb fb fb fc fc fc fc fc fc fc fc fc fc fc fc",
-                ">ffff88814d354780: fa fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb",
-            ]),
+            ("Crash site", [" <TASK>", " unix_stream_read_generic+0x271a/0x2960", "RIP: 0033:0x4483f7"]),
+            ("Allocation site (task 150)", [" kasan_save_stack+0x30/0x50", " __alloc_skb+0xf3/0x390"]),
+            ("Free site (task 28)", [" kasan_save_stack+0x30/0x50", " __unix_gc+0xb47/0x11b0"]),
         ])
 
     def test_no_crash(self):
