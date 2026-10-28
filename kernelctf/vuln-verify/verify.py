@@ -1,12 +1,13 @@
 #!/usr/bin/env -S python3 -u
 # example: GITHUB_TOKEN=$(cat ~/.github_pat) IMAGE_RUNNER_DIR=~/prjs/kernel-research-repo/image_runner ./verify.py ~/prjs/gob-isekernel/exploits/exp93_98_*
+import html
 import json
 import re
 import os
 import sys
 import shutil
 import argparse
-from utils import bold, readTextFile, run, red, green, yellow
+from utils import bold, readTextFile, run, red, green, yellow, extract_crash_report
 from kernel_builds import (KernelBuildError, Resolver, load_public_sheet, hash_from_url, resolve_target, bzimage_fn, build_log_fn, build_kernel,
     download_public_cache, KERNELCTF_RELEASES_URL, BASE, BEFORE, AFTER, BASE_PATCHED, UPS_BEFORE, UPS_AFTER)
 
@@ -26,11 +27,27 @@ def log(*args, **kwargs):
     s = re.sub(r'\033\[[0-9;]*m', '', s)
     summary_lines.append(s)
 
+summary_sections = []  # extra Markdown sections shown after the results (crash reports)
+
+def log_crash_report(title, sections):
+    print(f"{title}:")
+    markdown = [f"#### {html.escape(title)}"]
+    for section_title, lines in sections:
+        if section_title:
+            print(f"{section_title}:")
+        print("\n".join(lines))
+        code = "```\n" + "\n".join(lines) + "\n```"
+        markdown.append(f"<details><summary>{html.escape(section_title)}</summary>\n\n{code}\n\n</details>" if section_title else code)
+    print()
+    summary_sections.append("\n\n".join(markdown))
+
 def write_summary():
     if not summary_fn or not summary_lines: return
     title = "Vulnerability Verification Results" if args.verify else "Kernel Preparation Results"
     with open(summary_fn, "a") as f:
         f.write(f"### {title}\n\n```\n{"\n".join(summary_lines).strip()}\n```")
+        for section in summary_sections:
+            f.write(f"\n\n{section}")
 
 def fatal(msg):
     log(msg, file=sys.stderr)
@@ -74,6 +91,9 @@ def check_sub_path(exp_dir, rel_path):
         fatal(f"Error: submission path '{p}' resolves outside '{exp_dir}' or is an invalid symlink")
     return p
 
+# Which kernel's crash report to show in the summary: upstream before the patch, then stable before the patch, then any other kernel
+CRASH_REPORT_PRIORITY = {UPS_BEFORE: 0, BEFORE: 1}
+
 def success_color(success):
     return green('SUCCESS') if success else red('FAIL') if not success else yellow('UNKNOWN')
 
@@ -93,6 +113,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
     if commit_hash != commit_hash_pr:
         log(f"WARNING! {exp_ids}: public commit hash ({commit_hash}) does not match PR commit hash ({commit_hash_pr})")
     exp_success = False
+    crashes = []  # (priority, kernel name, crash report) of the kernels which crashed, the lowest priority is shown in the summary
     exp_fail = False
     targets = list(metadata["exploits"].keys())
     for target in targets:
@@ -144,7 +165,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
 
         names = {role: spec.name for role, spec in tp.builds.items()}
         res = {}
-        for name in [target] + list(names.values()):
+        for role, name in [(None, target)] + list(names.items()):
             log_fn = f"verify_results/{first_exp_id}_{name}.txt"
 
             if not os.path.isfile(bzimage_fn(name)):
@@ -187,6 +208,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
                     pwned = False
 
             res[name] = pwned
+            report = extract_crash_report(logs) if pwned else None
+            if report:
+                crashes.append((CRASH_REPORT_PRIORITY.get(role, len(CRASH_REPORT_PRIORITY)), name, report))
             log(f"  [VERIFY] {exp_ids}_{name}: {bold(result)}")
 
         r = lambda role: res[names[role]]
@@ -225,6 +249,9 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
 
     log(f"[PR_VERIFY] of {exp_ids}: {red('FAIL') if exp_fail else green('SUCCESS') if exp_success else yellow('UNKNOWN')}")
     log()
+    if crashes:
+        _, crash_name, report = min(crashes, key=lambda c: c[0])
+        log_crash_report(f"Crash report of {exp_ids}_{crash_name}", report)
     if exp_fail or not exp_success:
         all_success = False
 

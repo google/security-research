@@ -120,3 +120,42 @@ def grey(text):
 
 def bold(text):
     return color(text, 1)
+
+CRASH_START_RE = re.compile(r"^(BUG: |kernel BUG at |Oops: |general protection fault|Kernel panic)")
+REGISTER_DUMP_RE = re.compile(r"^(Code|RSP|RAX|RDX|RBP|R10|R13|FS|CS|CR2|DR[0-7]|PKRU): ")
+TIMESTAMP_RE = re.compile(r"^\[\s*\d+\.\d+\] ?")
+
+def extract_crash_report(log_text):
+    """Returns the first kernel crash report of a QEMU log without timestamps and register dumps, or None if the log contains no crash.
+
+    The report is a list of (title, lines) sections: title is None for the lines shown directly (e.g. the crash header), otherwise it is the
+    header of a block like "Call Trace", "Allocated by task 150" or "Memory state around the buggy address".
+    A KASAN report ends at its closing "====" line, other reports end after the first call trace."""
+    sections = None
+    in_block = False
+    for line in log_text.split("\n"):
+        if not TIMESTAMP_RE.match(line): continue  # kernel log lines only (skip exploit output)
+        line = TIMESTAMP_RE.sub("", line).rstrip()
+        if sections is None:
+            if CRASH_START_RE.match(line):
+                sections = [(None, [line])]
+                is_kasan = line.startswith("BUG: KASAN:")
+            continue
+        if line.startswith("====") or line.startswith("---[ end trace"): break
+        if line.strip() == "</TASK>":
+            if not is_kasan: break
+            in_block = False
+            continue
+        if REGISTER_DUMP_RE.match(line): continue
+        if not line:
+            in_block = False
+        elif not line.startswith(" ") and line.endswith(":"):
+            sections.append((line[:-1], []))  # e.g. "Call Trace:", "Allocated by task 150:"
+            in_block = True
+        elif in_block:
+            sections[-1][1].append(line)
+        elif sections[-1][0] is None:
+            sections[-1][1].append(line)
+        else:
+            sections.append((None, [line]))
+    return sections
