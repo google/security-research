@@ -1,40 +1,16 @@
 name: kernelCTF PR check
+# Runs untrusted PR code (exploit builds, kernel builds, QEMU runs), so this workflow must never use secrets.
+# GCS uploads happen in kernelctf-publish.yaml (workflow_run), which only handles the produced artifacts.
+# All jobs use the default checkout (the PR merged into the base branch), so scripts and the submission come from the same tree.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
-  workflow_call:
-    inputs:
-      prNumber:
-        description: 'PR number'
-        type: number
-      shaHash:
-        description: 'SHA hash'
-        type: string
-      skipRepro:
-        description: 'Skip reproduction'
-        type: boolean
-        required: false
-        default: false
-  workflow_dispatch:
-    inputs:
-      prNumber:
-        description: 'PR number'
-        type: number
-      shaHash:
-        description: 'SHA hash'
-      skipRepro:
-        description: 'Skip reproduction'
-        type: boolean
-        required: false
-        default: false
 permissions: {}
-env:
-  PR_REF: ${{ contains(github.event_name, 'workflow_') && (inputs.shaHash || format('refs/pull/{0}/merge', inputs.prNumber)) || github.event.pull_request.head.sha }}
 jobs:
   structure_check:
-    # if labeling triggered the job then only run in case of the "recheck" label
-    if: github.event.action != 'labeled' || github.event.label.name == 'recheck'
+    # if labeling triggered the job then only run in case of the "recheck" (full check) or "vuln-verify" (vuln-verify only) labels
+    if: github.event.action != 'labeled' || contains(fromJSON('["recheck", "vuln-verify"]'), github.event.label.name)
     runs-on: ubuntu-latest
     permissions: {}
     outputs:
@@ -45,29 +21,19 @@ jobs:
     steps:
       - run: pip install -U jsonschema
 
-      - name: Checkout repo content (sparse - only check-submission.py)
+      - name: Checkout repo
         uses: actions/checkout@v6
         with:
-          ref: master
-          sparse-checkout: |
-            kernelctf/check-submission.py
-            kernelctf/utils.py
-          sparse-checkout-cone-mode: false
-
-      - name: Checkout PR content (full)
-        uses: actions/checkout@v6
-        with:
-          path: pr-content
-          ref: ${{ env.PR_REF }}
           fetch-depth: 0
-          allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       - id: check_submission
         name: Check submission
-        working-directory: pr-content
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           echo "::stop-commands::$(uuidgen)"
-          ../kernelctf/check-submission.py ${{ github.event.pull_request.base.sha }}
+          ./kernelctf/check-submission.py "$BASE_SHA"
 
   exploit_build:
     runs-on: ubuntu-latest
@@ -82,22 +48,10 @@ jobs:
       EXPLOIT_DIR: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
-      - name: Checkout PR content (full)
+      - name: Checkout repo
         uses: actions/checkout@v6
         with:
-          ref: ${{ env.PR_REF }}
-          fetch-depth: 0
-          allow-unsafe-pr-checkout: true
-
-      - name: Checkout Android scripts (sparse) - Android only
-        if: startsWith(matrix.target, 'android')
-        uses: actions/checkout@v6
-        with:
-          path: scripts-from-master
-          ref: master
-          sparse-checkout: |
-            kernelctf/server/get_android_dependencies.sh
-          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: List files
         run: find .
@@ -108,7 +62,7 @@ jobs:
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          bash scripts-from-master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
+          bash kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
         if: startsWith(matrix.target, 'android') == false
@@ -156,6 +110,7 @@ jobs:
   exploit_build_debug:
     runs-on: ubuntu-latest
     needs: structure_check
+    if: github.event.label.name != 'vuln-verify'
     permissions: {}
     strategy:
       matrix:
@@ -166,27 +121,15 @@ jobs:
       EXPLOIT_DIR: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}/exploit/${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
     steps:
-      - name: Checkout PR content (full)
+      - name: Checkout repo
         uses: actions/checkout@v6
         with:
-          ref: ${{ env.PR_REF }}
-          fetch-depth: 0
-          allow-unsafe-pr-checkout: true
-
-      - name: Checkout Android scripts (sparse) - Android only
-        if: startsWith(matrix.target, 'android')
-        uses: actions/checkout@v6
-        with:
-          path: scripts-from-master
-          ref: master
-          sparse-checkout: |
-            kernelctf/server/get_android_dependencies.sh
-          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
-          bash scripts-from-master/kernelctf/server/get_android_dependencies.sh --exploit-build-only
+          bash kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
         if: startsWith(matrix.target, 'android') == false
@@ -234,7 +177,7 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.structure_check.outputs.targets) }}
       fail-fast: false
-    if: always() && needs.structure_check.result == 'success' && !inputs.skipRepro
+    if: always() && needs.structure_check.result == 'success' && github.event.label.name != 'vuln-verify'
     env:
       RELEASE_ID: ${{ matrix.target }}
       SUBMISSION_DIR: ${{ needs.structure_check.outputs.submission_dir }}
@@ -244,13 +187,13 @@ jobs:
         shell: bash
         working-directory: ./kernelctf/repro
     steps:
-      - name: Checkout repo content (sparse - repro and server only)
+      - name: Checkout repo (sparse - kernelctf only)
         uses: actions/checkout@v6
         with:
-          ref: master
           sparse-checkout: |
             kernelctf
           sparse-checkout-cone-mode: true
+          persist-credentials: false
 
       - name: Download exploit
         uses: actions/download-artifact@v7
@@ -376,32 +319,72 @@ jobs:
           path: ./kernelctf/repro/repro_summary.md
 
   vuln_verify:
-    uses: ./.github/workflows/kernelctf-vuln-verify.yaml
-    needs: structure_check
-    secrets: inherit
-    with:
-      prNumber: ${{ contains(github.event_name, 'workflow_') && inputs.prNumber || github.event.pull_request.number }}
-
-  backup_artifacts:
     runs-on: ubuntu-latest
-    needs: [structure_check, exploit_build, exploit_build_debug, exploit_repro]
-    if: always() && needs.structure_check.result == 'success' && github.event_name != 'workflow_call'
+    needs: [structure_check, exploit_build]
+    if: ${{ !cancelled() && needs.structure_check.result == 'success' }}
+    permissions: {}
+    concurrency:
+      group: kernelctf-pr-${{ github.event.pull_request.number }}-vuln-verify
+      cancel-in-progress: true
+    env:
+      POC_FOLDER: pocs/linux/kernelctf/${{ needs.structure_check.outputs.submission_dir }}
+      ARTIFACT_PREFIX: ${{ needs.structure_check.outputs.artifact_backup_dir }}
+      TARGETS: ${{ needs.structure_check.outputs.targets }}
+      IMAGE_RUNNER_DIR: ${{ github.workspace }}/kernel-research/image_runner
     steps:
-      - name: Download artifacts
+      - name: Checkout repo (vuln-verify scripts and the submission only)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            kernelctf/vuln-verify
+            ${{ env.POC_FOLDER }}
+          persist-credentials: false
+
+      - name: Checkout kernel-research
+        uses: actions/checkout@v6
+        with:
+          repository: google/kernel-research
+          path: kernel-research
+          sparse-checkout: image_runner
+          persist-credentials: false
+
+      - name: Download exploits built by exploit_build
         uses: actions/download-artifact@v7
         with:
-          path: ./artifacts
+          pattern: ${{ env.ARTIFACT_PREFIX }}_exploit_*
+          path: exploits
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: '${{secrets.KERNELCTF_GCS_SA_KEY}}'
+      - name: Use the exploits built by exploit_build
+        # Only flagged targets are built by exploit_build, other targets keep the checked-in exploit binary
+        run: |
+          for target in $(echo "$TARGETS" | jq -r '.[]'); do
+            install -m 755 "exploits/${ARTIFACT_PREFIX}_exploit_${target}/exploit" "$POC_FOLDER/exploit/$target/exploit"
+          done
 
-      - name: Upload artifacts to GCS
-        uses: 'google-github-actions/upload-cloud-storage@v2'
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect qemu-system-x86
+          pip install requests
+
+      - name: Run vuln-verify
+        # The KASAN kernels are downloaded from the public cache, which is only written by kernelctf-vulnverify-prebuild.yaml.
+        # If a kernel is missing, run `gh workflow run kernelctf-vulnverify-prebuild.yaml --repo google/security-research` and then add the "vuln-verify" label to the PR.
+        id: vuln_verify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./kernelctf/vuln-verify/verify.py --no-build "$POC_FOLDER"
+
+      - name: Upload logs
+        if: ${{ !cancelled() && steps.vuln_verify.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v6
         with:
-          path: ./artifacts
-          destination: kernelctf-build/artifacts/${{ needs.structure_check.outputs.artifact_backup_dir }}_${{ github.run_id }}
-          parent: false
-          predefinedAcl: publicRead
-          process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
+          name: vuln_verify_logs
+          path: ./kernelctf/vuln-verify/verify_results
+          if-no-files-found: error

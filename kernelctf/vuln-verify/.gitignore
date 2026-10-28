@@ -4,6 +4,7 @@ output
 __pycache__/
 *.sqlite3
 kernelctf_public_sheet.csv
+kernelctf_winners_sheet.csv
 *.txt
 .cache/
 patches/

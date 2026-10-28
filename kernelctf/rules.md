@@ -313,7 +313,7 @@ We expect the following parts to be properly documented:
 
 If possible, also include how stable your exploit is (e.g. it worked 90% of the time during your testing).
 
-Your exploit must support the `--vuln-trigger` argument, which triggers the underlying vulnerability to crash the system (ideally under KASAN) on other versions without requiring a full LPE chain. To stay within [vuln-verify workflow](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-vuln-verify.yaml) time limits, this mode should skip non-essential steps such as KASLR prefetching.
+Your exploit must support the `--vuln-trigger` argument, which triggers the underlying vulnerability to crash the system (ideally under KASAN) on other versions without requiring a full LPE chain. To stay within [vuln-verify workflow](https://github.com/google/security-research/blob/master/.github/workflows/kernelctf-submission-verification.yaml) time limits, this mode should skip non-essential steps such as KASLR prefetching.
 
 # Additional information
 

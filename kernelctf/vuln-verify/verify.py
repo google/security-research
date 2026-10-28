@@ -4,17 +4,11 @@ import json
 import re
 import os
 import sys
-import sqlite3
 import shutil
-import subprocess
 import argparse
-from utils import bold, parseCsv, fetch, readTextFile, run, is_cached, writeTextFile, CACHE_FOREVER, red, green, yellow
-
-VALID_REPO_URLS = {
-    "https://github.com/gregkh/linux",
-    "https://cos.googlesource.com/third_party/kernel",
-    "https://github.com/thejh/linux"
-}
+from utils import bold, readTextFile, run, red, green, yellow
+from kernel_builds import (KernelBuildError, Resolver, load_public_sheet, hash_from_url, resolve_target, bzimage_fn, build_log_fn, build_kernel,
+    download_public_cache, KERNELCTF_RELEASES_URL, BASE, BEFORE, AFTER, BASE_PATCHED, UPS_BEFORE, UPS_AFTER)
 
 summary_lines = []
 summary_fn = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -34,8 +28,9 @@ def log(*args, **kwargs):
 
 def write_summary():
     if not summary_fn or not summary_lines: return
+    title = "Vulnerability Verification Results" if args.verify else "Kernel Preparation Results"
     with open(summary_fn, "a") as f:
-        f.write(f"### Vulnerability Verification Results\n\n```\n{"\n".join(summary_lines).strip()}\n```")
+        f.write(f"### {title}\n\n```\n{"\n".join(summary_lines).strip()}\n```")
 
 def fatal(msg):
     log(msg, file=sys.stderr)
@@ -48,14 +43,14 @@ parser.add_argument("--verify", action=argparse.BooleanOptionalAction, default=T
 parser.add_argument("--upstream", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--stable", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--target-patching", action=argparse.BooleanOptionalAction, default=False)
-parser.add_argument("--gcs-cache", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--public-cache", action=argparse.BooleanOptionalAction, default=True, help="download missing kernels from the public GCS cache (read-only, no credentials)")
 parser.add_argument("--verbose-build", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--no-gh-auth", action="store_true")
 parser.add_argument("exploit_paths", nargs="+")
 args = parser.parse_args()
 
 IMAGE_RUNNER_DIR = os.environ.get("IMAGE_RUNNER_DIR")
-if not IMAGE_RUNNER_DIR:
+if args.verify and not IMAGE_RUNNER_DIR:
     fatal("Error: IMAGE_RUNNER_DIR environment variable is missing")
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
@@ -64,85 +59,14 @@ if not GITHUB_TOKEN and not args.no_gh_auth:
 
 GH_HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN and not args.no_gh_auth else {}
 
-CACHE_DB_FN = "cache.json"
-PUBLIC_CSV_BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true"
-OLD_SHEET_GID = "2095368189"
-WINNERS_SHEET_GID = "855892526"
-KERNEL_DANCE_SQL_URL = "https://linux-mirror-db.storage.googleapis.com/mirror.sl3"
-KERNEL_DANCE_SQL_FN = "kernel-dance.sqlite3"
-KERNELCTF_RELEASES_URL = "https://storage.googleapis.com/kernelctf-build/releases"
-STABLE_COMMIT_QUERY = """
-    SELECT upstream.`commit`
-    FROM upstream
-    LEFT JOIN tags ON tags.`commit` = upstream.`commit`
-    WHERE (upstream.upstream LIKE :hash OR upstream.`commit` LIKE :hash)
-      AND tags.tags LIKE :tag
-"""
-UPSTREAM_COMMIT_QUERY = "SELECT DISTINCT upstream.`upstream` FROM upstream WHERE (upstream.upstream LIKE :hash OR upstream.`commit` LIKE :hash)"
-STABLE_REPO = "https://github.com/gregkh/linux"
-UPSTREAM_REPO = "https://github.com/torvalds/linux"
-GCS_BASE_URL = "gs://kernelctf-build/vuln-verify"
-
-def gcs_download(local_fn, gcs_fn):
-    if not args.gcs_cache or os.path.isfile(local_fn):
-        return os.path.isfile(local_fn)
-    print(f"  [CACHE] downloading {os.path.basename(local_fn)} from GCS...")
-    return run(["gcloud", "storage", "cp", f"{GCS_BASE_URL}/{gcs_fn}", local_fn]) is not None
-
-def gcs_upload(local_fn, gcs_fn, gzip=False):
-    if not args.gcs_cache or not os.path.isfile(local_fn):
-        return
-    print(f"  [CACHE] uploading {os.path.basename(local_fn)} to GCS...")
-    run(["gcloud", "storage", "cp"] + (["-Z"] if gzip else []) + [local_fn, f"{GCS_BASE_URL}/{gcs_fn}"])
-
 args.exploit_paths = [os.path.abspath(p) for p in args.exploit_paths]
 os.chdir(os.path.dirname(__file__))
 os.makedirs("builds", exist_ok=True)
 os.makedirs("verify_results", exist_ok=True)
 
-public_csv = {}
-for gid, fn, is_v5 in [(OLD_SHEET_GID, "kernelctf_public_sheet.csv", False), (WINNERS_SHEET_GID, "kernelctf_winners_sheet.csv", True)]:
-    public_csv.update({ x["ID"]: {**x, "is_v5": is_v5} for x in parseCsv(fetch(f"{PUBLIC_CSV_BASE_URL}&gid={gid}", fn, cache_time=24*3600)) })
+public_csv = load_public_sheet()
 #pprint(public_csv)
-
-if not is_cached(KERNEL_DANCE_SQL_FN, 3600*24*7):
-    print(f"  [CACHE] downloading {KERNEL_DANCE_SQL_FN}...")
-    run(["wget", "-O", KERNEL_DANCE_SQL_FN, KERNEL_DANCE_SQL_URL])
-sqlconn = sqlite3.connect(KERNEL_DANCE_SQL_FN)
-sql = sqlconn.cursor()
-
-def sql_value_or_none(query, *params):
-    results = sql.execute(query, *params).fetchall()
-    if len(results) > 1:
-        raise Exception(f"Multiple results for query '{query}' (with params {params}): {results}")
-    return results[0][0] if len(results) > 0 else None
-
-def sql_value(query, *params):
-    result = sql_value_or_none(query, *params)
-    if not result:
-        raise Exception(f"No results for query '{query}' (with params {params})")
-    return result
-
-
-def hash_from_url(url):
-    m = re.search(r"(?:id|h)=([0-9a-f]+)", url) or re.search(r"/commit/([0-9a-f]+)", url)
-    return m.group(1) if m else url.strip()
-
-cache_db = json.loads(readTextFile(CACHE_DB_FN)) if os.path.isfile(CACHE_DB_FN) else {}
-
-def cache(category, key, getter):
-    value = cache_db.setdefault(category, {}).get(key)
-    if not value:
-        cache_db[category][key] = value = getter()
-    return value
-
-def save_cache():
-    writeTextFile(CACHE_DB_FN, json.dumps(cache_db, indent=4))
-
-def check_hash(hash):
-    if hash is not None and not re.match(r"^[0-9a-fA-F]+$", hash):
-        fatal(f"Error: invalid commit hash '{hash}'")
-    return hash
+resolver = Resolver(GH_HEADERS)
 
 def check_sub_path(exp_dir, rel_path):
     p = os.path.join(exp_dir, rel_path)
@@ -150,22 +74,12 @@ def check_sub_path(exp_dir, rel_path):
         fatal(f"Error: submission path '{p}' resolves outside '{exp_dir}' or is an invalid symlink")
     return p
 
-def get_stable_commit(commit_hash, kernel_ver):
-    return check_hash(cache("stable_commits", f"{commit_hash}_{kernel_ver}", lambda:
-                 sql_value_or_none(STABLE_COMMIT_QUERY, {"hash": f"{commit_hash}%", "tag": f"tags/v{kernel_ver}.%"})))
-
-def get_upstream_commit(commit_hash):
-    return check_hash(cache("upstream_commits", f"{commit_hash}", lambda: sql_value(UPSTREAM_COMMIT_QUERY, {"hash": f"{commit_hash}%"})))
-
-def get_parent_commit(commit_hash):
-    return check_hash(json.loads(fetch(f"https://api.github.com/repos/gregkh/linux/commits/{commit_hash}", f".cache/{commit_hash}.json",
-                GH_HEADERS))["parents"][0]["sha"])
-
 def success_color(success):
     return green('SUCCESS') if success else red('FAIL') if not success else yellow('UNKNOWN')
 
-builds = []
 all_success = True
+all_builds_ok = True
+missing_kernels = False
 for i_exp, exp_dir in enumerate(args.exploit_paths):
     # WARNING: metadata is not trusted and needs to be sanitized
     metadata = json.loads(readTextFile(check_sub_path(exp_dir, "metadata.json")))
@@ -186,117 +100,60 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             fatal(f"Error: invalid target '{target}'")
     for i_target, target in enumerate(targets):
         orig_target = target
-        if public_csv[first_exp_id].get("is_v5") or target.startswith("hardened-"):
-            lts_slot = public_csv[first_exp_id].get("LTS slot")
-            if not lts_slot:
-                fatal(f"Error: LTS slot not found in spreadsheet for {first_exp_id}")
-            target = lts_slot
-        elif target == "mitigation-6.1":
-            target = "mitigation-6.1-v2"
-        config = fetch(f"{KERNELCTF_RELEASES_URL}/{target}/.config", f"builds/{target}.config")
-        commit_info_txt = fetch(f"{KERNELCTF_RELEASES_URL}/{target}/COMMIT_INFO", f"builds/{target}_COMMIT_INFO")
-        commit_info = {x[0]: x[1] for x in [line.split("=") for line in commit_info_txt.strip().split("\n")]}
-        repo_url = commit_info["REPOSITORY_URL"]
-        base_commit = check_hash(commit_info["COMMIT_HASH"])
-        if repo_url not in VALID_REPO_URLS:
-            fatal(f"Error: invalid repo_url '{repo_url}'")
-        kernel_ver = re.search(r"Linux/x86 (\d+\.\d+)\.\d+ Kernel Configuration", config).group(1)
-        stable_commit = "n/a"
-        parent_commit = "n/a"
-        ups_commit = get_upstream_commit(commit_hash)
-        if args.stable:
-            stable_commit = get_stable_commit(ups_commit, kernel_ver)
-            if stable_commit:
-                parent_commit = get_parent_commit(stable_commit)
-            else:
-                parent_commit = None
-        if args.upstream:
-            ups_parent_commit = get_parent_commit(ups_commit)
+        try:
+            target = resolve_target(first_exp_id, public_csv[first_exp_id], target)
+            tp = resolver.plan(first_exp_id, commit_hash, target, args.stable, args.upstream, args.target_patching)
+        except KernelBuildError as e:
+            fatal(f"Error: {e}")
 
-        if stable_commit:
+        if tp.stable_commit:
             log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
-                f"{kernel_ver}, commit: {commit_hash[:10]}, stable: {stable_commit[:10]}, parent: {parent_commit[:10]}")
+                f"{tp.kernel_ver}, commit: {commit_hash[:10]}, stable: {tp.stable_commit[:10]}, parent: {tp.parent_commit[:10]}")
         else:
             log(f"[{round(i_exp+1 + i_target/len(targets),2):g}/{len(args.exploit_paths)}] {exp_ids} on {target}: "
-                f"{kernel_ver}, commit: {commit_hash[:10]}. "
-                f"Upstream commit {ups_commit} was not backported to {kernel_ver}, skipping fix verification on this kernel version...")
+                f"{tp.kernel_ver}, commit: {commit_hash[:10]}. "
+                f"Upstream commit {tp.ups_commit} was not backported to {tp.kernel_ver}, skipping fix verification on this kernel version...")
 
-        config_fn = f"builds/{target}.config"
-        def build_release_(name, repo_url, commit_hash, patch_commit_fn=""):
-            bzImage_fn = f"builds/{name}_bzImage"
-            vmlinux_fn = f"builds/{name}_vmlinux"
-            log_fn = f"builds/{name}_build.log"
-
-            if gcs_download(bzImage_fn, f"builds/{name}_bzImage"):
+        def build_release_(spec):
+            if os.path.isfile(bzimage_fn(spec.name)):
                 return True
 
-            if not args.build or os.path.isfile(log_fn):
+            if args.public_cache and download_public_cache(spec.name):
+                print(f"  [CACHE] downloaded {spec.name} from the public cache")
+                return True
+
+            if not args.build or os.path.isfile(build_log_fn(spec.name)):
                 return False
 
-            cmd = f"./build_release.sh {repo_url} {commit_hash} {config_fn} kasan.config {patch_commit_fn}"
-            print(f"Running '{cmd}'")
+            return build_kernel(spec, args.verbose_build)
 
-            if args.verbose_build:
-                print(f"::group::Building {name}")
-                success = subprocess.run(f"{cmd} 2>&1 | tee {log_fn}.tmp", shell=True).returncode == 0
-                print("::endgroup::")
-            else:
-                success = run(f"{cmd} >{log_fn}.tmp 2>&1") is not None
+        for spec in tp.builds.values():
+            success = build_release_(spec)
+            all_builds_ok = all_builds_ok and success
+            log(f"  [BUILD] {exp_ids} -> {spec.name}: {success}")
 
-            os.rename(f"{log_fn}.tmp", log_fn)  # move in case of error too, so we won't run it again
-            if success:
-                os.rename("linux/arch/x86/boot/bzImage", bzImage_fn)
-                os.rename("linux/vmlinux", vmlinux_fn)
-                gcs_upload(bzImage_fn, f"builds/{name}_bzImage")
-                gcs_upload(vmlinux_fn, f"builds/{name}_vmlinux", gzip=True)
-                gcs_upload(log_fn, f"builds/{name}_build.log")
-            return success
+        if not args.verify:
+            continue
 
-        def build_release(name, *args):
-            success = build_release_(name, *args)
-            log(f"  [BUILD] {exp_ids} -> {name}: {success}")
+        exp_fn = check_sub_path(exp_dir, f"exploit/{orig_target}/exploit")
+        shutil.copyfile(exp_fn, f"{IMAGE_RUNNER_DIR}/rootfs/exp")
 
-        p_id = f"{first_exp_id}_{kernel_ver.replace('.', '_')}"
-        name_orig = target
-        name_base = f"{target}_kasan"
-        build_targets = [name_orig]
+        if not os.path.isfile(bzimage_fn(target)):
+            print(f"  [DOWNLOAD] downloading release {target}...")
+            run(["wget", "-qO", bzimage_fn(target), f"{KERNELCTF_RELEASES_URL}/{target}/bzImage"])
 
-        if args.target_patching:
-            build_targets.append(name_base)
-            build_release(name_base, repo_url, base_commit)
-
-        if args.stable and stable_commit:
-            name_before_patch = f"{p_id}_kasan_wo_patch_{parent_commit[0:7]}"
-            name_after_patch = f"{p_id}_kasan_patched_{stable_commit[0:7]}"
-            build_release(name_before_patch, STABLE_REPO, parent_commit)
-            build_release(name_after_patch, STABLE_REPO, stable_commit)
-            build_targets.extend([name_before_patch, name_after_patch])
-
-            if args.target_patching:
-                name_base_patched = f"{target}_kasan_{first_exp_id}_{stable_commit[0:7]}"
-                build_release(name_base_patched, repo_url, base_commit, f"patches/{stable_commit[0:7]}.patch")
-                build_targets.append(name_base_patched)
-
-        if args.upstream:
-            ups_name_before_patch = f"{first_exp_id}_upstream_kasan_wo_patch_{ups_parent_commit[0:7]}"
-            ups_name_after_patch = f"{first_exp_id}_upstream_kasan_patched_{ups_commit[0:7]}"
-            build_release(ups_name_before_patch, UPSTREAM_REPO, ups_parent_commit)
-            build_release(ups_name_after_patch, UPSTREAM_REPO, ups_commit)
-            build_targets.extend([ups_name_before_patch, ups_name_after_patch])
-
-        if args.verify:
-            exp_fn = check_sub_path(exp_dir, f"exploit/{orig_target}/exploit")
-            shutil.copyfile(exp_fn, f"{IMAGE_RUNNER_DIR}/rootfs/exp")
-
-            if not os.path.isfile(f"builds/{target}_bzImage"):
-                print(f"  [DOWNLOAD] downloading release {target}...")
-                run(["wget", "-qO", f"builds/{target}_bzImage", f"{KERNELCTF_RELEASES_URL}/{target}/bzImage"])
-
+        names = {role: spec.name for role, spec in tp.builds.items()}
         res = {}
-        for name in build_targets:
+        for name in [target] + list(names.values()):
             log_fn = f"verify_results/{first_exp_id}_{name}.txt"
 
-            if args.verify and not os.path.isfile(log_fn):
+            if not os.path.isfile(bzimage_fn(name)):
+                res[name] = None
+                missing_kernels = True
+                log(f"  [VERIFY] {exp_ids}_{name}: {bold('kernel is missing (not in the public cache and not built)')}")
+                continue
+
+            if not os.path.isfile(log_fn):
                 print(f"  [RUN] running exploit {first_exp_id}_{name}...")
                 run(f"((timeout 3m ./run_exploit.sh {name}; EC=$?; echo; echo EXIT_CODE=$EC)|sed -u 's/\\r//g') 2>&1 >{log_fn}")
 
@@ -306,9 +163,7 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             else:
                 result = "<unknown>"
                 logs = readTextFile(log_fn)
-                if "Usage: ./run_exploit.sh" in logs:
-                    result = "build failed"
-                elif (m := re.search(r"KASAN: .*", logs)):
+                if (m := re.search(r"KASAN: .*", logs)):
                     result = m.group(0)
                     pwned = True
                 elif "CTF{secret_flag_deadbeef}" in logs:
@@ -334,19 +189,23 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
             res[name] = pwned
             log(f"  [VERIFY] {exp_ids}_{name}: {bold(result)}")
 
-        success_target_patching = res[name_base] == True and res[name_base_patched] == False if args.stable and args.target_patching else None
-        success_patch_commit = res[name_before_patch] == True and res[name_after_patch] == False if args.stable and stable_commit else None
-        success_upstream_patch = res[ups_name_before_patch] == True and res[ups_name_after_patch] == False if args.upstream else None
+        r = lambda role: res[names[role]]
+        has_target_patching = BASE_PATCHED in names
+        has_stable = AFTER in names
+        has_upstream = UPS_AFTER in names
+        success_target_patching = r(BASE) == True and r(BASE_PATCHED) == False if has_target_patching else None
+        success_patch_commit = r(BEFORE) == True and r(AFTER) == False if has_stable else None
+        success_upstream_patch = r(UPS_BEFORE) == True and r(UPS_AFTER) == False if has_upstream else None
         success = success_target_patching or success_patch_commit or success_upstream_patch
-        fail = (args.stable and stable_commit and (args.target_patching and res[name_base_patched] or res[name_after_patch])) or (args.upstream and res[ups_name_after_patch])
+        fail = (has_stable and (has_target_patching and r(BASE_PATCHED) or r(AFTER))) or (has_upstream and r(UPS_AFTER))
         exp_success = exp_success or success
         exp_fail = exp_fail or fail
-        if args.stable and stable_commit:
-            if args.target_patching:
-                log(f"  Target patching test: {success_color(success_target_patching)} (before: {res[name_base]}, after: {res[name_base_patched]})")
-            log(f"  Stable patch commit test: {success_color(success_patch_commit)} (before: {res[name_before_patch]}, after: {res[name_after_patch]})")
-        if args.upstream:
-            log(f"  Upstream patch commit test: {success_color(success_upstream_patch)} (before: {res[ups_name_before_patch]}, after: {res[ups_name_after_patch]})")
+        if has_stable:
+            if has_target_patching:
+                log(f"  Target patching test: {success_color(success_target_patching)} (before: {r(BASE)}, after: {r(BASE_PATCHED)})")
+            log(f"  Stable patch commit test: {success_color(success_patch_commit)} (before: {r(BEFORE)}, after: {r(AFTER)})")
+        if has_upstream:
+            log(f"  Upstream patch commit test: {success_color(success_upstream_patch)} (before: {r(UPS_BEFORE)}, after: {r(UPS_AFTER)})")
 
         if args.target_patching and success_target_patching and not success_patch_commit:
             log("  [STAT] Only target patching worked.")
@@ -361,11 +220,19 @@ for i_exp, exp_dir in enumerate(args.exploit_paths):
         log(f"  Verification of {exp_ids} on {target}: {red('FAIL') if fail else green('SUCCESS') if success else yellow('UNKNOWN')}")
         log()
 
+    if not args.verify:
+        continue
+
     log(f"[PR_VERIFY] of {exp_ids}: {red('FAIL') if exp_fail else green('SUCCESS') if exp_success else yellow('UNKNOWN')}")
     log()
     if exp_fail or not exp_success:
         all_success = False
 
-save_cache()
+if missing_kernels:
+    log("Some kernels are missing. To build them into the public cache, run the prebuild (or wait for its daily run), then add the \"vuln-verify\" label to the PR:")
+    log("  gh workflow run kernelctf-vulnverify-prebuild.yaml --repo google/security-research")
+    log()
+
+resolver.save_cache()
 write_summary()
-sys.exit(0 if all_success else 1)
+sys.exit(0 if (all_success if args.verify else all_builds_ok) else 1)

@@ -1,0 +1,117 @@
+name: kernelCTF vuln-verify prebuild
+# Builds the KASAN kernels needed by vuln-verify for recent submissions, so PR checks only have to download them.
+# This is the only writer of the public vuln-verify kernel cache (kernels built in PR checks are not published).
+# Building runs without secrets, only the publish job uploads the results to GCS.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *' # every day at 06:00 UTC
+permissions: {}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      builds: ${{ steps.plan.outputs.builds }}
+    steps:
+      - name: Checkout repo (vuln-verify scripts only)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            kernelctf/vuln-verify
+            kernelctf/flags.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - run: pip install requests
+
+      - name: Plan missing kernel builds
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./kernelctf/vuln-verify/prebuild.py plan
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.builds != '[]'
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      matrix:
+        build: ${{ fromJSON(needs.plan.outputs.builds) }}
+      fail-fast: false # do not cancel other builds
+    env:
+      NAME: ${{ matrix.build.name }}
+    steps:
+      - name: Checkout repo (vuln-verify scripts only)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            kernelctf/vuln-verify
+            kernelctf/flags.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Free disk space and install kernel build dependencies
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/share/swift /usr/local/share/boost /usr/local/lib/android
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev cpio pahole
+          sudo apt-get clean
+          pip install requests
+
+      - name: Build kernel
+        id: build
+        env:
+          REPO_URL: ${{ matrix.build.repo_url }}
+          COMMIT: ${{ matrix.build.commit }}
+          RELEASE: ${{ matrix.build.release }}
+        run: ./kernelctf/vuln-verify/prebuild.py build --name "$NAME" --repo-url "$REPO_URL" --commit "$COMMIT" --release "$RELEASE" --out-dir out
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v6
+        with:
+          name: prebuild_kernel_${{ env.NAME }}
+          path: out/
+          if-no-files-found: error
+
+      - name: Upload build log (build failed)
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: prebuild_failed_${{ env.NAME }}
+          path: kernelctf/vuln-verify/builds/${{ env.NAME }}_build.log
+          if-no-files-found: error
+
+  # Privileged (holds KERNELCTF_GCS_SA_KEY): only uploads the built kernels, never checks out or executes anything
+  publish:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Download kernels
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: prebuild_kernel_*
+          path: kernels
+          merge-multiple: true
+
+      - name: Validate kernel file names
+        run: |
+          shopt -s nullglob dotglob
+          for f in kernels/*; do
+            if [[ ! -f "$f" || -L "$f" || ! "$(basename "$f")" =~ ^exp[0-9]+_(upstream|[0-9]+_[0-9]+)_kasan_(wo_patch|patched)_[0-9a-f]{7}_(bzImage|build\.log)$ ]]; then
+              echo "::error::Unexpected file in kernel artifacts: $f"
+              exit 1
+            fi
+          done
+          ls -la kernels
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
+
+      - name: Upload kernels to the public vuln-verify cache (never overwrites existing kernels)
+        run: gcloud storage cp --no-clobber --predefined-acl=publicRead kernels/* gs://kernelctf-build/vuln-verify/builds/

@@ -8,6 +8,7 @@ import tarfile
 import glob
 import argparse
 from utils import *
+from flags import FLAG_REGEX, flag_release
 
 PUBLIC_CSV_BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true"
 OLD_SHEET_GID = "2095368189"
@@ -116,11 +117,9 @@ for submissionId in set(submissionIds).difference(publicSheet.keys()):
 submissionIds = list(set(submissionIds).intersection(publicSheet.keys()))
 submissionIds.sort()
 
-# Regular expression to handle kernelCTF flag without signature
-flagRegex = r"kernelCTF\{(?:[^:]+:)?(?:v1:([^:]+)|v2:([^:]+):([^:]*)):\d+\}"
 def flagTarget(flag):
-    match = checkRegex(flag, flagRegex, f"The flag (`{flag}`) is invalid")
-    target = match.group(1) or match.group(2)  # v1 or v2 flag
+    match = checkRegex(flag, FLAG_REGEX, f"The flag (`{flag}`) is invalid")
+    target = flag_release(match)
     return "mitigation-6.1" if target == "mitigation-6.1-v2" else target
 
 def v5ExploitHashes(archivePath):

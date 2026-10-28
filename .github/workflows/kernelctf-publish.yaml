@@ -1,0 +1,119 @@
+name: kernelCTF PR check publish
+# Runs after "kernelCTF PR check" (on: pull_request, no secrets) finished and publishes its artifacts to GCS.
+# Runs in the base repository context, so it must never check out or execute PR code: PR data is only read via the GitHub API.
+on:
+  workflow_run:
+    workflows: ["kernelCTF PR check"]
+    types: [completed]
+permissions: {}
+jobs:
+  gate:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      artifact_backup_dir: ${{ steps.gate.outputs.artifact_backup_dir }}
+    steps:
+      - id: gate
+        name: Resolve PR and check that it only touches a single submission folder
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::Invalid head SHA: '$HEAD_SHA'"; exit 1; fi
+
+          # workflow_run.pull_requests is empty for fork PRs, so look the PR up by its head branch and SHA
+          PRS=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" --jq "[.[] | select(.head.sha == \"$HEAD_SHA\") | .number] | join(\" \")")
+          if [[ $(wc -w <<< "$PRS") -ne 1 ]]; then
+            echo "::error::Expected exactly one open PR for $HEAD_OWNER:$HEAD_BRANCH at $HEAD_SHA, found: '$PRS'"
+            exit 1
+          fi
+          echo "PR: #$PRS"
+
+          # If the PR only touches its submission folder, then the PR check ran with the workflows and scripts of the base branch
+          FILES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PRS/files" --jq '.[].filename')
+          FOLDERS=$(echo "$FILES" | cut -d/ -f1-4 | sort -u)
+          if echo "$FILES" | grep -qv '^pocs/linux/kernelctf/' || [[ $(echo "$FOLDERS" | wc -l) -ne 1 ]] || [[ ! "$FOLDERS" =~ ^pocs/linux/kernelctf/CVE-[0-9]+-[0-9]+(_[a-z0-9]+)+$ ]]; then
+            echo "::error::PR #$PRS must only touch a single pocs/linux/kernelctf/CVE-* folder, but it touches:"
+            echo "$FILES"
+            exit 1
+          fi
+
+          BACKUP_DIR=$(gh api "repos/$HEAD_REPO/contents/$FOLDERS/metadata.json?ref=$HEAD_SHA" -H "Accept: application/vnd.github.raw" | jq -r '[(.submission_ids // [.submission_id]) | .[]] | sort | join("_")')
+          if [[ ! "$BACKUP_DIR" =~ ^exp[0-9]+(_exp[0-9]+)*$ ]]; then
+            echo "::error::Invalid submission IDs in metadata.json: '$BACKUP_DIR'"
+            exit 1
+          fi
+          echo "artifact_backup_dir=$BACKUP_DIR" >> $GITHUB_OUTPUT
+
+  # Privileged (holds KERNELCTF_GCS_SA_KEY): copies the PR run's artifacts to GCS as opaque files, never executes anything from them
+  backup:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Check for artifacts
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          COUNT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.total_count')
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "The PR run has $COUNT artifact(s)$([ "$COUNT" = 0 ] && echo ', nothing to back up (e.g. the structure check failed)')"
+
+      - name: Download artifacts
+        if: steps.list.outputs.count != '0'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ./artifacts
+
+      - name: Authenticate to Google Cloud
+        if: steps.list.outputs.count != '0'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: '${{ secrets.KERNELCTF_GCS_SA_KEY }}'
+
+      - name: Upload artifacts to GCS
+        if: steps.list.outputs.count != '0'
+        uses: google-github-actions/upload-cloud-storage@c0f6160ff80057923ff50e5e567695cea181ec23 # v2.2.4
+        with:
+          path: ./artifacts
+          destination: kernelctf-build/artifacts/${{ needs.gate.outputs.artifact_backup_dir }}_${{ github.event.workflow_run.id }}
+          parent: false
+          predefinedAcl: publicRead
+          process_gcloudignore: false # removes warnings that .gcloudignore file does not exist
+
+  # Shows the gate's result on the PR: the PR check results can only be trusted if this status is green, because a PR which modifies
+  # the workflows or scripts controls its own PR check run. The PR check run itself cannot set commit statuses (no permissions).
+  report_status:
+    needs: gate
+    if: always() && needs.gate.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Set commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$GATE_RESULT" == "success" ]]; then
+            STATE=success
+            DESCRIPTION="The PR check ran the trusted workflows and scripts of the base branch"
+          else
+            STATE=failure
+            DESCRIPTION="Untrusted: the PR touches files outside its submission folder (or it could not be resolved)"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state="$STATE" -f context="kernelCTF / trusted PR check" -f description="$DESCRIPTION" -f target_url="$TARGET_URL"
