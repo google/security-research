@@ -359,7 +359,7 @@ jobs:
         run: |
           for target in $(echo "$TARGETS" | jq -r '.[]'); do
             src="exploits/${ARTIFACT_PREFIX}_exploit_${target}/exploit"
-            if [ ! -f "$src" ]; then src="exploits/exploit"; fi
+            if [ $(echo "$TARGETS" | jq -r 'length') -eq 1 ]; then src="exploits/exploit"; fi
             install -m 755 "$src" "$POC_FOLDER/exploit/$target/exploit"
           done
 
