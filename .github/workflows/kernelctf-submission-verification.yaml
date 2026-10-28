@@ -358,7 +358,9 @@ jobs:
         # Only flagged targets are built by exploit_build, other targets keep the checked-in exploit binary
         run: |
           for target in $(echo "$TARGETS" | jq -r '.[]'); do
-            install -m 755 "exploits/${ARTIFACT_PREFIX}_exploit_${target}/exploit" "$POC_FOLDER/exploit/$target/exploit"
+            src="exploits/${ARTIFACT_PREFIX}_exploit_${target}/exploit"
+            if [ ! -f "$src" ]; then src="exploits/exploit"; fi
+            install -m 755 "$src" "$POC_FOLDER/exploit/$target/exploit"
           done
 
       - name: Enable KVM group perms
