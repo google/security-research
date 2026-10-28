@@ -2,14 +2,17 @@
 """Kconfig preconditions, Syzkaller coverage, and shared CLI utilities."""
 
 import argparse
+import fnmatch
+import json
 import os
 import re
 import sqlite3
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from tools.lib.callgraph import (
     CallerRow,
+    LOCATION_RE,
     clean_file_path,
     column_exists,
     ensure_indexes,
@@ -667,3 +670,110 @@ def extract_reachability_cli_kwargs(
     if is_function_entry is not None:
         kwargs["is_function_entry"] = is_function_entry
     return kwargs
+
+
+def clean_def_location(def_loc: Optional[str]) -> str:
+    """Normalize the file-path prefix of a 5-part CodeQL location string."""
+    if not def_loc:
+        return "unknown"
+    m = LOCATION_RE.match(def_loc)
+    if not m:
+        return clean_file_path(def_loc)
+    return (
+        f"{clean_file_path(m.group(1))}:"
+        f"{m.group(2)}:{m.group(3)}:{m.group(4)}:{m.group(5)}"
+    )
+
+
+def parse_loc_file_line(loc_str: str) -> Tuple[str, int]:
+    """Extract (clean_file_path, start_line) from a CodeQL location string."""
+    m = LOCATION_RE.match(loc_str or "")
+    if m:
+        return clean_file_path(m.group(1)), int(m.group(2))
+    parts = (loc_str or "").split(":")
+    if len(parts) >= 2 and parts[1].isdigit():
+        return clean_file_path(parts[0]), int(parts[1])
+    return clean_file_path(loc_str or ""), 0
+
+
+def name_matches_pattern(name: str, pattern: str, match_mode: str) -> bool:
+    """Check whether symbol or struct name matches pattern under match_mode."""
+    if match_mode == "exact":
+        return name == pattern
+    if match_mode in ("wildcard", "substring"):
+        if "*" in pattern or "?" in pattern:
+            return fnmatch.fnmatchcase(name, pattern)
+        return pattern in name
+    if match_mode == "regex":
+        return bool(re.search(pattern, name))
+    return name == pattern
+
+
+def load_reachable_fn_sets(
+    conn: sqlite3.Connection,
+    fn_names: Optional[Set[str]] = None,
+) -> Tuple[Set[str], Set[str]]:
+    """Load sets of function names present in syscall_node and entry_node."""
+    if fn_names is not None:
+        valid = [f for f in fn_names if f and f != "unknown"]
+        if not valid:
+            return set(), set()
+    else:
+        valid = []
+
+    cur = conn.cursor()
+    sys_fns: Set[str] = set()
+    ent_fns: Set[str] = set()
+    has_sys = table_exists(cur, "syscall_node")
+    has_ent = table_exists(cur, "entry_node")
+    if fn_names is None:
+        if has_sys:
+            cur.execute("SELECT DISTINCT function FROM syscall_node")
+            sys_fns = {r[0] for r in cur.fetchall() if r[0]}
+        if has_ent:
+            cur.execute("SELECT DISTINCT function FROM entry_node")
+            ent_fns = {r[0] for r in cur.fetchall() if r[0]}
+        return sys_fns, ent_fns
+
+    for idx in range(0, len(valid), 500):
+        batch = valid[idx : idx + 500]
+        ph = ",".join("?" for _ in batch)
+        if has_sys:
+            cur.execute(
+                f"SELECT DISTINCT function FROM syscall_node"
+                f" WHERE function IN ({ph})",
+                batch,
+            )
+            sys_fns.update(r[0] for r in cur.fetchall() if r[0])
+        if has_ent:
+            cur.execute(
+                f"SELECT DISTINCT function FROM entry_node"
+                f" WHERE function IN ({ph})",
+                batch,
+            )
+            ent_fns.update(r[0] for r in cur.fetchall() if r[0])
+    return sys_fns, ent_fns
+
+
+def run_json_or_text_cli(
+    args: argparse.Namespace,
+    action_fn: Callable[[], Any],
+    text_formatter: Callable[[Any], str],
+) -> None:
+    """Validate DB, run action_fn with error handling, and emit JSON or text."""
+    if verify_db_and_indexes(args):
+        return
+    try:
+        res = action_fn()
+    except (
+        FileNotFoundError,
+        ValueError,
+        sqlite3.Error,
+        OSError,
+        re.error,
+    ) as exc:
+        sys.exit(f"Error: {exc}")
+    if getattr(args, "format", "text") == "json":
+        print(json.dumps(res, indent=2))
+    else:
+        print(text_formatter(res))

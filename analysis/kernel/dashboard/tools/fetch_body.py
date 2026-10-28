@@ -2,11 +2,11 @@
 """Function Body & Context Source Fetcher CLI."""
 
 import argparse
-import json
-import sqlite3
-import sys
 
-from tools.lib.metadata import add_standard_tool_cli_args, verify_db_and_indexes
+from tools.lib.metadata import (
+    add_standard_tool_cli_args,
+    run_json_or_text_cli,
+)
 from tools.lib.source import fetch_function_body, format_body_text
 
 __all__ = [
@@ -50,6 +50,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Explicit 1-based end line in --file",
     )
     ap.add_argument(
+        "--up-to-line",
+        type=int,
+        default=None,
+        help=(
+            "Truncate function body after this line + --context"
+            " (keeps signature through target call site)"
+        ),
+    )
+    ap.add_argument(
         "--context",
         "-C",
         type=int,
@@ -83,16 +92,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """CLI entry point for fetch_body."""
     args = _build_arg_parser().parse_args()
-    if verify_db_and_indexes(args):
-        return
-
-    try:
-        res = fetch_function_body(
+    run_json_or_text_cli(
+        args,
+        lambda: fetch_function_body(
             args.db,
             function_name=args.function,
             file_path=args.file,
             start_line=args.start_line,
             end_line=args.end_line,
+            up_to_line=args.up_to_line,
             context=args.context,
             annotate=args.annotate,
             repo_dir=args.repo_dir,
@@ -100,14 +108,9 @@ def main() -> None:
             allow_ambiguous=args.allow_ambiguous,
             syzkaller_db=args.syzkaller_db,
             verbose=args.verbose,
-        )
-    except (FileNotFoundError, ValueError, sqlite3.Error, OSError) as e:
-        sys.exit(f"Error: {e}")
-
-    if args.format == "json":
-        print(json.dumps(res, indent=2))
-    else:
-        print(format_body_text(res))
+        ),
+        format_body_text,
+    )
 
 
 if __name__ == "__main__":

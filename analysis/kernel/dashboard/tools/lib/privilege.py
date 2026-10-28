@@ -99,6 +99,14 @@ def format_capability(
     return f"{c_type}({cap_name})"
 
 
+def format_gate_summary(gates: List[Dict[str, Any]]) -> str:
+    """Format a list of gate dicts into a comma-separated summary string."""
+    return ", ".join(
+        f"{g['cap_str']} via {g['via']}" if g.get("via") else g["cap_str"]
+        for g in gates
+    )
+
+
 def deduplicate_gates(gates: GateList) -> GateList:
     """Deduplicate gates, preferring concrete capability checks over 'cap'."""
     if not gates:

@@ -187,6 +187,25 @@ class TestFetchBodyUnit(ExtendedToolsTestCase):
         self.assertEqual(payload["function"], "msr_open")
         self.assertEqual(payload["source"], "git_log")
 
+    def test_up_to_line_and_callsite_snippet(self) -> None:
+        """Verify --up-to-line truncation and fetch_callsite_snippet."""
+        res = fetch_body.fetch_function_body(
+            self.db_path,
+            function_name="msr_open",
+            up_to_line=209,
+            context=1,
+            force_git_log=True,
+        )
+        self.assertEqual(res["up_to_line"], 209)
+        self.assertLessEqual(res["window_end"], 210)
+        self.assertEqual(res["lines"][0]["line"], 206)
+
+        snippet = source.fetch_callsite_snippet(
+            self.conn, "arch/x86/kernel/msr.c", 209, context=1
+        )
+        self.assertTrue(any(s["is_focus_line"] for s in snippet))
+        self.assertEqual([s["line"] for s in snippet], [208, 209, 210])
+
 
 if __name__ == "__main__":
     unittest.main()

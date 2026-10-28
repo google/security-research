@@ -6,7 +6,6 @@ import sqlite3
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tools.lib.callgraph import (
-    LOCATION_RE,
     clean_file_path,
     file_matches_filter,
     get_enclosing_function,
@@ -15,33 +14,25 @@ from tools.lib.callgraph import (
     open_databases,
     table_exists,
 )
-from tools.lib.metadata import format_ambiguous_symbol_error
+from tools.lib.metadata import (
+    clean_def_location,
+    format_ambiguous_symbol_error,
+)
 from tools.lib.privilege import (
     OpsAcqGateMap,
+    format_gate_summary,
     load_condition_gates,
     load_ops_acquisition_gates,
 )
 
 __all__ = [
+    "build_ops_slot_summary",
     "inspect_ops_slot_with_conn",
     "inspect_ops_slot",
     "inspect_function_ops_with_conn",
     "inspect_function_ops",
     "format_ops_text",
 ]
-
-
-def _clean_def_loc(def_loc: Optional[str]) -> str:
-    """Normalize the file-path prefix of a 5-part location string."""
-    if not def_loc:
-        return "unknown"
-    m = LOCATION_RE.match(def_loc)
-    if not m:
-        return clean_file_path(def_loc)
-    return (
-        f"{clean_file_path(m.group(1))}:"
-        f"{m.group(2)}:{m.group(3)}:{m.group(4)}:{m.group(5)}"
-    )
 
 
 def _resolve_caller_cached(
@@ -113,25 +104,39 @@ def _query_slot_rows(
     return rows
 
 
+def _record_slot_cb_def(
+    by_tf: Dict[Tuple[str, str], Tuple[int, int, Set[str]]],
+    row: Tuple[Any, ...],
+) -> None:
+    """Record a single ops_targets callback definition row into by_tf."""
+    if not row[3]:
+        return
+    clean_tf = clean_file_path(row[4] or "")
+    if is_non_runtime_path(clean_tf):
+        return
+    tf_key = (str(row[3]), clean_tf)
+    s_ln, e_ln = int(row[5] or 0), int(row[6] or 0)
+    prev = by_tf.get(tf_key)
+    defs = prev[2] if prev else set()
+    if prev is None or (e_ln - s_ln, s_ln) > (prev[1] - prev[0], prev[0]):
+        by_tf[tf_key] = (s_ln, e_ln, defs)
+    clean_def = clean_def_location(row[0])
+    if clean_def != "unknown":
+        defs.add(clean_def)
+
+
 def _collect_slot_defs_and_sites(
     conn: sqlite3.Connection,
     rows: List[Tuple[Any, ...]],
     caller_cache: Dict[Tuple[str, int], str],
 ) -> Tuple[Dict[Tuple[str, str, int, int], Set[str]], List[Dict[str, Any]]]:
     """Collect deduplicated callback definitions and dispatch call sites."""
-    cb_defs: Dict[Tuple[str, str, int, int], Set[str]] = defaultdict(set)
+    by_tf: Dict[Tuple[str, str], Tuple[int, int, Set[str]]] = {}
     dispatch_seen: Set[Tuple[str, str, int]] = set()
     dispatch_sites: List[Dict[str, Any]] = []
 
     for row in rows:
-        clean_tf = clean_file_path(row[4] or "")
-        if row[3]:
-            cb_key = (row[3], clean_tf, int(row[5] or 0), int(row[6] or 0))
-            clean_def = _clean_def_loc(row[0])
-            if clean_def != "unknown":
-                cb_defs[cb_key].add(clean_def)
-            else:
-                cb_defs.setdefault(cb_key, set())
+        _record_slot_cb_def(by_tf, row)
         site = _resolve_caller_cached(conn, row[7], row[8], caller_cache)
         if site:
             s_key = (site["caller"], site["file"], site["line"])
@@ -139,11 +144,15 @@ def _collect_slot_defs_and_sites(
                 dispatch_seen.add(s_key)
                 dispatch_sites.append(site)
 
+    cb_defs: Dict[Tuple[str, str, int, int], Set[str]] = {
+        (tgt, tf, s_ln, e_ln): defs
+        for (tgt, tf), (s_ln, e_ln, defs) in by_tf.items()
+    }
     dispatch_sites.sort(key=lambda s: (s["file"], s["line"], s["caller"]))
     return cb_defs, dispatch_sites
 
 
-def _build_slot_summary(
+def build_ops_slot_summary(
     conn: sqlite3.Connection,
     parent: str,
     field: str,
@@ -192,7 +201,7 @@ def inspect_ops_slot_with_conn(
     ops_acq_gates = _get_ops_acq_gates(conn, options) if rows else {}
     caller_cache: Dict[Tuple[str, int], str] = {}
     slots = [
-        _build_slot_summary(
+        build_ops_slot_summary(
             conn,
             struct_name,
             fname,
@@ -363,7 +372,7 @@ def inspect_function_ops_with_conn(
         registrations.append({
             "struct": reg_k[0],
             "field": reg_k[1],
-            "definition": _clean_def_loc(reg_k[2]),
+            "definition": clean_def_location(reg_k[2]),
             "target": function_name,
             "file": reg_k[3],
             "start_line": reg_k[4],
@@ -420,16 +429,7 @@ def _format_slot_section(
         for cb in display_cbs:
             gates = cb.get("acquisition_gates", [])
             g_str = (
-                " [ACQ GATED: "
-                + ", ".join(
-                    f"{g['cap_str']} via {g['via']}"
-                    if g.get("via")
-                    else g["cap_str"]
-                    for g in gates
-                )
-                + "]"
-                if gates
-                else ""
+                f" [ACQ GATED: {format_gate_summary(gates)}]" if gates else ""
             )
             defs = cb.get("definitions", [])
             d_str = f" (defined at {', '.join(defs[:2])})" if defs else ""
@@ -468,11 +468,7 @@ def _format_function_reg(reg: Dict[str, Any], out: List[str]) -> None:
     ])
     gates = reg.get("acquisition_gates", [])
     if gates:
-        g_list = ", ".join(
-            f"{g['cap_str']} via {g['via']}" if g.get("via") else g["cap_str"]
-            for g in gates
-        )
-        out.append(f"  Acquisition Gates:       {g_list}")
+        out.append(f"  Acquisition Gates:       {format_gate_summary(gates)}")
 
     siblings = reg.get("siblings", [])
     if siblings:

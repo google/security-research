@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Imports CodeQL structs CSV records into SQLite (struct_locations and struct_fields)."""
+"""Imports CodeQL structs CSV records into SQLite (struct_locations/fields)."""
 
 from collections.abc import Sequence
 import logging
@@ -95,56 +95,38 @@ def _parse_struct_row(
     struct_name = row[0]
     file_path = trim_filename(row[1], prefix)
     start_line = int(row[2])
-    end_line = int(row[3])
-    byte_size = int(row[4])
-    member_count = int(row[5])
-    is_anonymous = int(row[6])
-    is_typedef = int(row[7])
-    has_flex_member = int(row[8])
-
-    field_name = row[9]
-    field_path = row[10]
-    field_type = row[11]
-    byte_offset = int(row[12])
-    bit_offset = _nonneg_or_none(row[13])
-    bit_size = _nonneg_or_none(row[14])
-    is_funcptr = int(row[15])
-    is_flex = int(row[16])
-    array_len = _nonneg_or_none(row[17])
-
-    loc_tuple = (
+    loc_tuple: tuple[object, ...] = (
         struct_name,
         file_path,
         start_line,
-        end_line,
-        byte_size,
-        member_count,
-        is_anonymous,
-        is_typedef,
-        has_flex_member,
+        int(row[3]),
+        int(row[4]),
+        int(row[5]),
+        int(row[6]),
+        int(row[7]),
+        int(row[8]),
     )
-    field_tuple = (
+    field_tuple: tuple[object, ...] = (
         struct_name,
         file_path,
         start_line,
-        field_name,
-        field_path,
-        field_type,
-        byte_offset,
-        bit_offset,
-        bit_size,
-        is_funcptr,
-        is_flex,
-        array_len,
+        row[9],
+        row[10],
+        row[11],
+        int(row[12]),
+        _nonneg_or_none(row[13]),
+        _nonneg_or_none(row[14]),
+        int(row[15]),
+        int(row[16]),
+        _nonneg_or_none(row[17]),
     )
     return loc_tuple, field_tuple
 
 
-def import_structs_to_db(csv_filename: str, db_name: str) -> int:
-    """Imports CodeQL structs CSV into `struct_locations` and `struct_fields`."""
-    rows = read_csv_rows(csv_filename)
-    prefix = detect_csv_prefix(rows, (1,), 18)
-
+def _dedup_struct_rows(
+    rows: Sequence[Sequence[str]], prefix: str
+) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+    """Deduplicate struct location and field rows by key."""
     locations_by_key: dict[tuple[str, str, int], tuple[object, ...]] = {}
     fields_by_key: dict[tuple[str, str, int, str], tuple[object, ...]] = {}
 
@@ -179,7 +161,14 @@ def import_structs_to_db(csv_filename: str, db_name: str) -> int:
         ):
             fields_by_key[field_key] = field_tuple
 
-    fields_data = list(fields_by_key.values())
+    return list(locations_by_key.values()), list(fields_by_key.values())
+
+
+def import_structs_to_db(csv_filename: str, db_name: str) -> int:
+    """Imports structs CSV into `struct_locations` and `struct_fields`."""
+    rows = read_csv_rows(csv_filename)
+    prefix = detect_csv_prefix(rows, (1,), 18)
+    locations_data, fields_data = _dedup_struct_rows(rows, prefix)
 
     with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()
@@ -187,16 +176,15 @@ def import_structs_to_db(csv_filename: str, db_name: str) -> int:
         cursor.execute("DROP TABLE IF EXISTS struct_fields")
         cursor.execute(_CREATE_STRUCT_LOCATIONS_SQL)
         cursor.execute(_CREATE_STRUCT_FIELDS_SQL)
-        cursor.executemany(
-            _INSERT_STRUCT_LOCATIONS_SQL, list(locations_by_key.values())
-        )
+        cursor.executemany(_INSERT_STRUCT_LOCATIONS_SQL, locations_data)
         cursor.executemany(_INSERT_STRUCT_FIELDS_SQL, fields_data)
         for index_sql in _INDEXES:
             cursor.execute(index_sql)
 
     logging.info(
-        "Successfully imported %d struct_locations and %d struct_fields into '%s'.",
-        len(locations_by_key),
+        "Successfully imported %d struct_locations and %d struct_fields "
+        "into '%s'.",
+        len(locations_data),
         len(fields_data),
         db_name,
     )

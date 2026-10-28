@@ -297,7 +297,7 @@ def _has_sqlite_table(db_path: str | Path | None, table_name: str) -> bool:
 
 
 def _parse_all_calls_csv(path: Path) -> dict:
-    """Parse an `all-calls.ql` 12-column (or 4-column) CSV into summary stats."""
+    """Parse an `all-calls.ql` 12-col (or 4-col) CSV into summary stats."""
     unique_locs: set[tuple[str, ...]] = set()
     sample_uris: list[str] = []
     sample_messages: list[str] = []
@@ -1052,7 +1052,7 @@ def configs(pytestconfig, sqlite_db):
 
 @pytest.fixture(scope="session")
 def structs(pytestconfig, sqlite_db):
-    """Load `structs` (`structs.ql` / `struct_locations` + `struct_fields`) rows."""
+    """Load `structs` (`structs.ql` / `struct_locations` + `struct_fields`)."""
     path = _resolve_file(
         pytestconfig,
         "--structs",

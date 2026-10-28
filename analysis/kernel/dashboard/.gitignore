@@ -1,0 +1,11 @@
+# Generated CodeQL query results and unified SQLite databases
+queries/results/
+*.db
+*.db-*
+*.bqrs
+*.csv
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

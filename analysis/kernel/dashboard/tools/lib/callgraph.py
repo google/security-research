@@ -34,6 +34,7 @@ _INDEX_SPECS = [
     ("idx_en_fn", "entry_node(function)"),
     ("idx_en_entry", "entry_node(entry)"),
     ("idx_en_kind", "entry_node(entry_kind)"),
+    ("idx_types_struct_name", "types(struct_name)"),
 ]
 INDEXES = [
     (name, f"CREATE INDEX IF NOT EXISTS {name} ON {spec}")

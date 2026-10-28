@@ -513,6 +513,29 @@ class TestFindPaths(BaseToolsTestCase):
         self.assertEqual(len(callers), 1)
         self.assertEqual(callers[0][0], "vfs_read")
 
+    def test_path_with_snippet_lines(self):
+        """Verify snippet_lines attaches callsite source lines to path hops."""
+        fs_dir = os.path.join(self.tmp_dir, "fs")
+        os.makedirs(fs_dir, exist_ok=True)
+        with open(
+            os.path.join(fs_dir, "internal.c"), "w", encoding="utf-8"
+        ) as f:
+            for i in range(1, 160):
+                f.write(f"/* internal.c line {i} */ do_step_{i}();\n")
+
+        target_info, paths = find_paths.find_paths_to_line(
+            self.db_path,
+            "fs/internal.c",
+            120,
+            target_syscall="__do_sys_foo",
+            snippet_lines=1,
+            repo_dir=self.tmp_dir,
+        )
+        path = paths["__do_sys_foo"]
+        self.assertTrue(len(path[-1].get("snippet", [])) > 0)
+        tree_txt = find_paths.format_tree(paths, target_info)
+        self.assertIn(">>   120:", tree_txt)
+
 
 if __name__ == "__main__":
     unittest.main()

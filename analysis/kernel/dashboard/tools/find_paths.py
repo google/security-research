@@ -41,10 +41,12 @@ from tools.lib.metadata import (
     get_line_configs,
     get_syzkaller_coverage,
     handle_common_cli_setup,
+    infer_repo_dir,
     is_line_covered_by_syzkaller,
     make_caller_step,
     make_path_step,
 )
+from tools.lib.source import fetch_callsite_snippet
 
 __all__ = [
     "CONFIG_TOKEN_RE",
@@ -266,6 +268,10 @@ def format_tree(
             continue
         for i, step in enumerate(path):
             out.append(_format_tree_step(step, i, len(path), syzk_configured))
+            for sline in step.get("snippet", []):
+                ptr = ">>" if sline.get("is_focus_line") else "  "
+                pad = "  " * (i + 2)
+                out.append(f"{pad}{ptr} {sline['line']:5d}: {sline['code']}")
 
     if show_repro and syzk.get("progs"):
         out.extend([
@@ -363,6 +369,28 @@ def format_mermaid(
     return "\n".join(lines)
 
 
+def _attach_path_snippets(
+    conn: sqlite3.Connection,
+    paths_by_syscall: Dict[str, List[Dict[str, Any]]],
+    snippet_lines: int,
+    repo_dir: Optional[str],
+) -> None:
+    """Attach ±snippet_lines source lines around each step's focus line."""
+    for path in paths_by_syscall.values():
+        for step in path:
+            focus = int(step.get("call_site_line") or step.get("line") or 0)
+            step["snippet"] = fetch_callsite_snippet(
+                conn,
+                step.get("file", ""),
+                focus,
+                context=snippet_lines,
+                repo_dir=repo_dir,
+            )
+
+
+attach_path_snippets = _attach_path_snippets
+
+
 def find_paths_to_line(
     db_file: str,
     file_path: str,
@@ -396,6 +424,11 @@ def find_paths_to_line(
         )
         if path:
             paths_by_syscall[sc or path[0]["function"]] = path
+
+    snippet_lines = int(options.get("snippet_lines") or 0)
+    if snippet_lines > 0:
+        repo_dir = options.get("repo_dir") or infer_repo_dir(db_file)
+        _attach_path_snippets(conn, paths_by_syscall, snippet_lines, repo_dir)
 
     all_cfg_exprs = list(target_info["configs"])
     for path in paths_by_syscall.values():
@@ -459,6 +492,17 @@ def main() -> None:
         help="Display Syzkaller reproduction program code if covered",
     )
     ap.add_argument(
+        "--snippet-lines",
+        type=int,
+        default=0,
+        help="Attach ±N lines of source code around each hop call site",
+    )
+    ap.add_argument(
+        "--repo-dir",
+        default=None,
+        help="Optional kernel source checkout directory for snippet reading",
+    )
+    ap.add_argument(
         "--format",
         choices=["tree", "list", "json", "mermaid"],
         default="tree",
@@ -474,6 +518,8 @@ def main() -> None:
             args.db,
             args.file,
             args.line,
+            snippet_lines=args.snippet_lines,
+            repo_dir=args.repo_dir,
             **extract_reachability_cli_kwargs(args),
         )
     except (FileNotFoundError, ValueError, sqlite3.Error, OSError) as e:

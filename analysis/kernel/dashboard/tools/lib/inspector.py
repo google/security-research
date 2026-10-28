@@ -178,15 +178,7 @@ def _resolve_indirect_caller_loc(
 ) -> Tuple[str, str, int]:
     """Resolve enclosing function for an indirect call expression site."""
     clean_expr = clean_file_path(expr_file)
-    cur.execute(
-        "SELECT function_name, file_path, start_line"
-        " FROM function_locations"
-        " WHERE (file_path = ? OR file_path LIKE ?)"
-        " AND ? BETWEEN start_line AND end_line"
-        " ORDER BY (end_line - start_line) ASC, start_line DESC LIMIT 1",
-        (clean_expr, f"%/{clean_expr}", expr_line),
-    )
-    fn_row = cur.fetchone()
+    fn_row = get_enclosing_function(cur.connection, clean_expr, expr_line)
     if fn_row:
         return fn_row[0], clean_file_path(fn_row[1]), fn_row[2]
     return "unknown", clean_expr, expr_line
@@ -671,41 +663,34 @@ def inspect_function_calls(
             line_number,
             allow_ambiguous=bool(options.get("allow_ambiguous", False)),
         )
-    except ValueError:
+        if not target_info:
+            target_repr = function_name or f"{file_path}:{line_number}"
+            raise ValueError(
+                f"Target function '{target_repr}' not found in database."
+            )
+
+        tree_opts = _build_inspect_tree_opts(
+            conn, syzk_conn, target_info, options
+        )
+        callers = (
+            build_caller_tree(conn, target_info["function"], **tree_opts)
+            if options.get("show_callers", True)
+            else []
+        )
+        callees = (
+            build_callee_tree(
+                conn,
+                target_info["function"],
+                target_info["file"],
+                target_info["start_line"],
+                target_info["end_line"],
+                **tree_opts,
+            )
+            if options.get("show_callees", True)
+            else []
+        )
+        return target_info, callers, callees
+    finally:
         conn.close()
         if syzk_conn:
             syzk_conn.close()
-        raise
-
-    if not target_info:
-        conn.close()
-        if syzk_conn:
-            syzk_conn.close()
-        target_repr = function_name or f"{file_path}:{line_number}"
-        raise ValueError(
-            f"Target function '{target_repr}' not found in database."
-        )
-
-    tree_opts = _build_inspect_tree_opts(conn, syzk_conn, target_info, options)
-    callers = (
-        build_caller_tree(conn, target_info["function"], **tree_opts)
-        if options.get("show_callers", True)
-        else []
-    )
-    callees = (
-        build_callee_tree(
-            conn,
-            target_info["function"],
-            target_info["file"],
-            target_info["start_line"],
-            target_info["end_line"],
-            **tree_opts,
-        )
-        if options.get("show_callees", True)
-        else []
-    )
-
-    conn.close()
-    if syzk_conn:
-        syzk_conn.close()
-    return target_info, callers, callees

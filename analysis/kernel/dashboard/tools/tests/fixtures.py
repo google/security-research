@@ -162,13 +162,107 @@ def create_git_log_schema(cur: sqlite3.Cursor) -> None:
     """)
 
 
+def create_struct_schemas(cur: sqlite3.Cursor) -> None:
+    """Create struct, BTF types, alloc, and field_access tables for tests."""
+    cur.execute("""
+        CREATE TABLE struct_locations (
+            struct_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            byte_size INTEGER NOT NULL,
+            member_count INTEGER NOT NULL,
+            is_anonymous INTEGER NOT NULL,
+            is_typedef INTEGER NOT NULL,
+            has_flex_member INTEGER NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE struct_fields (
+            struct_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            field_name TEXT NOT NULL,
+            field_path TEXT NOT NULL,
+            field_type TEXT NOT NULL,
+            byte_offset INTEGER NOT NULL,
+            bit_offset INTEGER,
+            bit_size INTEGER,
+            is_funcptr INTEGER NOT NULL,
+            is_flex INTEGER NOT NULL,
+            array_len INTEGER
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE types (
+            struct_name TEXT,
+            struct_size INTEGER,
+            parent_type TEXT,
+            kind TEXT,
+            type TEXT,
+            name TEXT,
+            bits_offset INTEGER,
+            nr_bits INTEGER,
+            bits_end INTEGER,
+            is_flex INTEGER
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE allocs (
+            call_value TEXT,
+            type_value TEXT,
+            objectSize_value TEXT,
+            allocSizeMin_value TEXT,
+            allocSizeMax_value TEXT,
+            allocSize_value TEXT,
+            flagsMin_value TEXT,
+            flagsMax_value TEXT,
+            flags_value TEXT,
+            call_uri TEXT,
+            call_startLine INTEGER,
+            call_startColumn INTEGER,
+            depth_value TEXT,
+            type_uri TEXT,
+            type_startLine TEXT,
+            type_startColumn TEXT,
+            is_flexible TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE kmalloc_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            call_site TEXT,
+            call_expr TEXT,
+            struct_type TEXT,
+            struct_def TEXT,
+            struct_size INTEGER,
+            flags TEXT,
+            alloc_size INTEGER,
+            sizeof_expr TEXT,
+            is_flexible TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE field_access (
+            type TEXT,
+            field TEXT,
+            parent TEXT,
+            location TEXT,
+            function_name TEXT,
+            file_path TEXT,
+            line INTEGER
+        )
+    """)
+
+
 def create_all_extended_schemas(cur: sqlite3.Cursor) -> None:
-    """Create entry_node, async_edges, kconfig, syzkaller, and git_log."""
+    """Create entry, async, kconfig, syzkaller, git_log, and struct tables."""
     create_entry_node_schema(cur)
     create_async_edges_schema(cur)
     create_kconfig_schema(cur)
     create_syzkaller_schema(cur)
     create_git_log_schema(cur)
+    create_struct_schemas(cur)
 
 
 _TABLE_INSERT_SQL = {
@@ -191,6 +285,28 @@ _TABLE_INSERT_SQL = {
     ),
     "entry_node": "INSERT INTO entry_node VALUES (?, ?, ?, ?, ?)",
     "async_edges": "INSERT INTO async_edges VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "struct_locations": (
+        "INSERT INTO struct_locations"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    "struct_fields": (
+        "INSERT INTO struct_fields"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    "types": "INSERT INTO types VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "allocs": (
+        "INSERT INTO allocs"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    "kmalloc_calls": (
+        "INSERT INTO kmalloc_calls ("
+        "call_site, call_expr, struct_type, struct_def, struct_size,"
+        " flags, alloc_size, sizeof_expr, is_flexible"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    "field_access": (
+        "INSERT INTO field_access VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ),
 }
 
 

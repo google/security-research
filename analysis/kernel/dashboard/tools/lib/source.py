@@ -320,6 +320,20 @@ def _load_raw_body_slice(
     return gl_slice
 
 
+def _apply_up_to_line_cutoff(
+    numbered: List[Tuple[int, str]],
+    sig_start: int,
+    span_end: int,
+    up_to_line: Optional[int],
+    context: int,
+) -> List[Tuple[int, str]]:
+    """Truncate numbered lines after up_to_line + context when requested."""
+    if up_to_line is None or up_to_line < sig_start:
+        return numbered
+    cutoff = min(span_end, up_to_line) + max(0, context)
+    return [(ln, text) for ln, text in numbered if ln <= cutoff]
+
+
 def fetch_function_body_with_conn(
     conn: sqlite3.Connection,
     syzk_conn: Optional[sqlite3.Connection] = None,
@@ -333,34 +347,22 @@ def fetch_function_body_with_conn(
         span=(opts.get("start_line"), opts.get("end_line")),
         allow_ambiguous=bool(opts.get("allow_ambiguous")),
     )
-    fn_name, clean_f, _, _ = target
-    raw = _load_raw_body_slice(
-        conn, target, opts.get("repo_dir"), int(opts.get("context", 5))
-    )
-    sig_start, span_end, numbered = (
-        raw["sig_start_line"],
-        raw["end_line"],
-        raw["lines"],
+    context = int(opts.get("context", 5))
+    raw = _load_raw_body_slice(conn, target, opts.get("repo_dir"), context)
+    sig_start, span_end = raw["sig_start_line"], raw["end_line"]
+    numbered = _apply_up_to_line_cutoff(
+        raw["lines"], sig_start, span_end, opts.get("up_to_line"), context
     )
     win_start = numbered[0][0] if numbered else sig_start
     win_end = numbered[-1][0] if numbered else span_end
     annotations = (
-        collect_span_annotations(conn, syzk_conn, clean_f, win_start, win_end)
+        collect_span_annotations(conn, syzk_conn, target[1], win_start, win_end)
         if opts.get("annotate")
         else {}
     )
-    line_records = [
-        {
-            "line": ln,
-            "code": text,
-            "in_span": sig_start <= ln <= span_end,
-            "annotations": annotations.get(ln, []),
-        }
-        for ln, text in numbered
-    ]
-    return {
-        "function": fn_name,
-        "file": clean_f,
+    res = {
+        "function": target[0],
+        "file": target[1],
         "sig_start_line": sig_start,
         "end_line": span_end,
         "window_start": win_start,
@@ -368,8 +370,54 @@ def fetch_function_body_with_conn(
         "source": raw["source"],
         "commit": raw["commit"],
         "author_date": raw["author_date"],
-        "lines": line_records,
+        "lines": [
+            {
+                "line": ln,
+                "code": text,
+                "in_span": sig_start <= ln <= span_end,
+                "annotations": annotations.get(ln, []),
+            }
+            for ln, text in numbered
+        ],
     }
+    if opts.get("up_to_line") is not None:
+        res["up_to_line"] = int(opts["up_to_line"])
+    return res
+
+
+def fetch_callsite_snippet(
+    conn: sqlite3.Connection,
+    file_path: str,
+    focus_line: int,
+    context: int = 2,
+    repo_dir: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch a compact ±context snippet around focus_line from disk or DB."""
+    if not file_path or focus_line <= 0:
+        return []
+    clean_f = clean_file_path(file_path)
+    win_s = max(1, focus_line - max(0, context))
+    win_e = focus_line + max(0, context)
+
+    disk_lines = read_disk_lines(repo_dir, clean_f) if repo_dir else None
+    if disk_lines is not None:
+        _, _, numbered = slice_disk_span(disk_lines, win_s, win_e, context=0)
+        return [
+            {"line": ln, "code": text, "is_focus_line": ln == focus_line}
+            for ln, text in numbered
+        ]
+
+    enc = get_enclosing_function(conn, clean_f, focus_line)
+    if not enc:
+        return []
+    gl = slice_git_log_span(conn, enc[0], clean_f, enc[2], enc[3])
+    if not gl:
+        return []
+    return [
+        {"line": ln, "code": text, "is_focus_line": ln == focus_line}
+        for ln, text in gl["lines"]
+        if win_s <= ln <= win_e
+    ]
 
 
 def fetch_function_body(db_path: str, **opts: Any) -> Dict[str, Any]:

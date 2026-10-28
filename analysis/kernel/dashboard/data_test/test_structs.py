@@ -1,4 +1,4 @@
-"""Data-quality checks for `structs.ql` (`struct_locations` and `struct_fields`)."""
+"""Data-quality checks for `structs.ql` (`struct_locations`/`struct_fields`)."""
 from __future__ import annotations
 
 from common import canonical_path, is_int, load_baseline, pct, report
@@ -11,11 +11,7 @@ _NON_RUNTIME_SUBSTRINGS = (
     "/purgatory/",
 )
 _NON_RUNTIME_PREFIXES = (
-    "scripts/",
-    "tools/",
-    "samples/",
-    "usr/",
-    "Documentation/",
+    "scripts/", "tools/", "samples/", "usr/", "Documentation/",
 )
 
 
@@ -30,7 +26,7 @@ def _is_non_runtime_path(raw_path: str) -> bool:
 
 
 def test_structs_not_empty(structs, kernel):
-    """Verify compiled kernel structs and flattened fields meet volume bounds."""
+    """Verify compiled structs and flattened fields meet volume bounds."""
     distinct_structs = {
         (r["struct_name"], canonical_path(r["file_path"]), r["start_line"])
         for r in structs
@@ -135,7 +131,7 @@ def test_structs_anonymous_union_flattening(structs):
 
 
 def test_structs_btf_size_agreement(structs, btf_sizes):
-    """Verify struct byte_size agrees with BTF struct_size on unambiguous types."""
+    """Verify struct byte_size agrees with BTF on unambiguous types."""
     by_name_sizes: dict[str, set[int]] = {}
     for row in structs:
         if is_int(row["byte_size"]) and int(row["byte_size"]) > 0:
