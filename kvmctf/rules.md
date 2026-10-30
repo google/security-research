@@ -15,7 +15,7 @@ community to learn from each other’s techniques.
 
 ## Target: Linux LTS KVM
 
-The host runs v6.1.74 and runs on an Intel(R) Xeon(R) Gold 5222 CPU @ 3.80GHz.
+The host runs v6.18.54 and runs on an Intel(R) Xeon(R) Gold 5222 CPU @ 3.80GHz.
 Participants will have the option to select whether they want the host to run
 with `CONFIG_KASAN` disabled or enabled. The complete setup of the host can be
 downloaded
@@ -243,7 +243,7 @@ in the first stage.
     tagged in Git).
 4. Contact us within 7 days and provide the following details:
     * The patch commit, CVE (optionally, if it is already known) and the exact
-    target(s) (e.g. `LTS 6.1.74`).
+    target(s) (e.g. `LTS 6.18.54`).
     * Describe the vulnerability in detail (see the Documentation requirements
     section)
     * Reuse the contents of your `vulnerability.md` if it already exists (see
@@ -294,7 +294,7 @@ The structure of this submission folder should be:
   * Required, description of the vulnerability.
 * `docs/exploit.md`
   * Required, description of how the exploits work.
-* `exploit/6.1.x/`
+* `exploit/6.18.x/`
   * `exploit.c`
     * Required, source code of the exploit.
   * `exploit`
