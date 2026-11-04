@@ -14,20 +14,20 @@ from data.codeql_importers.lib.utils import (
 
 
 def _parse_ops_target_row(
-    row: Sequence[str], prefix: str
+    row: Sequence[str],
 ) -> Optional[tuple[object, ...]]:
     """Parses an 11-column ops_edges CSV row into a database tuple."""
     if has_unknown_token(row):
         return None
     return (
-        trim_filename(row[0], prefix),
+        trim_filename(row[0]),
         row[1],
         row[2],
         row[3],
-        trim_filename(row[4], prefix),
+        trim_filename(row[4]),
         int(row[5]),
         int(row[6]),
-        trim_filename(row[7], prefix),
+        trim_filename(row[7]),
         int(row[8]),
         int(row[9]),
         int(row[10]),
@@ -59,7 +59,6 @@ _OPS_TARGETS_SPEC = CsvTableSpec(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
     min_cols=11,
-    path_cols=(0, 4, 7),
     row_parser=_parse_ops_target_row,
     indexes=(
         (

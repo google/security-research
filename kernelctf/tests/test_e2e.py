@@ -196,5 +196,79 @@ class TestEndToEndSubmissionAndRepro(FakeSheetsTestCase):
             self.assertNotIn("Error:", res_verify.stderr)
             self.assertIn("exp9999 on lts-6.12.104", res_verify.stdout)
 
+class TestCheckSubmissionGitMergeTopology(FakeSheetsTestCase):
+    def _build_git_repo(self, tmp_dir, tamper_outside=False):
+        repo = os.path.join(tmp_dir, "repo")
+        os.makedirs(repo)
+        git = lambda *args: subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True)
+        git("init", "-b", "master")
+        git("config", "user.email", "test@example.com")
+        git("config", "user.name", "Test")
+
+        # Initial master commit (B0) — PR forks from here
+        os.makedirs(os.path.join(repo, "pocs", "linux", "kernelctf"), exist_ok=True)
+        with open(os.path.join(repo, "README.md"), "w") as f: f.write("init\n")
+        git("add", ".")
+        git("commit", "-m", "B0")
+        b0 = git("rev-parse", "HEAD").stdout.strip()
+
+        # PR commit (P) adding only the submission (plus optional tampered file outside pocs/linux/kernelctf/)
+        git("checkout", "-b", "pr", b0)
+        make_submission(os.path.join(repo, "pocs", "linux", "kernelctf"), original_members())
+        if tamper_outside:
+            os.makedirs(os.path.join(repo, "kernelctf"), exist_ok=True)
+            with open(os.path.join(repo, "kernelctf", "check-submission.py"), "w") as f: f.write("#!/usr/bin/env python3\nimport sys; sys.exit(0)\n")
+        git("add", ".")
+        git("commit", "-m", "PR submission")
+
+        # Master advances with unrelated commits (B1, B2) before GitHub computes refs/pull/<PR>/merge
+        git("checkout", "master")
+        os.makedirs(os.path.join(repo, "v8ctf"), exist_ok=True)
+        with open(os.path.join(repo, "v8ctf", "version"), "w") as f: f.write("157\n")
+        git("add", ".")
+        git("commit", "-m", "B1: v8ctf update")
+
+        os.makedirs(os.path.join(repo, "analysis", "dashboard"), exist_ok=True)
+        with open(os.path.join(repo, "analysis", "dashboard", "query.ql"), "w") as f: f.write("select 1\n")
+        git("add", ".")
+        git("commit", "-m", "B2: dashboard update")
+
+        # Synthetic GitHub merge commit M = merge(B2, pr)
+        git("checkout", "--detach", "master")
+        git("merge", "--no-ff", "-m", "Merge pr into B2", "pr")
+        merge_sha = git("rev-parse", "HEAD").stdout.strip()
+
+        # Master advances again (B3) after refs/pull/<PR>/merge was created, updated as origin/master
+        git("checkout", "master")
+        os.makedirs(os.path.join(repo, ".github", "workflows"), exist_ok=True)
+        with open(os.path.join(repo, ".github", "workflows", "ci.yaml"), "w") as f: f.write("name: ci\n")
+        git("add", ".")
+        git("commit", "-m", "B3: workflow update")
+        b3 = git("rev-parse", "HEAD").stdout.strip()
+        git("update-ref", "refs/remotes/origin/master", b3)
+        git("checkout", "--detach", merge_sha)
+        return repo, b0
+
+    def test_pr_merge_commit_with_advanced_master_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo, stale_base_sha = self._build_git_repo(tmp_dir)
+            gh_out = os.path.join(tmp_dir, "gh_output.txt")
+            # Stale base.sha fails because B1/B2 touched v8ctf/ and analysis/
+            res_stale = subprocess.run(["python3", os.path.join(KERNELCTF_DIR, "check-submission.py"), stale_base_sha], cwd=repo, capture_output=True, text=True)
+            self.assertNotEqual(res_stale.returncode, 0)
+            self.assertIn("outside of the `pocs/linux/kernelctf/` folder", res_stale.stdout)
+
+            # origin/master succeeds and sees only the PR's submission files
+            res = subprocess.run(["python3", os.path.join(KERNELCTF_DIR, "check-submission.py"), "origin/master"], cwd=repo, env=dict(os.environ, GITHUB_OUTPUT=gh_out), capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, f"check-submission.py failed:\n{res.stdout}\n{res.stderr}")
+            self.assertIn("The file structure verification of the PR was successful!", res.stdout)
+
+    def test_pr_tampering_outside_pocs_rejected_by_trusted_script(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo, _ = self._build_git_repo(tmp_dir, tamper_outside=True)
+            res = subprocess.run(["python3", os.path.join(KERNELCTF_DIR, "check-submission.py"), "origin/master"], cwd=repo, capture_output=True, text=True)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("kernelctf/check-submission.py", res.stdout)
+
 if __name__ == "__main__":
     unittest.main()

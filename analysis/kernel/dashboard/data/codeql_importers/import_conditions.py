@@ -27,14 +27,13 @@ _CONDITIONS_SPEC = CsvTableSpec(
     VALUES (?, ?, ?, ?, ?, ?)
     """,
     min_cols=6,
-    path_cols=(1, 2, 5),
-    row_parser=lambda row, prefix: (
+    row_parser=lambda row: (
         row[0],
-        trim_filename(row[1], prefix),
-        trim_filename(row[2], prefix),
+        trim_filename(row[1]),
+        trim_filename(row[2]),
         row[3],
         row[4],
-        trim_filename(row[5], prefix),
+        trim_filename(row[5]),
     ),
     indexes=(
         "CREATE INDEX IF NOT EXISTS idx_conditions_call ON conditions(call)",

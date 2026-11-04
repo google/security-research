@@ -22,8 +22,8 @@ import kernel_common
 pragma[inline]
 string functionFile(Function f) {
   if exists(f.getBlock())
-  then result = f.getBlock().getLocation().getFile().toString()
-  else result = f.getLocation().getFile().toString()
+  then result = f.getBlock().getLocation().getFile().getRelativePath()
+  else result = f.getLocation().getFile().getRelativePath()
 }
 
 /** Form A: function pointer passed as an argument to a known async registrar. */
@@ -35,7 +35,7 @@ predicate formArg(
     fc.getTarget().getName() = name and
     arg = fc.getAnArgument() and
     resolveCallback(arg, cb) and
-    file = fc.getLocation().getFile().toString() and
+    file = fc.getLocation().getFile().getRelativePath() and
     line = fc.getLocation().getStartLine() and
     (
       if exists(fc.getEnclosingFunction())
@@ -60,7 +60,7 @@ predicate formAssign(
     fa.getTarget().getName() = f and
     fieldAccessInStruct(fa, s) and
     resolveCallback(ae.getRValue(), cb) and
-    file = ae.getLocation().getFile().toString() and
+    file = ae.getLocation().getFile().getRelativePath() and
     line = ae.getLocation().getStartLine() and
     (
       // Disambiguate `struct rcu_head` (#define alias for `callback_head` in <linux/types.h>)
@@ -99,7 +99,7 @@ predicate formInit(
     fieldInStruct(fld, s) and
     fe = cal.getAFieldExpr(fld) and
     resolveCallback(fe, cb) and
-    file = cal.getLocation().getFile().toString() and
+    file = cal.getLocation().getFile().getRelativePath() and
     line = cal.getLocation().getStartLine() and
     (
       if exists(cal.getEnclosingFunction())

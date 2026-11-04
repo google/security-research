@@ -6,7 +6,6 @@ import logging
 from typing import Optional
 
 from data.codeql_importers.lib.utils import (
-    detect_csv_prefix,
     read_csv_rows,
     run_importer_cli,
     trim_filename,
@@ -89,11 +88,11 @@ def _nonneg_or_none(value: str) -> Optional[int]:
 
 
 def _parse_struct_row(
-    row: Sequence[str], prefix: str
+    row: Sequence[str],
 ) -> tuple[tuple[object, ...], tuple[object, ...]]:
     """Parses an 18-column structs CSV row into location and field tuples."""
     struct_name = row[0]
-    file_path = trim_filename(row[1], prefix)
+    file_path = trim_filename(row[1])
     start_line = int(row[2])
     loc_tuple: tuple[object, ...] = (
         struct_name,
@@ -124,7 +123,7 @@ def _parse_struct_row(
 
 
 def _dedup_struct_rows(
-    rows: Sequence[Sequence[str]], prefix: str
+    rows: Sequence[Sequence[str]],
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
     """Deduplicate struct location and field rows by key."""
     locations_by_key: dict[tuple[str, str, int], tuple[object, ...]] = {}
@@ -135,7 +134,7 @@ def _dedup_struct_rows(
             logging.warning("Skipping invalid struct row: %s", row)
             continue
         try:
-            loc_tuple, field_tuple = _parse_struct_row(row, prefix)
+            loc_tuple, field_tuple = _parse_struct_row(row)
         except (ValueError, TypeError):
             logging.warning("Skipping struct row with invalid values: %s", row)
             continue
@@ -167,8 +166,7 @@ def _dedup_struct_rows(
 def import_structs_to_db(csv_filename: str, db_name: str) -> int:
     """Imports structs CSV into `struct_locations` and `struct_fields`."""
     rows = read_csv_rows(csv_filename)
-    prefix = detect_csv_prefix(rows, (1,), 18)
-    locations_data, fields_data = _dedup_struct_rows(rows, prefix)
+    locations_data, fields_data = _dedup_struct_rows(rows)
 
     with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()

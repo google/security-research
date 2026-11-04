@@ -2,13 +2,13 @@
  * @name Find interesting objects for kernel heap exploitation
  * @id cpp/kernel-interesting-objects
  * @description Finds interesting objects for kernel heap exploitation
- * @kind problem
+ * @kind table
  * @precision low
  * @tags security kernel
- * @problem.severity error
  */
 
 import cpp
+import kernel_common
 
 class FlexibleArrayMember extends Field {
   FlexibleArrayMember() {
@@ -160,5 +160,6 @@ class KmallocCall extends FunctionCall {
 
 from KmallocCall kfc, Struct s
 where s = kfc.getStruct()
-select kfc.getLocation(), kfc, s, s.getLocation(), s.getSize(), kfc.getFlag(), kfc.getSize(),
-  kfc.getSizeArg(), kfc.isFlexible(s), kfc.getTarget().getName()
+select relativeLocationString(kfc.getLocation()), kfc, s, relativeLocationString(s.getLocation()),
+  s.getSize(), kfc.getFlag(), kfc.getSize(), kfc.getSizeArg(), kfc.isFlexible(s),
+  kfc.getTarget().getName()

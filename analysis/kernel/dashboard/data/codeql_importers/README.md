@@ -20,20 +20,14 @@ data/codeql_importers/
 
 ## 2. Core Conversion & Normalization Mechanisms
 
-### 2.1 Build Prefix Detection & Path Canonicalization (`lib/utils.py`)
-CodeQL outputs absolute paths from the machine where the database was built (often prefixed with `file://`, e.g., `file:///tmp/build/linux-6.12.109/net/core/sock.c`). To make every SQLite table portable and joinable with Git and Syzkaller paths:
-1. **`detect_prefix(sample_paths)`**: Strips `file://` URIs, splits each sample path into directory segments, and locates the first top-level Linux kernel directory (`arch`, `block`, `certs`, `crypto`, `drivers`, `fs`, `include`, `init`, `io_uring`, `ipc`, `kernel`, `lib`, `mm`, `net`, `rust`, `samples`, `scripts`, `security`, `sound`, `tools`, `usr`, `virt`). The longest common prefix preceding that directory (e.g. `/tmp/build/linux-6.12.109/`) is returned.
-2. **`trim_filename(path, prefix)`**: Strips `file://`, removes `prefix`, and falls back to matching the first top-level kernel directory segment if a path comes from an out-of-tree or symlinked build directory:
-   ```text
-   "file:///work/linux-6.12/drivers/net/tun.c" ──► "drivers/net/tun.c"
-   ```
+### 2.1 Relative Path Normalization (`lib/utils.py`)
+All CodeQL queries in `queries/` emit kernel-relative paths via `File.getRelativePath()` and `relativeLocationString(loc)`. `trim_filename(path)` strips any optional `file://` URI scheme and leading `/` so all SQLite tables store clean kernel-relative paths (e.g., `"drivers/net/tun.c"`).
 
 ### 2.2 Declarative CSV Import Engine (`CsvTableSpec` & `import_csv_table`)
-Single-CSV importers (`import_configs.py`, `import_ops_targets.py`, `import_conditions.py`, `import_conditions_reachable.py`, `import_field_access.py`, `import_allocs.py`) declare a [`CsvTableSpec`](lib/utils.py):
-1. **Smart Header Detection (`read_csv_rows`)**: Automatically detects whether row 0 is a `codeql bqrs decode` header (`col0`, `function_name`, or non-numeric strings in integer columns) and skips it without dropping data rows from headerless CSVs.
-2. **Bounded Prefix Sampling (`detect_csv_prefix`)**: Samples up to 1,000 rows from `spec.path_cols` in a single pass to compute `prefix`.
-3. **Fault-Tolerant Row Parsing**: Calls `spec.row_parser(row, prefix)` on rows meeting `spec.min_cols`, catching `(ValueError, TypeError)` with a warning log so a single malformed row never aborts an import.
-4. **Atomic Idempotent Write (`execute_bulk_insert`)**: Drops or clears the target table (`drop_table` / `clear_sql`), creates the schema, bulk-inserts all parsed tuples, and builds all lookup `indexes` in one transaction.
+Single-CSV importers (`import_configs.py`, `import_ops_targets.py`, `import_conditions.py`, `import_conditions_reachable.py`, `import_field_access.py`, `import_allocations.py`, `import_async_edges.py`) declare a [`CsvTableSpec`](lib/utils.py):
+1. **Smart Header Detection (`iter_csv_rows`)**: Automatically skips the CSV header row without dropping data rows from headerless CSVs.
+2. **Fault-Tolerant Row Parsing**: Calls `spec.row_parser(row)` on rows meeting `spec.min_cols`, catching `(ValueError, TypeError)` with a warning log so a single malformed row never aborts an import.
+3. **Atomic Idempotent Write (`import_csv_table`)**: Drops or clears the target table (`clear_sql`), creates the schema, bulk-inserts all parsed tuples, and builds all lookup `indexes` in one transaction.
 
 ### 2.3 Struct Definitions, Flattened Fields & Compound Location Unpacking
 - **`import_structs.py` (`structs.csv` $\rightarrow$ `struct_locations`, `struct_fields`)**: Reads the 12-column `structs.ql` output, deduplicates struct headers `(struct_name, file_path, start_line, end_line, byte_size)` into `struct_locations`, and bulk-inserts flattened member layouts `(struct_name, file_path, struct_start_line, field_name, field_path, field_type, byte_offset, bit_offset, bit_width, field_line, is_function_ptr)` into `struct_fields`.

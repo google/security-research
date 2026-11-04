@@ -11,7 +11,7 @@ import os
 import sys
 from typing import Optional
 
-from data.codeql_importers.lib.utils import detect_prefix, trim_filename
+from data.codeql_importers.lib.utils import trim_filename
 from data.lib.db import open_sqlite_db
 
 LocByFnFile = dict[tuple[str, str], list[str]]
@@ -24,7 +24,6 @@ class LocIndex:
 
     by_fn_file: Mapping[tuple[str, str], Sequence[str]]
     by_name: Mapping[str, Sequence[tuple[str, str]]]
-    prefix: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,21 +57,8 @@ def _is_valid_loc_row(row: Sequence[str]) -> bool:
     return True
 
 
-def _sample_loc_files(path: str, limit: int = 1000) -> list[str]:
-    """Collects up to `limit` sample file paths from a locs CSV file."""
-    sample_files: list[str] = []
-    with open(path, newline="", encoding="utf-8", errors="ignore") as loc_file:
-        for row in csv.reader(loc_file):
-            if _is_valid_loc_row(row) and row[1]:
-                sample_files.append(row[1].strip().strip('"'))
-                if len(sample_files) >= limit:
-                    break
-    return sample_files
-
-
-def load_locs(path: str) -> tuple[LocByFnFile, LocByName, str]:
+def load_locs(path: str) -> tuple[LocByFnFile, LocByName]:
     """Loads function locations from `syscall-node-locs.ql` CSV output."""
-    prefix = detect_prefix(_sample_loc_files(path))
     by_fn_file: LocByFnFile = defaultdict(list)
     by_name: LocByName = defaultdict(list)
 
@@ -81,12 +67,12 @@ def load_locs(path: str) -> tuple[LocByFnFile, LocByName, str]:
             if not _is_valid_loc_row(row):
                 continue
             name = row[0].strip().strip('"')
-            file_path = trim_filename(row[1].strip().strip('"'), prefix)
+            file_path = trim_filename(row[1].strip().strip('"'))
             loc = loc_string(file_path, row[2], row[3], row[4], row[5])
             by_fn_file[(name, file_path)].append(loc)
             by_name[name].append((file_path, loc))
 
-    return by_fn_file, by_name, prefix
+    return by_fn_file, by_name
 
 
 def select_root_locations(
@@ -116,9 +102,7 @@ def resolve_function_locations(
 ) -> list[str]:
     """Resolves function location strings for a pairs CSV row."""
     if len(row) > file_col_idx and row[file_col_idx].strip().strip('"'):
-        file_path = trim_filename(
-            row[file_col_idx].strip().strip('"'), loc_index.prefix
-        )
+        file_path = trim_filename(row[file_col_idx].strip().strip('"'))
         flocs = loc_index.by_fn_file.get((function, file_path))
         if flocs:
             return list(flocs)
@@ -211,7 +195,6 @@ def run_reachability_cli(
             Mapping[tuple[str, str], Sequence[str]],
             Mapping[str, Sequence[tuple[str, str]]],
             Mapping[str, str],
-            str,
         ],
         Iterator[tuple[str, ...]],
     ],
@@ -243,9 +226,9 @@ def run_reachability_cli(
     if not args.db and not args.out:
         sys.exit("need --out or --db")
 
-    by_fn_file, by_name, prefix = load_locs(args.locs)
+    by_fn_file, by_name = load_locs(args.locs)
     root_locs = root_locs_fn(by_name)
-    rows = gen_rows_fn(args.pairs, by_fn_file, by_name, root_locs, prefix)
+    rows = gen_rows_fn(args.pairs, by_fn_file, by_name, root_locs)
 
     if args.db:
         write_node_db(args.db, spec, rows)

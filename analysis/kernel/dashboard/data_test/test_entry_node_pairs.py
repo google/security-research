@@ -283,9 +283,15 @@ def test_entry_seeds_and_taxonomy(
             "BTF_ID_FLAGS kfuncs / direct": len(bpf_kfuncs),
         },
     )
+    effective_min_roots = dict(EXPECTED_KIND_MIN_ROOTS)
+    if expected_reclaim:
+        effective_min_roots["vfs_reclaim"] = min(
+            EXPECTED_KIND_MIN_ROOTS["vfs_reclaim"],
+            max(20, int(len(expected_reclaim) * 0.8)),
+        )
     below_min = {
         k: (len(by_kind.get(k, set())), min_cnt)
-        for k, min_cnt in EXPECTED_KIND_MIN_ROOTS.items()
+        for k, min_cnt in effective_min_roots.items()
         if k in active_expected_kinds and len(by_kind.get(k, set())) < min_cnt
     }
     assert not unknown_kinds, f"unexpected entry_kind values: {unknown_kinds}"

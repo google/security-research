@@ -14,15 +14,15 @@ from data.codeql_importers.lib.utils import (
 
 
 def _parse_field_access_row(
-    row: Sequence[str], prefix: str
+    row: Sequence[str],
 ) -> Optional[tuple[object, ...]]:
     """Parses a 7-column (or 4-column) field_access CSV row."""
     if has_unknown_token(row):
         return None
-    loc = trim_filename(row[3], prefix)
+    loc = trim_filename(row[3])
     if len(row) >= 7:
         fn_name = row[4]
-        file_path = trim_filename(row[5], prefix)
+        file_path = trim_filename(row[5])
         line = int(row[6])
     else:
         fn_name = ""
@@ -56,7 +56,6 @@ _FIELD_ACCESS_SPEC = CsvTableSpec(
     VALUES (?, ?, ?, ?, ?, ?, ?)
     """,
     min_cols=4,
-    path_cols=(3, 5),
     row_parser=_parse_field_access_row,
     indexes=(
         (

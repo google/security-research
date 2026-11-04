@@ -24,10 +24,9 @@ _CONFIGS_SPEC = CsvTableSpec(
     VALUES (?, ?, ?, ?, ?)
     """,
     min_cols=5,
-    path_cols=(1,),
-    row_parser=lambda row, prefix: (
+    row_parser=lambda row: (
         row[0],
-        trim_filename(row[1], prefix),
+        trim_filename(row[1]),
         int(row[2]),
         int(row[3]),
         int(row[4]),

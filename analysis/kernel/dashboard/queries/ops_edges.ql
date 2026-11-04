@@ -12,11 +12,7 @@ import kernel_common
 
 pragma[inline]
 string locationString(Locatable l) {
-  result = l.getFile().toString() + ":" +
-    l.getLocation().getStartLine().toString() + ":" +
-    l.getLocation().getStartColumn().toString() + ":" +
-    l.getLocation().getEndLine().toString() + ":" +
-    l.getLocation().getEndColumn().toString()
+  result = relativeLocationString(l.getLocation())
 }
 
 /**
@@ -263,10 +259,10 @@ select
   parentName as parent,
   regField.getName(),
   target.getName(),
-  targetBody.getFile().toString() as target_file,
+  targetBody.getFile().getRelativePath() as target_file,
   blockStartLine(target, targetBody) as target_start,
   targetBody.getLocation().getEndLine() as target_end,
-  ec.getFile().toString() as exprcall_file,
+  ec.getFile().getRelativePath() as exprcall_file,
   ec.getLocation().getStartLine() as exprcall_line,
   blockStartLine(caller, callerBody) as exprcall_parent_start,
   callerBody.getLocation().getEndLine() as exprcall_parent_end

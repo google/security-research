@@ -210,7 +210,8 @@ def get_kconfig_metadata(
 
 
 _DB_VERSION_RE = re.compile(
-    r"(?:kernel_dashboard-|run_)v?([0-9]+\.[0-9]+[^\s/]*?)(?:\.db|/|$)"
+    r"(?:kernel_dashboard-|codeql_data-|run_)v?"
+    r"([0-9]+\.[0-9]+[^\s/]*?)(?:\.db|/|$)"
 )
 
 
@@ -240,6 +241,12 @@ def infer_repo_dir(
         candidate = os.path.join(ws, f"linux_v{ver}")
         if os.path.isdir(candidate):
             return candidate
+    for ws in ws_candidates:
+        if not ws:
+            continue
+        prod_candidate = os.path.join(ws, "prodkernel")
+        if os.path.isdir(prod_candidate):
+            return prod_candidate
     return None
 
 
@@ -740,14 +747,14 @@ def load_reachable_fn_sets(
         ph = ",".join("?" for _ in batch)
         if has_sys:
             cur.execute(
-                f"SELECT DISTINCT function FROM syscall_node"
+                "SELECT DISTINCT function FROM syscall_node"
                 f" WHERE function IN ({ph})",
                 batch,
             )
             sys_fns.update(r[0] for r in cur.fetchall() if r[0])
         if has_ent:
             cur.execute(
-                f"SELECT DISTINCT function FROM entry_node"
+                "SELECT DISTINCT function FROM entry_node"
                 f" WHERE function IN ({ph})",
                 batch,
             )

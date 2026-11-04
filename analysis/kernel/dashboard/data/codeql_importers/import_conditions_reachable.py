@@ -25,12 +25,11 @@ _CONDITIONS_NODE_SPEC = CsvTableSpec(
     VALUES (?, ?, ?, ?)
     """,
     min_cols=4,
-    path_cols=(2, 3),
-    row_parser=lambda row, prefix: (
+    row_parser=lambda row: (
         row[0],
         row[1],
-        trim_filename(row[2], prefix),
-        trim_filename(row[3], prefix),
+        trim_filename(row[2]),
+        trim_filename(row[3]),
     ),
     indexes=(
         (

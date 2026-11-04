@@ -70,10 +70,9 @@ def gen_rows(
     by_fn_file: Mapping[tuple[str, str], Sequence[str]],
     by_name: Mapping[str, Sequence[tuple[str, str]]],
     sysloc: Mapping[str, str],
-    prefix: str = "",
 ) -> Iterator[tuple[str, ...]]:
     """Yields `(syscall, function, syscall_location, function_location)`."""
-    loc_index = LocIndex(by_fn_file=by_fn_file, by_name=by_name, prefix=prefix)
+    loc_index = LocIndex(by_fn_file=by_fn_file, by_name=by_name)
     return iter_joined_reachability_rows(
         pairs_path, loc_index, sysloc, _extract_syscall_pair
     )

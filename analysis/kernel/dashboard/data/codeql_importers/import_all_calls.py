@@ -7,7 +7,6 @@ import sqlite3
 from typing import Any
 
 from data.codeql_importers.lib.utils import (
-    detect_prefix,
     run_importer_cli,
     trim_filename,
 )
@@ -49,11 +48,14 @@ def _is_header_row(row: list[str]) -> bool:
 
 def _parse_edge_endpoints(
     row: list[str],
-) -> tuple[
-    tuple[str, str, int, int, int, int],
-    tuple[str, str, int, int, int, int],
-] | None:
-    """Parses a 12-column explicit row (or 4-column URL row) into two endpoints."""
+) -> (
+    tuple[
+        tuple[str, str, int, int, int, int],
+        tuple[str, str, int, int, int, int],
+    ]
+    | None
+):
+    """Parses a 12-col explicit row (or 4-col URL row) into two endpoints."""
     if len(row) >= 12:
         try:
             src = (
@@ -82,36 +84,11 @@ def _parse_edge_endpoints(
         src_msg, src_url, dst_msg, dst_url = row[0], row[1], row[2], row[3]
         if not src_msg or not dst_msg:
             return None
-        s_uri, s_sl, s_sc, s_el, s_ec = parse_codeql_url(src_url)
-        d_uri, d_sl, d_sc, d_el, d_ec = parse_codeql_url(dst_url)
         return (
-            (src_msg, s_uri, s_sl, s_sc, s_el, s_ec),
-            (dst_msg, d_uri, d_sl, d_sc, d_el, d_ec),
+            (src_msg, *parse_codeql_url(src_url)),
+            (dst_msg, *parse_codeql_url(dst_url)),
         )
     return None
-
-
-def _extract_sample_uris_from_csv(
-    csv_file_path: str, limit: int = 200
-) -> list[str]:
-    """Collects up to `limit` raw file URIs from an all-calls CSV file."""
-    sample_uris: list[str] = []
-    with open(
-        csv_file_path, "r", newline="", encoding="utf-8", errors="ignore"
-    ) as fh:
-        reader = csv.reader(fh)
-        for idx, row in enumerate(reader):
-            if idx == 0 and _is_header_row(row):
-                continue
-            parsed = _parse_edge_endpoints(row)
-            if parsed is None:
-                continue
-            for endpoint in parsed:
-                if endpoint[1]:
-                    sample_uris.append(endpoint[1])
-                    if len(sample_uris) >= limit:
-                        return sample_uris
-    return sample_uris
 
 
 def _init_all_calls_tables(
@@ -180,10 +157,9 @@ def _get_max_id(cursor: sqlite3.Cursor, table: str) -> int:
 
 def _collect_csv_rows(
     csv_file_path: str,
-    prefix: str,
     base_loc_id: int,
 ) -> tuple[list[tuple[Any, ...]], list[tuple[int, int, str]]]:
-    """Reads `all-calls.csv` into deduplicated `locations` and `edges` batches."""
+    """Reads `all-calls.csv` into deduplicated `locations` and `edges` rows."""
     loc_id_by_key: dict[tuple[str, str, int, int, int, int], int] = {}
     locations_batch: list[tuple[Any, ...]] = []
     edges_batch: list[tuple[int, int, str]] = []
@@ -194,16 +170,14 @@ def _collect_csv_rows(
     ) -> int:
         nonlocal next_loc_id
         msg, raw_uri, sl, sc, el, ec = endpoint
-        clean_uri = trim_filename(raw_uri, prefix)
+        clean_uri = trim_filename(raw_uri)
         key = (msg, clean_uri, sl, sc, el, ec)
         existing_id = loc_id_by_key.get(key)
         if existing_id is not None:
             return existing_id
         next_loc_id += 1
         loc_id_by_key[key] = next_loc_id
-        locations_batch.append(
-            (next_loc_id, 0, msg, clean_uri, sl, sc, el, ec)
-        )
+        locations_batch.append((next_loc_id, 0, msg, clean_uri, sl, sc, el, ec))
         return next_loc_id
 
     with open(
@@ -230,27 +204,23 @@ def import_all_calls_to_db(
     replace_existing: bool = True,
 ) -> int:
     """Loads an `all-calls.csv` file into `locations` and `edges` in SQLite."""
-    try:
-        sample_uris = _extract_sample_uris_from_csv(csv_file_path)
-    except OSError as exc:
-        logging.critical(
-            "Error reading all-calls CSV file '%s': %s", csv_file_path, exc
-        )
-        return 0
-
-    if not sample_uris:
-        logging.warning("No valid edge rows found in '%s'.", csv_file_path)
-        return 0
-
-    prefix = detect_prefix(sample_uris)
-
     with open_sqlite_db(db_name, fast_pragmas=True) as conn:
         cursor = conn.cursor()
         _init_all_calls_tables(cursor, replace_existing=replace_existing)
         base_loc_id = _get_max_id(cursor, "locations")
-        locations_batch, edges_batch = _collect_csv_rows(
-            csv_file_path, prefix, base_loc_id
-        )
+        try:
+            locations_batch, edges_batch = _collect_csv_rows(
+                csv_file_path, base_loc_id
+            )
+        except OSError as exc:
+            logging.critical(
+                "Error reading all-calls CSV file '%s': %s", csv_file_path, exc
+            )
+            return 0
+
+        if not edges_batch:
+            logging.warning("No valid edge rows found in '%s'.", csv_file_path)
+            return 0
 
         cursor.executemany(
             """

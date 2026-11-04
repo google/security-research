@@ -8,6 +8,7 @@
  */
 
 import cpp
+import kernel_common
 
 /** Holds if `expr` references `init_user_ns` or `init_net` directly or via a local variable. */
 pragma[inline]
@@ -381,7 +382,7 @@ class CapabilityConditionCall extends InterestingConditionCalls, FunctionCall {
 
   pragma[nomagic]
   override string getInterestingLocationString() {
-    result = this.(FunctionCall).getLocation().toString()
+    result = relativeLocationString(this.(FunctionCall).getLocation())
   }
 
   override string getNsScope() { result = nsScope }
@@ -411,7 +412,7 @@ class ModuleParam extends InterestingConditionCalls, MacroInvocation {
 
   pragma[nomagic]
   override string getInterestingLocationString() {
-    result = this.(MacroInvocation).getLocation().toString()
+    result = relativeLocationString(this.(MacroInvocation).getLocation())
   }
 }
 
@@ -434,7 +435,7 @@ class SysCtl extends InterestingConditionCalls, ClassAggregateLiteral {
 
   pragma[nomagic]
   override string getInterestingLocationString() {
-    result = this.(ClassAggregateLiteral).getLocation().toString()
+    result = relativeLocationString(this.(ClassAggregateLiteral).getLocation())
   }
 }
 
@@ -738,12 +739,12 @@ predicate genlDeclarativeGate(
     ClassAggregateLiteral cal, Function handler, Expr flagsExpr, string nsTag
   |
     genlDeclarativeGateFunction(handler, gateType, nsTag, flagsExpr, cal) and
-    defLoc = flagsExpr.getLocation().toString() and
-    condLoc = cal.getLocation().toString() and
+    defLoc = relativeLocationString(flagsExpr.getLocation()) and
+    condLoc = relativeLocationString(cal.getLocation()) and
     arg = "CAP_NET_ADMIN" and
     callStr = "__genl_ops_gate__:" + nsTag and
     callLoc =
-      "file://" + handler.getFile().toString() + ":" +
+      handler.getFile().getRelativePath() + ":" +
         handler.getBlock().getLocation().getStartLine().toString() + ":1:" +
         handler.getBlock().getLocation().getEndLine().toString() + ":1"
   )
@@ -757,11 +758,11 @@ predicate genlDeclarativeGate(
  *    `"call to expression"`), and `callLoc` is the call expression location.
  * 2. Synthetic guarded-span rows: `callStr` is `"__guarded_span__:<ns_scope>"`,
  *    and `callLoc` encodes the controlled line interval `[minLine, maxLine]` as
- *    `"file://<path>:<minLine>:1:<maxLine>:1"`.
+ *    `"<path>:<minLine>:1:<maxLine>:1"`.
  * 3. Synthetic Generic Netlink declarative gate rows: `callStr` is
  *    `"__genl_ops_gate__:<ns_scope>"`, and `callLoc` encodes the gated handler's
  *    body line span `[startLine, endLine]` as
- *    `"file://<path>:<startLine>:1:<endLine>:1"`.
+ *    `"<path>:<startLine>:1:<endLine>:1"`.
  */
 predicate conditionDirectRow(
   string gateType, string defLoc, string condLoc, string arg, string callStr,
@@ -771,10 +772,10 @@ predicate conditionDirectRow(
     conditionGuardsCall(ic, condition, call) and
     gateType = ic.getInterestingType() and
     defLoc = ic.getInterestingLocationString() and
-    condLoc = condition.getLocation().toString() and
+    condLoc = relativeLocationString(condition.getLocation()) and
     arg = ic.getInterestingArgString() and
     callStr = call.toString() and
-    callLoc = call.getLocation().toString()
+    callLoc = relativeLocationString(call.getLocation())
   )
   or
   exists(
@@ -783,11 +784,11 @@ predicate conditionDirectRow(
     conditionGuardSpan(cap, condition, minLine, maxLine) and
     gateType = cap.getInterestingType() and
     defLoc = cap.getInterestingLocationString() and
-    condLoc = condition.getLocation().toString() and
+    condLoc = relativeLocationString(condition.getLocation()) and
     arg = cap.getInterestingArgString() and
     callStr = "__guarded_span__:" + cap.getNsScope() and
     callLoc =
-      "file://" + condition.getFile().toString() + ":" + minLine.toString() +
+      condition.getFile().getRelativePath() + ":" + minLine.toString() +
         ":1:" + maxLine.toString() + ":1"
   )
   or
