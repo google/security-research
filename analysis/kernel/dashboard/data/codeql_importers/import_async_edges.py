@@ -43,23 +43,23 @@ MECHANISM_CONTEXT = {
 _FILE_SCOPE_PREFIX = "<file-scope:"
 
 
-def _trim_caller(caller: str, prefix: str) -> str:
-    """Trims the kernel root prefix inside `<file-scope:PATH>` caller labels."""
+def _trim_caller(caller: str) -> str:
+    """Normalizes the file path inside `<file-scope:PATH>` caller labels."""
     if caller.startswith(_FILE_SCOPE_PREFIX) and caller.endswith(">"):
         inner_path = caller[len(_FILE_SCOPE_PREFIX) : -1]
-        return f"{_FILE_SCOPE_PREFIX}{trim_filename(inner_path, prefix)}>"
+        return f"{_FILE_SCOPE_PREFIX}{trim_filename(inner_path)}>"
     return caller
 
 
 def _parse_async_edge_row(
-    row: tuple[str, ...] | list[str], prefix: str
+    row: tuple[str, ...] | list[str],
 ) -> tuple[object, ...]:
     """Parses an 8-column (or 6-column) async-edges CSV row."""
-    reg_file = trim_filename(row[4], prefix)
-    caller_file = trim_filename(row[6], prefix) if len(row) >= 8 else reg_file
-    callee_file = trim_filename(row[7], prefix) if len(row) >= 8 else ""
+    reg_file = trim_filename(row[4])
+    caller_file = trim_filename(row[6]) if len(row) >= 8 else reg_file
+    callee_file = trim_filename(row[7]) if len(row) >= 8 else ""
     return (
-        _trim_caller(row[0], prefix),
+        _trim_caller(row[0]),
         row[1],
         row[2],
         MECHANISM_CONTEXT.get(row[2], "unknown"),
@@ -94,7 +94,6 @@ _ASYNC_EDGES_SPEC = CsvTableSpec(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
     min_cols=6,
-    path_cols=(4, 6, 7),
     row_parser=_parse_async_edge_row,
     indexes=(
         (

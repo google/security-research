@@ -125,7 +125,7 @@ predicate isRcuCallbackHeadAssign(FieldAccess fa, Function cb) {
   (
     fa.getQualifier+().(Access).getTarget().getName().matches(["%rcu%", "%barrier%head%"]) or
     cb.getName().matches("%rcu%") or
-    fa.getLocation().getFile().toString().matches("%/kernel/rcu/%")
+    fa.getLocation().getFile().getRelativePath().matches("kernel/rcu/%")
   )
 }
 

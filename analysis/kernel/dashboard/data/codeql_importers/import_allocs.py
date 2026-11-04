@@ -5,7 +5,6 @@ from collections.abc import Sequence
 import logging
 
 from data.codeql_importers.lib.utils import (
-    detect_csv_prefix,
     parse_float_int,
     read_csv_rows,
     run_importer_cli,
@@ -14,7 +13,7 @@ from data.codeql_importers.lib.utils import (
 from data.lib.db import open_sqlite_db
 
 
-def _parse_alloc_row(row: Sequence[str], prefix: str) -> tuple[object, ...]:
+def _parse_alloc_row(row: Sequence[str]) -> tuple[object, ...]:
     """Parses a 13+ column allocs CSV row into a 17-column database tuple."""
     raw_call = row[0].strip()
     call_value = (
@@ -23,7 +22,7 @@ def _parse_alloc_row(row: Sequence[str], prefix: str) -> tuple[object, ...]:
     if len(row) >= 17:
         raw_type_uri = row[14].strip()
         type_uri = (
-            trim_filename(raw_type_uri, prefix)
+            trim_filename(raw_type_uri)
             if raw_type_uri and raw_type_uri != "file:/"
             else "file:/"
         )
@@ -46,7 +45,7 @@ def _parse_alloc_row(row: Sequence[str], prefix: str) -> tuple[object, ...]:
         row[6].strip(),
         row[7].strip(),
         row[8].strip(),
-        trim_filename(row[9].strip(), prefix),
+        trim_filename(row[9].strip()),
         parse_float_int(row[10]),
         parse_float_int(row[11]),
         extra[0],
@@ -62,12 +61,11 @@ def import_allocs_to_db(csv_filename: str, db_name: str) -> int:
     rows = read_csv_rows(
         csv_filename, header_tokens=("call_value", "col0", "call")
     )
-    prefix = detect_csv_prefix(rows, (9, 14), 13)
 
     data = []
     for row in rows:
         if len(row) >= 13:
-            data.append(_parse_alloc_row(row, prefix))
+            data.append(_parse_alloc_row(row))
         else:
             logging.warning(
                 "Skipping invalid row with insufficient columns: %s", row

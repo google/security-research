@@ -70,5 +70,5 @@ predicate reachableFunc(Function start, Function last) {
 
 from ConditionDependentCall cdc, Function last
 where reachableFunc(cdcDirectTarget(cdc), last)
-select cdc.toString(), last.getName(), cdc.getLocation().toString(),
-  last.getDefinitionLocation().toString()
+select cdc.toString(), last.getName(), relativeLocationString(cdc.getLocation()),
+  relativeLocationString(last.getDefinitionLocation())

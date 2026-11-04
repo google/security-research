@@ -12,15 +12,13 @@ from data.codeql_importers.lib.utils import (
 )
 
 
-def _parse_allocation_row(
-    row: Sequence[str], prefix: str
-) -> tuple[object, ...]:
+def _parse_allocation_row(row: Sequence[str]) -> tuple[object, ...]:
     """Parses a 9-column allocation CSV row into a database tuple."""
     return (
-        trim_filename(row[0], prefix),
+        trim_filename(row[0]),
         row[1],
         row[2],
-        trim_filename(row[3], prefix),
+        trim_filename(row[3]),
         parse_optional_int(row[4]),
         row[5],
         parse_optional_int(row[6]),
@@ -52,7 +50,6 @@ _ALLOCATIONS_SPEC = CsvTableSpec(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
     min_cols=9,
-    path_cols=(0, 3),
     row_parser=_parse_allocation_row,
     indexes=(
         (

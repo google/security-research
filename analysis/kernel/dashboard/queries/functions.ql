@@ -7,5 +7,5 @@ where
   not fun.getName().matches("%assert%") and
   functionSignatureSpan(fun, f, startLine, endLine) and
   fun.getLocation().getFile() = f and
-  file = f.toString()
+  file = f.getRelativePath()
 select fun.getName(), file, startLine, endLine

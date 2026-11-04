@@ -39,7 +39,7 @@ select
   ifa.accessType() as type,
   ifa.getTarget().getName() as field,
   canonicalFieldAccessParent(ifa) as parent,
-  loc.toString() as location,
+  relativeLocationString(loc) as location,
   enclosingFunctionName(ifa) as function_name,
   loc.getFile().getRelativePath() as file_path,
   loc.getStartLine() as line

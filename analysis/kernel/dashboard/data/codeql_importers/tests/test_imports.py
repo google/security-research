@@ -27,98 +27,49 @@ from data.codeql_importers import (
     import_structs,
     import_syscall_node,
 )
-from data.codeql_importers.lib.utils import detect_prefix, trim_filename
+from data.codeql_importers.lib.utils import trim_filename
 
 
-class TestDetectPrefixAndTrim(unittest.TestCase):
-    """Tests for kernel root prefix detection and file path trimming."""
+class TestTrimFilename(unittest.TestCase):
+    """Tests for relative file path and file:// URI normalization."""
 
-    def test_detect_prefix_and_trim(self):
-        """Verifies root prefix detection and trimming on standard paths."""
-        sample_paths = [
-            "/build/workspace/custom_repo/arch/x86/kernel/main.c",
-            "/build/workspace/custom_repo/mm/page_alloc.c",
-            "/build/workspace/custom_repo/net/core/dev.c",
-        ]
-        prefix = detect_prefix(sample_paths)
-        self.assertEqual(prefix, "/build/workspace/custom_repo/")
-
+    def test_trim_filename_relative_paths(self):
+        """Verifies relative paths are returned unchanged."""
         self.assertEqual(
-            trim_filename(
-                "/build/workspace/custom_repo/arch/x86/kernel/main.c", prefix
-            ),
+            trim_filename("arch/x86/kernel/main.c"),
             "arch/x86/kernel/main.c",
         )
         self.assertEqual(
-            trim_filename(
-                "/build/workspace/custom_repo/my_custom_driver/foo.c", prefix
-            ),
-            "my_custom_driver/foo.c",
+            trim_filename("drivers/block/loop.c"),
+            "drivers/block/loop.c",
+        )
+        self.assertEqual(
+            trim_filename("include/crypto/internal/rng.h"),
+            "include/crypto/internal/rng.h",
+        )
+        self.assertEqual(
+            trim_filename("gbuild-inc/oot-modules/foo.c"),
+            "gbuild-inc/oot-modules/foo.c",
         )
 
-    def test_detect_prefix_with_leading_unknown_dirs(self):
-        """Verifies majority prefix detection when custom directories exist."""
-        sample_paths = [
-            "/workspace/repo/linux_tree/vendor_subsystem/driver1.c",
-            "/workspace/repo/linux_tree/vendor_subsystem/driver2.c",
-            "/workspace/repo/linux_tree/custom_module/mod.c",
-            "/workspace/repo/linux_tree/arch/x86/boot/main.c",
-            "/workspace/repo/linux_tree/mm/slab.c",
-            "/workspace/repo/linux_tree/net/socket.c",
-        ]
-        prefix = detect_prefix(sample_paths)
-        self.assertEqual(prefix, "/workspace/repo/linux_tree/")
-
+    def test_trim_filename_file_scheme_and_leading_slash(self):
+        """Verifies file:// URI scheme and leading slash stripping."""
         self.assertEqual(
-            trim_filename(
-                "/workspace/repo/linux_tree/vendor_subsystem/driver1.c", prefix
-            ),
-            "vendor_subsystem/driver1.c",
-        )
-
-    def test_detect_prefix_empty(self):
-        """Verifies empty inputs return empty strings."""
-        self.assertEqual(detect_prefix([]), "")
-        self.assertEqual(trim_filename(""), "")
-
-    def test_detect_prefix_and_trim_file_scheme(self):
-        """Verifies file:// URI scheme stripping during prefix trimming."""
-        sample_paths = [
-            "file:///build/workspace/linux_tree/net/socket.c:100:5:100:20",
-            "file:///build/workspace/linux_tree/mm/slab.c:50:1:50:10",
-        ]
-        prefix = detect_prefix(sample_paths)
-        self.assertEqual(prefix, "/build/workspace/linux_tree/")
-        self.assertEqual(
-            trim_filename(
-                "file:///build/workspace/linux_tree/net/socket.c:100:5:100:20",
-                prefix,
-            ),
+            trim_filename("file://net/socket.c:100:5:100:20"),
             "net/socket.c:100:5:100:20",
         )
+        self.assertEqual(
+            trim_filename("file:///net/socket.c:100:5:100:20"),
+            "net/socket.c:100:5:100:20",
+        )
+        self.assertEqual(
+            trim_filename("/mm/slab.c"),
+            "mm/slab.c",
+        )
 
-    def test_trim_filename_preserves_nested_top_dirs(self):
-        """Verifies paths with inner top-dir names keep their outer dir."""
-        self.assertEqual(
-            trim_filename("drivers/block/loop.c", ""),
-            "drivers/block/loop.c",
-        )
-        self.assertEqual(
-            trim_filename("include/crypto/internal/rng.h", ""),
-            "include/crypto/internal/rng.h",
-        )
-        self.assertEqual(
-            trim_filename("lib/crypto/memneq.c", ""),
-            "lib/crypto/memneq.c",
-        )
-        self.assertEqual(
-            trim_filename("/opt/linux/drivers/block/loop.c", ""),
-            "drivers/block/loop.c",
-        )
-        self.assertEqual(
-            trim_filename("/opt/linux/include/crypto/internal/rng.h", ""),
-            "include/crypto/internal/rng.h",
-        )
+    def test_trim_filename_empty(self):
+        """Verifies empty inputs return empty strings."""
+        self.assertEqual(trim_filename(""), "")
 
 
 class BaseImporterTest(unittest.TestCase):
@@ -179,8 +130,8 @@ class TestImportAllocations(BaseImporterTest):
         self.write_test_csv(
             "call_site,call_expr,struct_type,struct_def,struct_size,"
             "flags,alloc_size,sizeof_expr,is_flexible\n"
-            '"linux/mm/slab.c:100","kmalloc()","struct foo",'
-            '"linux/include/foo.h",64,"GFP_KERNEL",64,'
+            '"mm/slab.c:100","kmalloc()","struct foo",'
+            '"include/foo.h",64,"GFP_KERNEL",64,'
             '"sizeof(struct foo)","false"\n'
             '"invalid_row"\n'
         )
@@ -218,8 +169,8 @@ class TestImportFunctions(BaseImporterTest):
         """Verifies importing function locations and idempotency on re-run."""
         self.write_test_csv(
             "function_name,file_path,start_line,end_line\n"
-            'sock_create,"linux/net/socket.c",100,200\n'
-            'bad_lines,"linux/net/socket.c",invalid,bad\n'
+            'sock_create,"net/socket.c",100,200\n'
+            'bad_lines,"net/socket.c",invalid,bad\n'
             "short_row\n"
         )
 
@@ -262,8 +213,8 @@ class TestImportConfigs(BaseImporterTest):
         self.write_test_csv(
             "config,path,ifdef,endif,else_\n"
             "CONFIG_INTEL_TDX_GUEST,"
-            "/build/linux/arch/x86/include/asm/disabled-features.h,84,88,86\n"
-            "CONFIG_64BIT,/build/linux/include/linux/mm_types.h,145,148,0\n"
+            "arch/x86/include/asm/disabled-features.h,84,88,86\n"
+            "CONFIG_64BIT,include/linux/mm_types.h,145,148,0\n"
             "short\n"
         )
 
@@ -311,8 +262,8 @@ class TestImportMacroInvocations(BaseImporterTest):
         """Verifies importing macro invocation location CSV records."""
         self.write_test_csv(
             "macroinvocation_name,file_path,start_line,end_line\n"
-            'MY_MACRO,"linux/net/socket.c",10,20\n'
-            'bad_macro,"linux/net/socket.c",x,y\n'
+            'MY_MACRO,"net/socket.c",10,20\n'
+            'bad_macro,"net/socket.c",x,y\n'
         )
 
         count = import_macro_invocations.import_macroinvocations_to_db(
@@ -349,8 +300,8 @@ class TestImportMacros(BaseImporterTest):
         """Verifies importing macro definition CSV records."""
         self.write_test_csv(
             "macro_name,file_path,start_line,end_line\n"
-            'MY_MACRO,"linux/include/net.h",5,15\n'
-            'bad_row,"linux/include/net.h",bad,bad\n'
+            'MY_MACRO,"include/net.h",5,15\n'
+            'bad_row,"include/net.h",bad,bad\n'
         )
 
         count = import_macros.import_macros_to_db(self.csv_path, self.db_path)
@@ -382,7 +333,7 @@ class TestImportConditions(BaseImporterTest):
         """Verifies importing condition statement CSV records."""
         self.write_test_csv(
             "type,def,cond,arg,call,call_loc\n"
-            '"if","linux/net/foo.c","x > 0","x","bar","linux/net/bar.c"\n'
+            '"if","net/foo.c","x > 0","x","bar","net/bar.c"\n'
             "short\n"
         )
 
@@ -417,7 +368,7 @@ class TestImportConditionsReachable(BaseImporterTest):
         """Verifies importing condition reachability CSV records."""
         self.write_test_csv(
             "cond,fn,cond_loc,fn_loc\n"
-            '"IS_ERR","sock_create","linux/include/err.h","linux/net/sock.c"\n'
+            '"IS_ERR","sock_create","include/err.h","net/sock.c"\n'
             "short\n"
         )
 
@@ -454,8 +405,8 @@ class TestImportFieldAccess(BaseImporterTest):
         """Verifies importing struct field access CSV records."""
         self.write_test_csv(
             "type,field,parent,loc\n"
-            '"struct foo","bar","parent_fn","linux/net/foo.c"\n'
-            '"unknown","bar","parent_fn","linux/net/foo.c"\n'
+            '"struct foo","bar","parent_fn","net/foo.c"\n'
+            '"unknown","bar","parent_fn","net/foo.c"\n'
             "short\n"
         )
 
@@ -491,10 +442,10 @@ class TestImportOpsTargets(BaseImporterTest):
         self.write_test_csv(
             "def,parent,field,target,target_file,target_start,target_end,"
             "exprcall_file,exprcall_line,exprcall_pstart,exprcall_pend\n"
-            '"linux/net/def.c","struct proto","bind","sys_bind",'
-            '"linux/arch/x86/sys.c",10,20,"linux/kernel/expr.c",15,10,30\n'
-            '"linux/net/def.c","struct proto","bind","sys_bind",'
-            '"linux/arch/x86/sys.c",bad_int,20,"linux/kernel/expr.c",15,10,30\n'
+            '"net/def.c","struct proto","bind","sys_bind",'
+            '"arch/x86/sys.c",10,20,"kernel/expr.c",15,10,30\n'
+            '"net/def.c","struct proto","bind","sys_bind",'
+            '"arch/x86/sys.c",bad_int,20,"kernel/expr.c",15,10,30\n'
             '"unknown","p","f","t","tf",1,2,"ef",1,1,1\n'
             "short\n"
         )
@@ -540,25 +491,23 @@ class TestImportSyscallNode(BaseImporterTest):
         with open(self.locs_path, "w", encoding="utf-8") as locs_file:
             locs_file.write(
                 '"name","file","startLine","startCol","endLine","endCol"\n'
-                '"__do_sys_openat","linux/fs/open.c",100,1,120,20\n'
-                '"hash","linux/fs/inode.c",50,1,60,20\n'
-                '"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n'
+                '"__do_sys_openat","fs/open.c",100,1,120,20\n'
+                '"hash","fs/inode.c",50,1,60,20\n'
+                '"hash","kernel/bpf/bloom_filter.c",70,1,80,20\n'
             )
 
     def test_import_3col_exact_join(self):
         """Verifies 3-column (syscall, function, file) disambiguated join."""
         self._write_sample_locs()
         with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
-            pairs_file.write('"__do_sys_openat","hash","linux/fs/inode.c"\n')
+            pairs_file.write('"__do_sys_openat","hash","fs/inode.c"\n')
 
-        by_fn_file, by_name, prefix = import_syscall_node.load_locs(
-            self.locs_path
-        )
+        by_fn_file, by_name = import_syscall_node.load_locs(self.locs_path)
         self.assertNotIn("name", by_name)
         sysloc = import_syscall_node.syscall_locations(by_name)
         rows = list(
             import_syscall_node.gen_rows(
-                self.pairs_path, by_fn_file, by_name, sysloc, prefix
+                self.pairs_path, by_fn_file, by_name, sysloc
             )
         )
 
@@ -583,13 +532,11 @@ class TestImportSyscallNode(BaseImporterTest):
         with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
             pairs_file.write('"__do_sys_openat","hash"\n')
 
-        by_fn_file, by_name, prefix = import_syscall_node.load_locs(
-            self.locs_path
-        )
+        by_fn_file, by_name = import_syscall_node.load_locs(self.locs_path)
         sysloc = import_syscall_node.syscall_locations(by_name)
         rows = list(
             import_syscall_node.gen_rows(
-                self.pairs_path, by_fn_file, by_name, sysloc, prefix
+                self.pairs_path, by_fn_file, by_name, sysloc
             )
         )
 
@@ -599,14 +546,12 @@ class TestImportSyscallNode(BaseImporterTest):
         """Verifies CLI entry point for `import_syscall_node`."""
         with open(self.locs_path, "w", encoding="utf-8") as locs_file:
             locs_file.write(
-                '"__do_sys_openat","linux/fs/open.c",100,1,120,20\n'
-                '"vfs_read","linux/fs/read_write.c",200,1,220,20\n'
+                '"__do_sys_openat","fs/open.c",100,1,120,20\n'
+                '"vfs_read","fs/read_write.c",200,1,220,20\n'
             )
 
         with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
-            pairs_file.write(
-                '"__do_sys_openat","vfs_read","linux/fs/read_write.c"\n'
-            )
+            pairs_file.write('"__do_sys_openat","vfs_read","fs/read_write.c"\n')
 
         argv = [
             "import_syscall_node.py",
@@ -634,8 +579,8 @@ class TestImportAllocs(BaseImporterTest):
             "flagsMin,flagsMax,flagsVal,file,line,col,isFlexible,depth,"
             "typeUri,typeLine,typeCol\n"
             '"kmalloc","struct foo","64","64","64","64","3264","3264",'
-            '"3264","linux/mm/slab.c","100","12","false","1",'
-            '"linux/include/foo.h","20","8"\n'
+            '"3264","mm/slab.c","100","12","false","1",'
+            '"include/foo.h","20","8"\n'
             '"short"\n'
         )
 
@@ -668,10 +613,10 @@ class TestImportAllCalls(BaseImporterTest):
             '"src_label","src_file","src_start_line","src_start_col",'
             '"src_end_line","src_end_col","dst_label","dst_file",'
             '"dst_start_line","dst_start_col","dst_end_line","dst_end_col"\n'
-            '"caller_fn","linux/net/socket.c",100,5,100,15,'
-            '"call to callee_fn","linux/net/socket.c",105,10,105,20\n'
-            '"call to callee_fn","linux/net/socket.c",105,10,105,20,'
-            '"callee_fn","linux/net/socket.c",200,1,200,10\n'
+            '"caller_fn","net/socket.c",100,5,100,15,'
+            '"call to callee_fn","net/socket.c",105,10,105,20\n'
+            '"call to callee_fn","net/socket.c",105,10,105,20,'
+            '"callee_fn","net/socket.c",200,1,200,10\n'
         )
 
         edge_cnt = import_all_calls.import_all_calls_to_db(
@@ -705,9 +650,9 @@ class TestImportAllCalls(BaseImporterTest):
         """Verifies fallback support for 4-column entity-URL all-calls CSV."""
         self.write_test_csv(
             '"a","URL for a","b","URL for b"\n'
-            '"caller_fn","file:///build/linux/net/socket.c:100:5:100:15",'
+            '"caller_fn","file://net/socket.c:100:5:100:15",'
             '"call to callee_fn",'
-            '"file:///build/linux/net/socket.c:105:10:105:20"\n'
+            '"file://net/socket.c:105:10:105:20"\n'
         )
         edge_cnt = import_all_calls.import_all_calls_to_db(
             self.csv_path, self.db_path
@@ -720,17 +665,17 @@ class TestImportAsyncEdges(BaseImporterTest):
     """Tests for `import_async_edges.py`."""
 
     def test_import_async_edges_to_db(self):
-        """Verifies importing async_edges CSV with context & prefix trimming."""
+        """Verifies importing async_edges CSV with context normalization."""
         self.write_test_csv(
             "caller,callee,mechanism,form,file,line\n"
             '"fput","____fput","task_work","arg",'
-            '"/work/linux/fs/file_table.c","527"\n'
-            '"<file-scope:/work/linux/security/keys/gc.c>","key_gc_timer_func",'
-            '"timer","init","/work/linux/security/keys/gc.c","28"\n'
+            '"fs/file_table.c","527"\n'
+            '"<file-scope:security/keys/gc.c>","key_gc_timer_func",'
+            '"timer","init","security/keys/gc.c","28"\n'
             '"__clk_put","__clk_release","kref","arg",'
-            '"/work/linux/drivers/clk/clk.c","400"\n'
+            '"drivers/clk/clk.c","400"\n'
             '"bad_line_fn","cb","workqueue","assign",'
-            '"/work/linux/kernel/workqueue.c","not_a_number"\n'
+            '"kernel/workqueue.c","not_a_number"\n'
             '"short_row"\n'
         )
 
@@ -790,10 +735,10 @@ class TestImportEntryNode(BaseImporterTest):
         """Writes a 3-row locs.csv with duplicate `hash` function names."""
         with open(self.locs_path, "w", encoding="utf-8") as locs_file:
             locs_file.write(
-                '"do_user_addr_fault","linux/arch/x86/mm/fault.c",'
+                '"do_user_addr_fault","arch/x86/mm/fault.c",'
                 "1200,1,1300,20\n"
-                '"hash","linux/fs/inode.c",50,1,60,20\n'
-                '"hash","linux/kernel/bpf/bloom_filter.c",70,1,80,20\n'
+                '"hash","fs/inode.c",50,1,60,20\n'
+                '"hash","kernel/bpf/bloom_filter.c",70,1,80,20\n'
             )
 
     def test_import_4col_exact_join(self):
@@ -801,16 +746,14 @@ class TestImportEntryNode(BaseImporterTest):
         self._write_sample_locs()
         with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
             pairs_file.write(
-                '"page_fault","do_user_addr_fault","hash","linux/fs/inode.c"\n'
+                '"page_fault","do_user_addr_fault","hash","fs/inode.c"\n'
             )
 
-        by_fn_file, by_name, prefix = import_entry_node.load_locs(
-            self.locs_path
-        )
+        by_fn_file, by_name = import_entry_node.load_locs(self.locs_path)
         entloc = import_entry_node.entry_locations(by_name)
         rows = list(
             import_entry_node.gen_rows(
-                self.pairs_path, by_fn_file, by_name, entloc, prefix
+                self.pairs_path, by_fn_file, by_name, entloc
             )
         )
 
@@ -834,14 +777,14 @@ class TestImportEntryNode(BaseImporterTest):
         """Verifies CLI entry point for `import_entry_node`."""
         with open(self.locs_path, "w", encoding="utf-8") as locs_file:
             locs_file.write(
-                '"wb_workfn","linux/fs/fs-writeback.c",2000,1,2050,20\n'
-                '"wb_writeback","linux/fs/fs-writeback.c",1900,1,1980,20\n'
+                '"wb_workfn","fs/fs-writeback.c",2000,1,2050,20\n'
+                '"wb_writeback","fs/fs-writeback.c",1900,1,1980,20\n'
             )
 
         with open(self.pairs_path, "w", encoding="utf-8") as pairs_file:
             pairs_file.write(
                 '"vfs_writeback","wb_workfn","wb_writeback",'
-                '"linux/fs/fs-writeback.c"\n'
+                '"fs/fs-writeback.c"\n'
             )
 
         argv = [
@@ -870,9 +813,9 @@ class TestImportStructs(BaseImporterTest):
             "is_anonymous,is_typedef,has_flex_member,field_name,field_path,"
             "field_type,byte_offset,bit_offset,bit_size,is_funcptr,is_flex,"
             "array_len\n"
-            '"msg_msg","/work/linux/include/linux/msg.h",9,15,48,6,0,0,0,'
+            '"msg_msg","include/linux/msg.h",9,15,48,6,0,0,0,'
             '"m_list","m_list","struct list_head",0,-1,-1,0,0,-1\n'
-            '"msg_msg","/work/linux/include/linux/msg.h",9,15,48,6,0,0,0,'
+            '"msg_msg","include/linux/msg.h",9,15,48,6,0,0,0,'
             '"m_type","m_type","long",16,-1,-1,0,0,-1\n'
             '"bad_row","only_two_cols"\n'
         )

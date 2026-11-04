@@ -2,8 +2,7 @@
 """Path trimming and shared CLI/CSV utilities for CodeQL CSV importers."""
 
 import argparse
-from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 import csv
 from dataclasses import dataclass
 import logging
@@ -12,31 +11,6 @@ import sys
 from typing import Optional
 
 from data.lib.db import execute_sqlite_batch, open_sqlite_db
-
-KERNEL_TOP_DIRS = (
-    "arch/",
-    "block/",
-    "certs/",
-    "crypto/",
-    "drivers/",
-    "fs/",
-    "include/",
-    "init/",
-    "io_uring/",
-    "ipc/",
-    "kernel/",
-    "lib/",
-    "mm/",
-    "net/",
-    "rust/",
-    "samples/",
-    "scripts/",
-    "security/",
-    "sound/",
-    "tools/",
-    "usr/",
-    "virt/",
-)
 
 
 @dataclass(frozen=True)
@@ -47,83 +21,15 @@ class CsvTableSpec:
     create_sql: str
     insert_sql: str
     min_cols: int
-    path_cols: tuple[int, ...]
-    row_parser: Callable[[Sequence[str], str], Optional[tuple[object, ...]]]
+    row_parser: Callable[[Sequence[str]], Optional[tuple[object, ...]]]
     indexes: tuple[str, ...] = ()
 
 
-def _strip_file_scheme(path: str) -> str:
-    """Strips leading file:// scheme while preserving the absolute slash."""
+def trim_filename(path: str) -> str:
+    """Normalizes a relative file path or file:// URI from CodeQL."""
     if not path:
         return ""
-    if path.startswith("file:///"):
-        return path[len("file://") :]
-    if path.startswith("file://"):
-        return path[len("file://") :]
-    return path
-
-
-def detect_prefix(paths: Sequence[str]) -> str:
-    """Scans paths in a dataset to find the most common kernel root prefix."""
-    prefixes = []
-    for raw_path in paths:
-        path = _strip_file_scheme(raw_path)
-        if not path or not path.startswith("/"):
-            continue
-        for top_dir in KERNEL_TOP_DIRS:
-            idx = path.find("/" + top_dir)
-            if idx != -1:
-                prefixes.append(path[: idx + 1])
-                break
-
-    if prefixes:
-        return Counter(prefixes).most_common(1)[0][0]
-    return ""
-
-
-def detect_csv_prefix(
-    rows: Iterable[Sequence[str]],
-    path_cols: Sequence[int],
-    min_cols: int,
-    limit: int = 1000,
-) -> str:
-    """Samples up to `limit` paths from `path_cols` in a single pass."""
-    sample_paths: list[str] = []
-    for row in rows:
-        if len(row) < min_cols:
-            continue
-        for col_idx in path_cols:
-            if col_idx < len(row) and row[col_idx]:
-                sample_paths.append(row[col_idx])
-                if len(sample_paths) >= limit:
-                    return detect_prefix(sample_paths)
-    return detect_prefix(sample_paths)
-
-
-def trim_filename(path: str, prefix: str = "") -> str:
-    """Strips the detected root directory prefix from a file path."""
-    if not path:
-        return ""
-
-    path = _strip_file_scheme(path)
-    clean_prefix = _strip_file_scheme(prefix) if prefix else ""
-
-    if clean_prefix and path.startswith(clean_prefix):
-        return path[len(clean_prefix) :]
-
-    if path.startswith(KERNEL_TOP_DIRS):
-        return path
-
-    earliest_idx = -1
-    for top_dir in KERNEL_TOP_DIRS:
-        idx = path.find("/" + top_dir)
-        if idx != -1 and (earliest_idx == -1 or idx < earliest_idx):
-            earliest_idx = idx
-
-    if earliest_idx != -1:
-        return path[earliest_idx + 1 :]
-
-    return path
+    return path.removeprefix("file://").lstrip("/")
 
 
 def has_unknown_token(row: Sequence[str]) -> bool:
@@ -212,9 +118,6 @@ def import_csv_table(
     clear_sql: Optional[str] = None,
 ) -> int:
     """Imports a CodeQL CSV file into SQLite according to `spec`."""
-    prefix = detect_csv_prefix(
-        iter_csv_rows(csv_filename), spec.path_cols, spec.min_cols
-    )
     row_count = 0
 
     def _iter_parsed() -> Iterator[tuple[object, ...]]:
@@ -224,7 +127,7 @@ def import_csv_table(
                 logging.warning("Skipping invalid row: %s", row)
                 continue
             try:
-                parsed = spec.row_parser(row, prefix)
+                parsed = spec.row_parser(row)
             except (ValueError, TypeError):
                 logging.warning("Skipping row with invalid values: %s", row)
                 continue
@@ -275,29 +178,6 @@ def run_importer_cli(
     importer_fn(args.csv_file, args.db_file)
 
 
-def parse_location_rows(
-    rows: Sequence[Sequence[str]], prefix: str
-) -> list[tuple[str, str, int, int]]:
-    """Parses 4-column (name, file_path, start_line, end_line) CSV rows."""
-    data = []
-    for row in rows:
-        if len(row) >= 4:
-            name = row[0]
-            file_path = trim_filename(row[1], prefix)
-            try:
-                start_line = int(row[2])
-                end_line = int(row[3])
-            except (ValueError, TypeError):
-                logging.warning(
-                    "Skipping row with invalid line numbers: %s", row
-                )
-                continue
-            data.append((name, file_path, start_line, end_line))
-        else:
-            logging.warning("Skipping invalid row: %s", row)
-    return data
-
-
 def import_location_table(
     csv_filename: str,
     db_name: str,
@@ -324,10 +204,9 @@ def import_location_table(
         VALUES (?, ?, ?, ?)
         """,
         min_cols=4,
-        path_cols=(1,),
-        row_parser=lambda row, prefix: (
+        row_parser=lambda row: (
             row[0],
-            trim_filename(row[1], prefix),
+            trim_filename(row[1]),
             int(row[2]),
             int(row[3]),
         ),

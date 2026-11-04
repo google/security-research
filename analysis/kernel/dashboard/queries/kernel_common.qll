@@ -72,4 +72,17 @@ predicate functionSignatureSpan(Function f, File file, int startLine, int endLin
   )
 }
 
-
+/**
+ * Formats `loc` as `<relative-path>:<startLine>:<startCol>:<endLine>:<endCol>`
+ * relative to the kernel source tree root (`File.getRelativePath()`).
+ */
+bindingset[loc]
+pragma[inline_late]
+string relativeLocationString(Location loc) {
+  result =
+    loc.getFile().getRelativePath() + ":" +
+      loc.getStartLine().toString() + ":" +
+      loc.getStartColumn().toString() + ":" +
+      loc.getEndLine().toString() + ":" +
+      loc.getEndColumn().toString()
+}
