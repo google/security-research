@@ -29,7 +29,7 @@ jobs:
           if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::Invalid head SHA: '$HEAD_SHA'"; exit 1; fi
 
           # workflow_run.pull_requests is empty for fork PRs, so look the PR up by its head branch and SHA
-          PRS=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" --jq "[.[] | select(.head.sha == \"$HEAD_SHA\") | .number] | join(\" \")")
+          PRS=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f base=master -f head="$HEAD_OWNER:$HEAD_BRANCH" --jq "[.[] | select(.head.sha == \"$HEAD_SHA\") | .number] | join(\" \")")
           if [[ $(wc -w <<< "$PRS") -ne 1 ]]; then
             echo "::error::Expected exactly one open PR for $HEAD_OWNER:$HEAD_BRANCH at $HEAD_SHA, found: '$PRS'"
             exit 1

@@ -1,9 +1,10 @@
 name: kernelCTF PR check
 # Runs untrusted PR code (exploit builds, kernel builds, QEMU runs), so this workflow must never use secrets.
 # GCS uploads happen in kernelctf-publish.yaml (workflow_run), which only handles the produced artifacts.
-# All jobs use the default checkout (the PR merged into the base branch), so scripts and the submission come from the same tree.
+# Submissions come from the default PR merge checkout, while kernelctf scripts are checked out from master.
 on:
   pull_request:
+    branches: [master]
     types: [opened, synchronize, reopened, labeled]
     paths: [pocs/linux/kernelctf/**]
 permissions: {}
@@ -29,11 +30,10 @@ jobs:
 
       - id: check_submission
         name: Check submission
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           echo "::stop-commands::$(uuidgen)"
-          ./kernelctf/check-submission.py "$BASE_SHA"
+          git archive origin/master kernelctf | tar -x -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kernelctf/check-submission.py" origin/master
 
   exploit_build:
     runs-on: ubuntu-latest
@@ -62,6 +62,9 @@ jobs:
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
+          git fetch --depth=1 origin master
+          rm -rf kernelctf/server
+          git checkout FETCH_HEAD -- kernelctf/server
           bash kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
@@ -129,6 +132,9 @@ jobs:
       - name: Install Android dependencies (exploit-build-only mode)
         if: startsWith(matrix.target, 'android')
         run: |
+          git fetch --depth=1 origin master
+          rm -rf kernelctf/server
+          git checkout FETCH_HEAD -- kernelctf/server
           bash kernelctf/server/get_android_dependencies.sh --exploit-build-only
 
       - name: Install kernelXDK (Linux only)
@@ -190,6 +196,7 @@ jobs:
       - name: Checkout repo (sparse - kernelctf only)
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: master
           sparse-checkout: |
             kernelctf
           sparse-checkout-cone-mode: true
@@ -339,6 +346,12 @@ jobs:
             kernelctf/vuln-verify
             ${{ env.POC_FOLDER }}
           persist-credentials: false
+
+      - name: Refresh vuln-verify scripts from master
+        run: |
+          git fetch --depth=1 origin master
+          rm -rf kernelctf/vuln-verify
+          git checkout FETCH_HEAD -- kernelctf/vuln-verify
 
       - name: Checkout kernel-research
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
