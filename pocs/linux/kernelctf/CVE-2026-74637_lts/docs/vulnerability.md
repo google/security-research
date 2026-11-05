@@ -1,0 +1,156 @@
+# Vulnerability
+
+CVE-2026-74637 is a use-after-free of a perf group leader in
+`kernel/events/core.c`. When `perf_group_detach()` detaches a sibling, it
+unlinks that sibling from `leader->sibling_list` and leaves its `group_leader`
+pointing at the leader it just left.
+
+```c
+static void perf_group_detach(struct perf_event *event)
+{
+	struct perf_event *leader = event->group_leader;
+	...
+	/*
+	 * If this is a sibling, remove it from its group.
+	 */
+	if (leader != event) {
+		list_del_init(&event->sibling_list);
+		event->group_leader->nr_siblings--;
+		event->group_leader->group_generation++;
+		goto out;
+	}
+```
+
+The stale pointer is a problem only when the detached sibling stays alive. As
+long as `perf_group_detach()` is only called on an event that is about to be
+freed, nobody can use the stale pointer. `perf_event_remove_on_exec()`
+creates the unsafe case during `execve()`: the sibling leaves the group, but its
+file descriptor keeps it alive. Once the leader is freed, the sibling holds a
+dangling pointer in `group_leader`, and every read of that sibling then
+dereferences the freed leader in `perf_read_group()`.
+
+## Reaching the bug as an unprivileged user
+
+The exploited path needs only `perf_event_open(2)` and `execve(2)` on task-bound
+software events, so it involves no capability and no namespace.
+
+```
+  perf_event_open(leader,  group_fd = -1)
+  perf_event_open(target,  group_fd = leader, remove_on_exec = 1,
+                           read_format = PERF_FORMAT_GROUP)
+
+  execve()
+    begin_new_exec
+      perf_event_exec
+        perf_event_remove_on_exec
+          perf_event_exit_event(target, ctx, DETACH_GROUP)
+            perf_remove_from_context(target, DETACH_GROUP | DETACH_EXIT)
+              __perf_remove_from_context
+                perf_group_detach(target)      <-- sibling branch
+                  list_del_init(&target->sibling_list)
+                  /* target->group_leader still points at leader */
+            /* target stays alive as long as its file descriptor is open */
+
+  close(leader_fd)
+    perf_release
+      perf_event_release_kernel(leader)
+        put_event -> _free_event -> call_rcu(free_event_rcu)
+          free_event_rcu
+            kmem_cache_free(perf_event_cache, leader)      <-- freed
+
+  read(target_fd)
+    perf_read
+      __perf_read
+        perf_read_group
+          leader = event->group_leader                     <-- dangling pointer
+          values[0] = 1 + leader->nr_siblings              <-- UAF read
+```
+
+`perf_event_remove_on_exec()` passes `DETACH_GROUP`, so the sibling detach above
+happens on every `execve()` of a task that owns a `remove_on_exec` event.
+
+The `DETACH_GROUP` argument arrived in 6.12.96 with
+[commit 39358e856fb8](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=39358e856fb89e62e3c8d7389a2dc4ec33dbe90e),
+a stable backport that made this long standing bug reachable by an unprivileged
+user. Before that backport, the same `execve()` left the sibling attached. Only
+the CPU hotplug path in `__perf_event_exit_context()` could then detach a
+surviving sibling, and an unprivileged user cannot reach that path.
+
+On a KASAN kernel, the read is reported as a 4-byte `slab-use-after-free` 128
+bytes into the freed 1312-byte `perf_event` object, which is the offset of
+`nr_siblings`:
+
+```
+BUG: KASAN: slab-use-after-free in perf_read_group kernel/events/core.c:5753 [inline]
+BUG: KASAN: slab-use-after-free in __perf_read kernel/events/core.c:5839 [inline]
+BUG: KASAN: slab-use-after-free in perf_read+0x51f/0x550 kernel/events/core.c:5858
+Read of size 4 at addr ffff88800a5b38c0 by task exe/439
+...
+Freed by task 0:
+ kmem_cache_free+0x171/0x340 mm/slub.c:4759
+ rcu_do_batch kernel/rcu/tree.c:2575 [inline]
+ rcu_core+0x603/0xd50 kernel/rcu/tree.c:2831
+...
+Last potentially related work creation:
+ call_rcu+0x84/0x570 kernel/rcu/tree.c:3202
+ put_event kernel/events/core.c:5475 [inline]
+ perf_event_release_kernel+0x5fb/0x6a0 kernel/events/core.c:5604
+ perf_release+0x38/0x50 kernel/events/core.c:5614
+```
+
+## Requirements to trigger the vulnerability
+
+- Capabilities: NONE
+- Kernel configuration: `CONFIG_PERF_EVENTS=y` and
+  `kernel.perf_event_paranoid <= 2`, both defaults. Only task-bound
+  (`pid = 0`, `cpu = -1`) `PERF_TYPE_SOFTWARE` events are needed.
+- Are user namespaces needed?: No
+
+## Commit which introduced the vulnerability
+
+- [commit 8a49542c0554 ("perf_events: Fix races in group composition")](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8a49542c0554af7d0073aac0ee73ee65b807ef34)
+  (v2.6.35). The sibling branch of `perf_group_detach()` has never reset
+  `group_leader`.
+
+The bug became reachable by an unprivileged user only when
+`perf_event_remove_on_exec()` started to detach groups:
+
+- [commit 037a3c43edfb ("perf/core: Detach event groups during remove_on_exec")](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=037a3c43edfb597665dd34457cd22b14692f2ba3)
+  (v7.2-rc2) upstream
+- [commit 39358e856fb8](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=39358e856fb89e62e3c8d7389a2dc4ec33dbe90e)
+  (v6.12.96) in the 6.12 stable tree, the target of this submission
+
+## Commit which fixed the vulnerability
+
+- [commit 42c5ca1f0a28 ("perf/core: Fix group leader use-after-free after sibling detach")](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=42c5ca1f0a288a52878bd72a5595b08261057438)
+  (v7.2) upstream
+- [commit b42948f9e0d1](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=b42948f9e0d1ea4dbd5742ce1dfc7688de5d4a35)
+  (v6.12.105) in the 6.12 stable tree
+
+The fix resets `group_leader` to the event itself when a sibling is detached.
+
+The patch description covers the CPU hotplug and `perf_ioctl()` variant, but
+the same flaw is also reachable from an unprivileged task through
+`remove_on_exec`, which is the path this submission exploits.
+
+## Affected kernel versions
+
+Unprivileged, through `remove_on_exec`:
+
+- 6.6.145 - 6.6.153, fixed in 6.6.154
+- 6.12.96 - 6.12.104, fixed in 6.12.105
+- 6.18.39 - 6.18.44, fixed in 6.18.45
+- 7.1.4 - 7.1.8, fixed in 7.1.9
+- 7.2-rc2 - 7.2-rc7, fixed in 7.2
+
+Privileged only, through the CPU hotplug path:
+
+- other kernels from 2.6.35 on, until fixed separately in each stable series
+
+## Affected component, subsystem
+
+- `kernel/events/core.c`, perf event group management
+
+## Cause
+
+- Use-after-free
