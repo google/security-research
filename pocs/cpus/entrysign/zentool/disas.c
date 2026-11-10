@@ -98,12 +98,15 @@ static int dump_reg_op(struct RegOp op)
                        zen_opcode_to_string(op.class, op.type),
                        suffix);
 
-    // Now decode the remainder as necessary.
-    putstr("\t%-*s\t%s, %s, ",
+    // Now decode the remainder as necessary. zen_reg_to_string() hands back a
+    // shared static buffer, so each name has to be printed before the next
+    // call clobbers it.
+    putstr("\t%-*s\t%s, ",
             kMnemonicWidth,
             mnemonic,
-            zen_reg_to_string(op.reg2),
-            zen_reg_to_string(op.reg1));
+            zen_reg_to_string(op.reg2));
+
+    putstr("%s, ", zen_reg_to_string(op.reg1));
 
     if (op.mode3) {
         putstr("%#06x", op.imm16);
