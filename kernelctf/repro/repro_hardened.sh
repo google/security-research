@@ -2,8 +2,9 @@
 set -e
 
 TRY_ID="$1"
-FLAG="kernelCTF{$(uuidgen)}"
-echo "$FLAG" > "flag_$TRY_ID"
+FLAG_CONTENT="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+FLAG="kernelCTF{$FLAG_CONTENT}"
+printf '%s\n' "$FLAG" > "flag_$TRY_ID"
 STOP_MARKER=$(uuidgen)
 echo "::stop-commands::$STOP_MARKER"
 START_TIME=$(date +%s)
@@ -40,7 +41,7 @@ if [ -n "$GITHUB_OUTPUT" ]; then
 fi
 echo "[REPRO $TRY_ID] Run time: ${RUN_TIME}s"
 
-if grep -q "$FLAG" "repro_log_$TRY_ID.txt"; then
+if grep -q "$FLAG_CONTENT" "repro_log_$TRY_ID.txt"; then
     echo "[REPRO $TRY_ID] Got the flag! Congrats!"
     exit 0
 else
