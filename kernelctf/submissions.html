@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kernelCTF v5 Submissions Dashboard</title>
+<style>
+:root {
+  --bg: #f8fafc; --surface: #ffffff; --surface-2: #f1f5f9; --border: #e2e8f0;
+  --text: #0f172a; --muted: #475569; --accent: #1d4ed8; --accent-soft: #dbeafe;
+  --ok-bg: #dcfce7; --ok-fg: #166534;
+  --warn-bg: #fef3c7; --warn-fg: #92400e;
+  --err-bg: #fee2e2; --err-fg: #991b1b;
+  --info-bg: #e0e7ff; --info-fg: #3730a3;
+  --neutral-bg: #e2e8f0; --neutral-fg: #334155;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1120; --surface: #111827; --surface-2: #1e293b; --border: #334155;
+    --text: #f1f5f9; --muted: #94a3b8; --accent: #60a5fa; --accent-soft: #1e3a5f;
+    --ok-bg: #14532d; --ok-fg: #bbf7d0;
+    --warn-bg: #78350f; --warn-fg: #fde68a;
+    --err-bg: #7f1d1d; --err-fg: #fecaca;
+    --info-bg: #312e81; --info-fg: #c7d2fe;
+    --neutral-bg: #334155; --neutral-fg: #cbd5e1;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; }
+.header-inner, main { max-width: 1360px; margin: 0 auto; }
+.header-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+h1 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+.sub-links { display: flex; gap: 14px; font-size: 13px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+.status-bar { margin-top: 14px; padding: 12px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+.status-main { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.countdown { font-family: var(--mono); font-weight: 600; font-size: 13px; color: var(--accent); }
+.tabs { display: flex; gap: 6px; margin: 20px 0 14px; border-bottom: 1px solid var(--border); }
+.tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; margin-bottom: -1px; }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-btn .count { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--surface-2); color: var(--muted); }
+main { padding: 0 24px 48px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.filter-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+input[type="search"] { padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; min-width: 240px; }
+.btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.b-ok { background: var(--ok-bg); color: var(--ok-fg); }
+.b-warn { background: var(--warn-bg); color: var(--warn-fg); }
+.b-err { background: var(--err-bg); color: var(--err-fg); }
+.b-info { background: var(--info-bg); color: var(--info-fg); }
+.b-neutral { background: var(--neutral-bg); color: var(--neutral-fg); }
+.empty { padding: 28px 20px; text-align: center; color: var(--muted); }
+.notice { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); margin-bottom: 16px; font-size: 13px; color: var(--muted); }
+.slot-group summary { cursor: pointer; list-style: none; padding: 12px 16px; background: var(--surface-2); display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; font-weight: 600; }
+.slot-group summary::-webkit-details-marker { display: none; }
+.details-cell summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.details-cell pre { margin: 6px 0 0; padding: 8px; border-radius: 6px; background: var(--surface-2); font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-all; max-width: 420px; }
+.small { font-size: 12px; color: var(--muted); }
+.hash-cell { white-space: nowrap; }
+.copy-btn { margin-left: 4px; padding: 1px 5px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.copy-btn:hover { color: var(--text); }
+.hidden { display: none !important; }
+footer { max-width: 1360px; margin: 0 auto; padding: 0 24px 32px; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="header-top">
+      <h1>kernelCTF v5 Dashboard</h1>
+      <div class="sub-links">
+        <a href="rules.html">Rules</a>
+        <a href="https://forms.gle/cjA9M1ZNUSc6adGE6" target="_blank" rel="noopener">Submit Flag</a>
+        <a href="https://github.com/google/security-research/pulls" target="_blank" rel="noopener">Exploit PRs</a>
+        <button id="refreshBtn" class="btn" type="button">Refresh</button>
+        <label class="btn" title="Load a local CSV export of the Submissions tab for preview">Load CSV<input id="fileInput" type="file" accept=".csv,text/csv" class="hidden"></label>
+      </div>
+    </div>
+    <div id="statusBar" class="status-bar">
+      <div class="status-main">Loading slot status...</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="configBanner" class="notice hidden"></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="active" role="tab">Active Slot <span id="cnt-active" class="count">0</span></button>
+    <button class="tab-btn" data-tab="winners" role="tab">Winners <span id="cnt-winners" class="count">0</span></button>
+    <button class="tab-btn" data-tab="history" role="tab">Full History <span id="cnt-history" class="count">0</span></button>
+  </nav>
+
+  <section id="tab-active"></section>
+  <section id="tab-winners" class="hidden"></section>
+  <section id="tab-history" class="hidden"></section>
+</main>
+
+<footer>
+  <span id="metaInfo">Data source: Google Sheets published CSV (updates every ~1–5 minutes).</span>
+  <span id="lastFetched"></span>
+</footer>
+
+<script>
+// External published spreadsheet base URL (column-filtered IMPORTRANGE copy of internal Submissions!A:Y).
+// Set DEFAULT_SUBMISSIONS_GID once the Submissions tab is created in the external spreadsheet,
+// or preview live immediately via ?gid=<GID>, ?csv=<URL>, or the "Load CSV" button.
+const PUBLIC_CSV_BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1REdTA29OJftst8xN5B5x8iIUcxuK6bXdzF8G1UXCmRtoNsoQ9MbebdRdFnj6qZ0Yd7LwQfvYC2oF/pub?output=csv&single=true";
+const DEFAULT_SUBMISSIONS_GID = "";
+
+const SLOT_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+const SLOT_DURATION_MS = 4 * 24 * 60 * 60 * 1000;
+const PRE_OPEN_CLEAR_MS = 24 * 60 * 60 * 1000;
+const COMMIT_URL_PREFIX = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=";
+const CVE_URL_PREFIX = "https://www.cve.org/CVERecord?id=";
+const PR_URL_PREFIX = "https://github.com/google/security-research/pull/";
+
+let state = { header: null, rows: [], tab: "active", winnerFilter: "all", winnerQuery: "", historyQuery: "" };
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function parseUtcMs(str) {
+  if (!str || !str.trim()) return null;
+  const s = str.trim().endsWith(" UTC") ? str.trim().replace(" UTC", "Z").replace(" ", "T") : str.trim();
+  const ms = Date.parse(s);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function formatUtcSlot(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+}
+
+function formatDuration(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(totalSec / 86400), h = Math.floor((totalSec % 86400) / 3600), m = Math.floor((totalSec % 3600) / 60), s = totalSec % 60;
+  return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m ${s}s`;
+}
+
+function parseSlotHeader(str) {
+  if (!str) return null;
+  const mSlot = str.match(/Current slot:\s*([^,]+)/i), mOpen = str.match(/Opening:\s*([^,]+)/i), mClose = str.match(/Closing:\s*([^,]+)/i), mStatus = str.match(/Status:\s*(open|closed)/i);
+  if (!mSlot || !mOpen || !mClose || !mStatus) return null;
+  return { slotName: mSlot[1].trim(), openStr: mOpen[1].trim(), closeStr: mClose[1].trim(), openMs: parseUtcMs(mOpen[1]), closeMs: parseUtcMs(mClose[1]), status: mStatus[1].toLowerCase() };
+}
+
+function computeNextWindow(header, nowMs) {
+  let openMs = header.openMs + SLOT_INTERVAL_MS;
+  while (nowMs > openMs + SLOT_DURATION_MS) openMs += SLOT_INTERVAL_MS;
+  return { openMs, closeMs: openMs + SLOT_DURATION_MS };
+}
+
+// RFC-4180 CSV parser supporting quoted commas, escaped quotes, and multiline cells
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (ch === '"' && next === '"') { field += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else field += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\r" && next === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; }
+    else if (ch === "\n" || ch === "\r") { row.push(field); rows.push(row); row = []; field = ""; }
+    else field += ch;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function parseSubmissionsCsv(csvText) {
+  const grid = parseCsv(csvText);
+  if (grid.length < 3) throw new Error("CSV must have column IDs (row 1), slot header (row 2), and display headers (row 3).");
+  const colIds = grid[0].map(c => c.trim());
+  const header = parseSlotHeader(grid[1][0] || "");
+  const rows = [];
+  for (let i = 3; i < grid.length; i++) {
+    const raw = grid[i];
+    if (!raw || raw.every(c => !c || !c.trim())) continue;
+    const obj = {};
+    for (let j = 0; j < colIds.length; j++) if (colIds[j]) obj[colIds[j]] = (raw[j] || "").trim();
+    if (!obj.run_id && !obj.exp_id) continue;
+    rows.push(obj);
+  }
+  return { header, rows };
+}
+
+function compareScoreDesc(a, b) {
+  return (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0) || (parseUtcMs(a.flag_time) || 0) - (parseUtcMs(b.flag_time) || 0) || (parseUtcMs(a.submission_time) || 0) - (parseUtcMs(b.submission_time) || 0);
+}
+
+function statusBadge(status) {
+  const map = { active: ["Active", "b-info"], winner: ["Winner", "b-ok"], candidate: ["Candidate", "b-neutral"], revoked_1day: ["Revoked (1-day)", "b-err"], revoked_dupe: ["Revoked (dupe)", "b-err"], cancelled: ["Cancelled", "b-neutral"], unclaimed: ["Unclaimed", "b-warn"] };
+  const [label, cls] = map[status] || [status || "—", "b-neutral"];
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+function eligibilityBadge(elig) {
+  if (!elig) return `<span class="badge b-neutral">—</span>`;
+  let cls = "b-neutral";
+  if (elig.startsWith("ELIGIBLE_CLEAR")) cls = "b-ok";
+  else if (elig.startsWith("PENDING_")) cls = "b-info";
+  else if (elig.startsWith("REVIEW_") || elig === "UNCLAIMED") cls = "b-warn";
+  else if (elig.startsWith("INELIGIBLE_")) cls = "b-err";
+  return `<span class="badge ${cls}" title="${esc(elig)}">${esc(elig)}</span>`;
+}
+
+function renderHash(hash) {
+  if (!hash) return "—";
+  const short = hash.length > 12 ? hash.slice(0, 12) + "…" : hash;
+  return `<span class="hash-cell"><code title="${esc(hash)}">${esc(short)}</code><button class="copy-btn" data-copy="${esc(hash)}" type="button" title="Copy full hash">copy</button></span>`;
+}
+
+function renderCommit(id, title) {
+  if (!id) return `<span class="small">Pending</span>`;
+  const link = `${COMMIT_URL_PREFIX}${encodeURIComponent(id)}`;
+  const short = id.slice(0, 12);
+  return `<a class="mono" href="${link}" target="_blank" rel="noopener">${esc(short)}</a>${title ? `<div class="small">${esc(title)}</div>` : ""}`;
+}
+
+function renderCve(cve) {
+  if (!cve) return "—";
+  const m = cve.match(/CVE-\d{4}-\d+/i);
+  return m ? `<a href="${CVE_URL_PREFIX}${encodeURIComponent(m[0])}" target="_blank" rel="noopener">${esc(m[0])}</a>` : esc(cve);
+}
+
+function renderPr(pr) {
+  if (!pr) return "—";
+  const m = pr.match(/(\d+)/);
+  return m ? `<a href="${PR_URL_PREFIX}${m[1]}" target="_blank" rel="noopener">PR #${m[1]}</a>` : esc(pr);
+}
+
+function renderFlagsDetails(row) {
+  if (!row.flags && !row.runtime && !row.syzkaller_reference) return "—";
+  const parts = [];
+  if (row.flags) parts.push(`Flag:\n${row.flags}`);
+  if (row.runtime) parts.push(`Timings (s):\n${row.runtime}`);
+  if (row.syzkaller_reference) parts.push(`Syzkaller:\n${row.syzkaller_reference}`);
+  return `<details class="details-cell"><summary>Inspect</summary><pre>${esc(parts.join("\n\n"))}</pre></details>`;
+}
+
+// Determines effective active-slot UI state including exact client-side open/close transitions and 24h pre-open scoreboard clearing
+function computeSlotViewState(nowMs) {
+  const h = state.header;
+  if (!h) return { mode: "unknown", label: "No slot header found", badge: "b-neutral", countdown: "", slotRows: [] };
+
+  const activeRows = state.rows.filter(r => r.status === "active").sort(compareScoreDesc);
+  const currentWindowRows = state.rows.filter(r => r.slot_open_time === h.openStr && r.status !== "cancelled").sort(compareScoreDesc);
+  const headerClosed = h.status !== "open" || nowMs > h.closeMs;
+
+  if (!headerClosed && nowMs >= h.openMs && nowMs <= h.closeMs) {
+    return { mode: "open", slotName: h.slotName, openStr: h.openStr, closeStr: h.closeStr, badge: "b-ok", badgeText: "OPEN", countdown: `Closes in ${formatDuration(h.closeMs - nowMs)}`, slotRows: activeRows.length ? activeRows : currentWindowRows };
+  }
+
+  // Determine the upcoming window (either current header if not yet opened, or next biweekly slot)
+  const isUpcomingCurrent = h.status === "closed" && nowMs < h.openMs;
+  const next = isUpcomingCurrent ? { openMs: h.openMs, closeMs: h.closeMs } : computeNextWindow(h, nowMs);
+
+  // If now is already inside the next scheduled window (before the Monday trigger updates the sheet header), show OPEN
+  if (nowMs >= next.openMs && nowMs <= next.closeMs) {
+    return { mode: "open", slotName: "TBD", openStr: formatUtcSlot(next.openMs), closeStr: formatUtcSlot(next.closeMs), badge: "b-ok", badgeText: "OPEN", countdown: `Closes in ${formatDuration(next.closeMs - nowMs)}`, slotRows: activeRows };
+  }
+
+  // Within 24h before next opening: clear previous scoreboard in UI so no one mistakes old runs for active submissions
+  if (next.openMs - nowMs <= PRE_OPEN_CLEAR_MS) {
+    return { mode: "preopen_cleared", slotName: "TBD", openStr: formatUtcSlot(next.openMs), closeStr: formatUtcSlot(next.closeMs), badge: "b-info", badgeText: "OPENS SOON", countdown: `Opens in ${formatDuration(next.openMs - nowMs)}`, slotRows: [] };
+  }
+
+  return { mode: "closed_visible", slotName: h.slotName, openStr: h.openStr, closeStr: h.closeStr, nextOpenStr: formatUtcSlot(next.openMs), badge: "b-neutral", badgeText: "CLOSED", countdown: `Next slot opens in ${formatDuration(next.openMs - nowMs)}`, slotRows: currentWindowRows };
+}
+
+function buildWinnersList() {
+  const byExp = new Map();
+  for (const r of state.rows) {
+    if (!r.exp_id) continue;
+    if (!byExp.has(r.exp_id)) byExp.set(r.exp_id, { winner: null, revoked: [] });
+    const entry = byExp.get(r.exp_id);
+    if (r.status === "winner") entry.winner = r;
+    else if (r.status.startsWith("revoked_")) entry.revoked.push(r);
+  }
+  const list = [];
+  for (const [expId, entry] of byExp.entries()) {
+    if (entry.winner) {
+      list.push({ ...entry.winner, _revoked: entry.revoked });
+    } else if (entry.revoked.length > 0) {
+      const sample = entry.revoked[0];
+      list.push({ exp_id: expId, status: "unclaimed", lts_slot: sample.lts_slot, target: sample.target, run_id: "", score: "", stability: "", avg_runtime: "", eligibility: "UNCLAIMED", notes: `All ${entry.revoked.length} candidate(s) revoked`, slot_open_time: sample.slot_open_time, slot_close_time: sample.slot_close_time, _revoked: entry.revoked });
+    }
+  }
+  return list.sort((a, b) => b.exp_id.localeCompare(a.exp_id, undefined, { numeric: true }));
+}
+
+function renderStatusBar(view) {
+  const el = document.getElementById("statusBar");
+  if (view.mode === "unknown") {
+    el.innerHTML = `<div class="status-main"><span class="badge b-neutral">NO DATA</span><span class="small">${esc(view.label)}</span></div>`;
+    return;
+  }
+  const windowInfo = view.mode === "preopen_cleared"
+    ? `Next window: <strong>${esc(view.openStr)}</strong> &rarr; <strong>${esc(view.closeStr)}</strong>`
+    : `Slot: <code>${esc(view.slotName)}</code> &middot; Window: <strong>${esc(view.openStr)}</strong> &rarr; <strong>${esc(view.closeStr)}</strong>`;
+  el.innerHTML = `<div class="status-main"><span class="badge ${view.badge}">${esc(view.badgeText)}</span><span>${windowInfo}</span></div><div class="countdown">${esc(view.countdown)}</div>`;
+}
+
+function renderActiveTab(view) {
+  document.getElementById("cnt-active").textContent = view.slotRows.length;
+  const container = document.getElementById("tab-active");
+  if (view.mode === "preopen_cleared") {
+    container.innerHTML = `<div class="card empty"><strong>Scoreboard cleared for upcoming slot</strong><p class="small">The previous slot's scoreboard is hidden within 24 hours of the next slot opening (${esc(view.openStr)}). Check the <em>Full History</em> tab for past runs.</p></div>`;
+    return;
+  }
+  if (view.slotRows.length === 0) {
+    const msg = view.mode === "open" ? "The slot is open — no valid submissions recorded yet." : "No submissions recorded for the current slot.";
+    container.innerHTML = `<div class="card empty">${esc(msg)}</div>`;
+    return;
+  }
+  const banner = view.mode === "closed_visible"
+    ? `<div class="notice">Slot <code>${esc(view.slotName)}</code> is closed. This final scoreboard remains visible until 24 hours before the next slot opens (${esc(view.nextOpenStr)}).</div>` : "";
+  const rowsHtml = view.slotRows.map((r, idx) => `<tr>
+    <td><strong>#${idx + 1}</strong></td>
+    <td><code>${esc(r.run_id)}</code> ${statusBadge(r.status)}${r.exp_id ? ` <span class="small">(${esc(r.exp_id)})</span>` : ""}</td>
+    <td><code>${esc(r.target)}</code></td>
+    <td><strong>${esc(r.score)}</strong></td>
+    <td>${esc(r.stability)} <span class="small">(${esc(r.avg_runtime)})</span></td>
+    <td class="small">${esc(r.flag_time)}</td>
+    <td class="small">${esc(r.submission_time)}</td>
+    <td>${renderHash(r.exploit_hash)}</td>
+    <td>${renderFlagsDetails(r)}</td>
+  </tr>`).join("");
+  container.innerHTML = `${banner}<div class="card"><div class="table-wrap"><table>
+    <thead><tr><th>Rank</th><th>Run ID</th><th>Target</th><th>Score</th><th>Stability / Avg</th><th>Flag capture time</th><th>Submission time</th><th>Exploit hash</th><th>Details</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table></div></div>`;
+}
+
+function matchesWinnerFilter(w) {
+  const e = w.eligibility || "";
+  if (state.winnerFilter === "eligible" && !e.startsWith("ELIGIBLE_CLEAR")) return false;
+  if (state.winnerFilter === "pending" && !e.startsWith("PENDING_")) return false;
+  if (state.winnerFilter === "review" && !e.startsWith("REVIEW_")) return false;
+  if (state.winnerFilter === "ineligible" && !e.startsWith("INELIGIBLE_") && e !== "UNCLAIMED") return false;
+  if (state.winnerQuery) {
+    const hay = [w.exp_id, w.lts_slot, w.target, w.run_id, w.patch_commit_id, w.patch_commit_title, w.cve, w.eligibility, w.notes, w.pr].join(" ").toLowerCase();
+    if (!hay.includes(state.winnerQuery.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function renderWinnersTab() {
+  const allWinners = buildWinnersList();
+  document.getElementById("cnt-winners").textContent = allWinners.length;
+  const filtered = allWinners.filter(matchesWinnerFilter);
+  const filters = [["all", "All"], ["eligible", "Eligible"], ["pending", "Pending"], ["review", "Review"], ["ineligible", "Ineligible / Unclaimed"]];
+  const filterBtns = filters.map(([k, lbl]) => `<button class="btn ${state.winnerFilter === k ? "active" : ""}" data-wfilter="${k}" type="button">${lbl}</button>`).join("");
+
+  const rowsHtml = filtered.length === 0
+    ? `<tr><td colspan="10" class="empty">No matching winners.</td></tr>`
+    : filtered.map(w => {
+      const revokedNote = w._revoked.length ? `<div class="small">Revoked: ${w._revoked.map(r => `<code>${esc(r.run_id)}</code> (${esc(r.status.replace("revoked_", ""))})`).join(", ")}</div>` : "";
+      const tsParts = [
+        w.submission_time ? `Sub: ${esc(w.submission_time)}` : "",
+        w.patch_commit_time ? `Patch: ${esc(w.patch_commit_time)}` : "",
+        w.flag_time ? `Flag: ${esc(w.flag_time)}` : "",
+        `Awarded: ${esc(w.awarded_time || w.slot_close_time || "—")}`,
+      ].filter(Boolean).join("<br>");
+      return `<tr>
+        <td><strong>${esc(w.exp_id)}</strong>${w.status === "unclaimed" ? `<div>${statusBadge("unclaimed")}</div>` : ""}</td>
+        <td><code>${esc(w.target)}</code><div class="small"><code>${esc(w.lts_slot)}</code></div></td>
+        <td><code>${esc(w.run_id || "—")}</code><div class="small">${w.score ? `${esc(w.score)} (${esc(w.stability)}, ${esc(w.avg_runtime)})` : ""}</div></td>
+        <td>${renderCommit(w.patch_commit_id, w.patch_commit_title)}</td>
+        <td>${renderPr(w.pr)}</td>
+        <td>${renderCve(w.cve)}</td>
+        <td>${eligibilityBadge(w.eligibility)}${revokedNote}</td>
+        <td class="small">${esc(w.notes || "—")}</td>
+        <td>${renderHash(w.exploit_hash)}</td>
+        <td class="small">${tsParts}</td>
+      </tr>`;
+    }).join("");
+
+  document.getElementById("tab-winners").innerHTML = `
+    <div class="toolbar">
+      <div class="filter-group">${filterBtns}</div>
+      <input id="winnerSearch" type="search" placeholder="Search ID, CVE, slot, commit, run..." value="${esc(state.winnerQuery)}">
+    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Target / LTS Slot</th><th>Run / Score</th><th>Patch Commit</th><th>PR</th><th>CVE</th><th>0-day Eligibility</th><th>Notes</th><th>Exploit Hash</th><th>Timestamps</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table></div></div>`;
+}
+
+function renderHistoryTab() {
+  document.getElementById("cnt-history").textContent = state.rows.length;
+  const q = state.historyQuery.toLowerCase();
+  const groups = new Map();
+  for (const r of state.rows) {
+    if (q) {
+      const hay = [r.exp_id, r.status, r.lts_slot, r.run_id, r.exploit_hash, r.patch_commit_id, r.cve, r.eligibility, r.notes].join(" ").toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    const key = `${r.lts_slot}|${r.slot_open_time || ""}|${r.status === "cancelled" ? "cancelled" : "normal"}`;
+    if (!groups.has(key)) groups.set(key, { slot: r.lts_slot, open: r.slot_open_time, close: r.slot_close_time, cancelled: r.status === "cancelled", rows: [] });
+    groups.get(key).rows.push(r);
+  }
+
+  const groupsHtml = groups.size === 0
+    ? `<div class="card empty">No matching submissions in history.</div>`
+    : [...groups.values()].map((g, idx) => {
+      g.rows.sort(compareScoreDesc);
+      const winner = g.rows.find(r => r.status === "winner");
+      const tag = g.cancelled ? statusBadge("cancelled") : winner ? `<span class="badge b-ok">${esc(winner.exp_id)}</span>` : g.rows.some(r => r.status === "active") ? statusBadge("active") : statusBadge("unclaimed");
+      const body = g.rows.map(r => `<tr>
+        <td><code>${esc(r.run_id)}</code></td>
+        <td>${statusBadge(r.status)}${r.exp_id ? ` <span class="small">${esc(r.exp_id)}</span>` : ""}</td>
+        <td><strong>${esc(r.score)}</strong><div class="small">${esc(r.stability)} / ${esc(r.avg_runtime)}</div></td>
+        <td class="small">Flag: ${esc(r.flag_time)}<br>Sub: ${esc(r.submission_time)}</td>
+        <td>${renderHash(r.exploit_hash)}</td>
+        <td>${r.eligibility ? eligibilityBadge(r.eligibility) : "—"}</td>
+        <td class="small">${esc(r.notes || "—")}</td>
+        <td>${renderFlagsDetails(r)}</td>
+      </tr>`).join("");
+      return `<details class="card slot-group" ${idx < 2 ? "open" : ""}>
+        <summary>
+          <span><code>${esc(g.slot)}</code> ${tag} <span class="small">(${g.rows.length} run${g.rows.length === 1 ? "" : "s"})</span></span>
+          <span class="small">${esc(g.open || "—")} &rarr; ${esc(g.close || "—")}</span>
+        </summary>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Run ID</th><th>Status</th><th>Score</th><th>Timestamps</th><th>Exploit Hash</th><th>Eligibility</th><th>Notes</th><th>Details</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table></div>
+      </details>`;
+    }).join("");
+
+  document.getElementById("tab-history").innerHTML = `
+    <div class="toolbar">
+      <span class="small">Complete audit log of every submitted run across all slots (including revoked and cancelled slots).</span>
+      <input id="historySearch" type="search" placeholder="Filter history by slot, run ID, status, hash..." value="${esc(state.historyQuery)}">
+    </div>
+    ${groupsHtml}`;
+}
+
+function renderAll() {
+  const view = computeSlotViewState(Date.now());
+  renderStatusBar(view);
+  renderActiveTab(view);
+  renderWinnersTab();
+  renderHistoryTab();
+}
+
+function getCsvUrl() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("csv")) return params.get("csv");
+  const gid = params.get("gid") || DEFAULT_SUBMISSIONS_GID;
+  return gid ? `${PUBLIC_CSV_BASE_URL}&gid=${encodeURIComponent(gid)}` : "";
+}
+
+async function loadFromUrl() {
+  const url = getCsvUrl();
+  const banner = document.getElementById("configBanner");
+  if (!url) {
+    banner.classList.remove("hidden");
+    banner.innerHTML = `<strong>Setup needed:</strong> Set <code>DEFAULT_SUBMISSIONS_GID</code> in <code>submissions.html</code> to the external <code>Submissions</code> tab GID (or open with <code>?gid=&lt;GID&gt;</code>, <code>?csv=&lt;URL&gt;</code>, or click <strong>Load CSV</strong> above).`;
+    renderAll();
+    return;
+  }
+  banner.classList.add("hidden");
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const parsed = parseSubmissionsCsv(await resp.text());
+    state.header = parsed.header;
+    state.rows = parsed.rows;
+    document.getElementById("lastFetched").textContent = `Last fetched: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`;
+    renderAll();
+  } catch (err) {
+    banner.classList.remove("hidden");
+    banner.innerHTML = `<strong>Failed to load CSV:</strong> ${esc(err.message)} — check that the external sheet is published to web as CSV.`;
+  }
+}
+
+document.addEventListener("click", e => {
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn) {
+    state.tab = tabBtn.dataset.tab;
+    document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === state.tab));
+    ["active", "winners", "history"].forEach(t => document.getElementById(`tab-${t}`).classList.toggle("hidden", t !== state.tab));
+    return;
+  }
+  const wf = e.target.closest("[data-wfilter]");
+  if (wf) { state.winnerFilter = wf.dataset.wfilter; renderWinnersTab(); return; }
+  const copyBtn = e.target.closest("[data-copy]");
+  if (copyBtn && navigator.clipboard) {
+    navigator.clipboard.writeText(copyBtn.dataset.copy);
+    copyBtn.textContent = "copied";
+    setTimeout(() => { copyBtn.textContent = "copy"; }, 1200);
+  }
+});
+
+document.addEventListener("input", e => {
+  const pos = e.target.selectionStart;
+  if (e.target.id === "winnerSearch") { state.winnerQuery = e.target.value; renderWinnersTab(); const el = document.getElementById("winnerSearch"); el?.focus(); el?.setSelectionRange(pos, pos); }
+  if (e.target.id === "historySearch") { state.historyQuery = e.target.value; renderHistoryTab(); const el = document.getElementById("historySearch"); el?.focus(); el?.setSelectionRange(pos, pos); }
+});
+
+document.getElementById("refreshBtn").addEventListener("click", loadFromUrl);
+document.getElementById("fileInput").addEventListener("change", async e => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const parsed = parseSubmissionsCsv(await file.text());
+  state.header = parsed.header;
+  state.rows = parsed.rows;
+  document.getElementById("configBanner").classList.add("hidden");
+  document.getElementById("lastFetched").textContent = `Loaded local file: ${file.name}`;
+  renderAll();
+});
+
+loadFromUrl();
+setInterval(() => { if (state.header) renderStatusBar(computeSlotViewState(Date.now())); }, 1000);
+</script>
+</body>
+</html>
