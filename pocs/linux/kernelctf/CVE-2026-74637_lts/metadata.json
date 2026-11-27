@@ -1,0 +1,21 @@
+{
+  "$schema": "https://google.github.io/security-research/kernelctf/metadata.schema.v3.json",
+  "submission_ids": ["exp609"],
+  "vulnerability": {
+    "cve": "CVE-2026-74637",
+    "patch_commit": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=42c5ca1f0a288a52878bd72a5595b08261057438",
+    "affected_versions": ["2.6.35 - 7.2-rc7"],
+    "requirements": {
+      "attack_surface": [],
+      "capabilities": [],
+      "kernel_config": ["CONFIG_PERF_EVENTS"]
+    }
+  },
+  "exploits": {
+    "lts-6.12.96": {
+      "uses": [],
+      "requires_separate_kaslr_leak": false,
+      "stability_notes": "98% (98 of 100 runs)"
+    }
+  }
+}
